@@ -1,0 +1,12 @@
+package com.biofit.backend.user;
+
+public enum RoleName {
+    CLIENT,
+    WELLNESS_CENTRE_MANAGER,
+    FITNESS_COACH,
+    NUTRITION_CONSULTANT,
+    DIGITAL_OPERATIONS_EXECUTIVE,
+    CUSTOMER_EXPERIENCE_OFFICER,
+    MEDICAL_ADVISOR,
+    ADMIN
+}

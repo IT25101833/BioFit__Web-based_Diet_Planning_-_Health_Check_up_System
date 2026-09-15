@@ -74,3 +74,5 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 *.local
+**/application-local.properties
+backend/data/

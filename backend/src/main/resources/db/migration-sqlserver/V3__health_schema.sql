@@ -1,0 +1,72 @@
+CREATE TABLE health_profiles (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    height_cm DECIMAL(6,2),
+    weight_kg DECIMAL(6,2),
+    blood_type VARCHAR(8),
+    activity_level VARCHAR(40),
+    medical_record_status VARCHAR(40) NOT NULL DEFAULT 'Up to date',
+    safety_notes VARCHAR(2000),
+    created_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_health_profiles_user UNIQUE (user_id),
+    CONSTRAINT fk_health_profiles_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE health_metrics (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    metric_type VARCHAR(40) NOT NULL,
+    value_num DECIMAL(10,2),
+    value_text VARCHAR(120),
+    unit VARCHAR(24),
+    recorded_at DATETIME2 NOT NULL,
+    source VARCHAR(40) NOT NULL DEFAULT 'CLIENT',
+    created_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_health_metrics_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE health_goals (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description VARCHAR(1000),
+    target_value VARCHAR(80),
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    progress_percent INT NOT NULL DEFAULT 0,
+    created_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_health_goals_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE health_assessments (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    summary VARCHAR(2000),
+    assessment_type VARCHAR(80) NOT NULL DEFAULT 'General',
+    status VARCHAR(32) NOT NULL DEFAULT 'COMPLETED',
+    assessed_at DATETIME2 NOT NULL,
+    next_review_at DATETIME2,
+    created_by BIGINT,
+    created_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_health_assessments_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE health_risk_alerts (
+    id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    status VARCHAR(40) NOT NULL DEFAULT 'Monitoring',
+    guidance VARCHAR(2000),
+    date_raised DATETIME2 NOT NULL,
+    follow_up_at DATETIME2,
+    created_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME2 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_health_risk_alerts_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE INDEX idx_health_metrics_user_type ON health_metrics (user_id, metric_type);
+CREATE INDEX idx_health_goals_user ON health_goals (user_id);
+CREATE INDEX idx_health_assessments_user ON health_assessments (user_id);
+CREATE INDEX idx_health_alerts_user ON health_risk_alerts (user_id);
