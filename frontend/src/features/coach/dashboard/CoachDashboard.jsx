@@ -1,0 +1,261 @@
+import { useEffect, useState } from 'react'
+import {
+  ClipboardCheck,
+  Dumbbell,
+  Library,
+  Plus,
+  Users,
+  CalendarDays,
+  Activity,
+} from 'lucide-react'
+import { Link } from 'react-router-dom'
+import Button from '../../../components/ui/Button'
+import ErrorState from '../../../components/ui/ErrorState'
+import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
+import ProgressBar from '../../../components/ui/ProgressBar'
+import SectionCard from '../../../components/ui/SectionCard'
+import StatCard from '../../../components/ui/StatCard'
+import StatusBadge from '../../../components/ui/StatusBadge'
+import { fetchCoachDashboard } from './data/coachDashboardData'
+
+export default function CoachDashboard() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    try {
+      setData(await fetchCoachDashboard())
+    } catch {
+      setError('We couldn’t load your coach dashboard.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  if (loading) return <LoadingSkeleton rows={6} />
+  if (error || !data) {
+    return (
+      <div className="w-full">
+        <ErrorState title="We couldn’t load your coach dashboard." onRetry={load} />
+      </div>
+    )
+  }
+
+  const stats = data.stats || {}
+  const todaysSchedule = Array.isArray(data.todaysSchedule) ? data.todaysSchedule : []
+  const attention = Array.isArray(data.attention) ? data.attention : []
+  const progressTrend = Array.isArray(data.progressTrend) ? data.progressTrend : []
+  const activePlans = Array.isArray(data.activePlans) ? data.activePlans : []
+  const recentActivity = Array.isArray(data.recentActivity) ? data.recentActivity : []
+  const max = Math.max(...progressTrend.map((i) => Number(i.value) || 0), 1)
+  const todayLabel = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  const stat = (key) => stats[key] || { value: '—', hint: '' }
+
+  return (
+    <div>
+      <div className="mb-6 sm:mb-8">
+        <p className="text-[12px] font-semibold tracking-wide text-[#005a40] uppercase">
+          {todayLabel}
+        </p>
+        <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-[#111827] sm:text-[1.75rem]">
+          Good morning, {data.greetingName}
+        </h1>
+        <p className="mt-1.5 text-sm text-[#6b7280]">
+          Here’s an overview of your clients, sessions and fitness plans today.
+        </p>
+      </div>
+
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Users}
+          label="Assigned Clients"
+          value={stat('assignedClients').value}
+          hint={stat('assignedClients').hint}
+        />
+        <StatCard
+          icon={CalendarDays}
+          label="Today’s Sessions"
+          value={stat('todaysSessions').value}
+          hint={stat('todaysSessions').hint}
+        />
+        <StatCard
+          icon={Dumbbell}
+          label="Active Workout Plans"
+          value={stat('activePlans').value}
+          hint={stat('activePlans').hint}
+        />
+        <StatCard
+          icon={ClipboardCheck}
+          label="Assessments Due"
+          value={stat('assessmentsDue').value}
+          hint={stat('assessmentsDue').hint}
+        />
+      </div>
+
+      <div className="mb-5 grid gap-4 lg:grid-cols-3">
+        <SectionCard title="Today’s Schedule" className="lg:col-span-2">
+          <div className="space-y-3">
+            {todaysSchedule.map((session) => (
+              <div
+                key={session.id}
+                className="flex flex-col gap-3 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-[#111827]">
+                    {session.time} · {session.client || session.clientName}
+                  </p>
+                  <p className="mt-1 text-[12px] text-[#6b7280]">
+                    {session.sessionType || session.serviceType || session.service} ·{' '}
+                    {session.workout || session.programme || 'Fitness session'} ·{' '}
+                    {session.duration || '45 min'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={session.status} />
+                  <Button
+                    to={`/coach/clients/${session.clientId || 'BF-C1024'}`}
+                    size="sm"
+                    variant="outline"
+                    className="!text-[#005a40]"
+                  >
+                    View Client
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Clients requiring attention">
+          <ul className="space-y-3">
+            {attention.map((item) => (
+              <li key={item.id || item.client} className="rounded-2xl bg-[#f8faf9] px-3 py-3">
+                <p className="text-sm font-semibold text-[#111827]">
+                  {item.client || item.title}
+                </p>
+                <p className="mt-1 text-[12px] text-[#6b7280]">
+                  {item.reason || item.detail}
+                </p>
+                <p className="mt-1 text-[11px] font-semibold text-[#005a40]">
+                  {item.due || item.priority || ''}
+                </p>
+                <Button
+                  to={`/coach/clients/${item.clientId || 'BF-C1024'}`}
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 !text-[#005a40]"
+                >
+                  View Client
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      </div>
+
+      <div className="mb-5 grid gap-4 lg:grid-cols-3">
+        <SectionCard title="Client progress overview">
+          <div className="flex h-44 items-end gap-2 pt-2">
+            {progressTrend.map((item) => (
+              <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
+                <div
+                  className="w-full rounded-t-md bg-[#005a40]/85"
+                  style={{ height: `${((Number(item.value) || 0) / max) * 100}%` }}
+                />
+                <span className="text-[11px] text-[#6b7280]">{item.label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[12px] text-[#6b7280]">Weekly workout completion %</p>
+        </SectionCard>
+
+        <SectionCard
+          title="Active workout plans"
+          className="lg:col-span-2"
+          actions={
+            <Button to="/coach/workout-plans" size="sm" variant="outline" className="!text-[#005a40]">
+              View all
+            </Button>
+          }
+        >
+          <div className="space-y-3">
+            {activePlans.map((plan) => (
+              <div key={plan.id} className="rounded-2xl border border-[#eef2f0] px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-[#111827]">{plan.name}</p>
+                    <p className="mt-0.5 text-[12px] text-[#6b7280]">
+                      {plan.client || plan.clientName} ·{' '}
+                      {plan.weekLabel || plan.currentWeek || 'In progress'}
+                    </p>
+                  </div>
+                  <StatusBadge status={plan.status} />
+                </div>
+                <div className="mt-3">
+                  <ProgressBar
+                    value={Number(plan.progress) || 0}
+                    label={`${Number(plan.progress) || 0}% Complete`}
+                  />
+                </div>
+                <Button
+                  to={`/coach/workout-plans/${plan.id}`}
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 !text-[#005a40]"
+                >
+                  View Plan
+                </Button>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      </div>
+
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Create Workout Plan', to: '/coach/workout-plans/create', icon: Plus },
+          { label: 'Add Exercise', to: '/coach/exercises/create', icon: Library },
+          { label: 'Record Assessment', to: '/coach/assessments/create', icon: ClipboardCheck },
+          { label: 'View Clients', to: '/coach/clients', icon: Activity },
+        ].map(({ label, to, icon: Icon }) => (
+          <Link
+            key={label}
+            to={to}
+            className="flex items-center gap-3 rounded-[1.25rem] border border-[#e8ecf1] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#005a40]/25 hover:bg-[#e6f5f0]"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e6f5f0] text-[#005a40]">
+              <Icon className="h-4 w-4" strokeWidth={2.2} />
+            </span>
+            <span className="text-sm font-semibold text-[#111827]">{label}</span>
+          </Link>
+        ))}
+      </div>
+
+      <SectionCard title="Recent client activity">
+        <ul className="space-y-3">
+          {recentActivity.map((item) => (
+            <li
+              key={item.id || item.text || item.title}
+              className="flex flex-col gap-1 border-b border-[#eef2f0] pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p className="text-sm text-[#374151]">{item.text || item.detail || item.title}</p>
+              <p className="text-[12px] whitespace-nowrap text-[#8b93a1]">{item.at}</p>
+            </li>
+          ))}
+        </ul>
+      </SectionCard>
+    </div>
+  )
+}

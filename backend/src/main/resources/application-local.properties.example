@@ -1,0 +1,9 @@
+# Local overrides — do not commit real secrets
+# Rename/copy to application-local.properties (gitignored via *.local)
+
+# spring.datasource.url=jdbc:sqlserver://localhost:1433;databaseName=biofit;encrypt=true;trustServerCertificate=true
+# spring.datasource.username=sa
+# spring.datasource.password=YourStrong!Passw0rd
+
+biofit.jwt.secret=dev-only-change-me-biofit-jwt-secret-key-32c
+biofit.cors.origins=http://localhost:5173,http://127.0.0.1:5173
