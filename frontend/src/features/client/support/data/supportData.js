@@ -124,16 +124,33 @@ function delay(ms = 420) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function normalizeTicket(ticket) {
+  if (!ticket) return ticket
+  const related =
+    ticket.relatedService && typeof ticket.relatedService === 'object'
+      ? ticket.relatedService.name || ticket.relatedService.label || 'General'
+      : ticket.relatedService || 'General'
+  const messages = (ticket.messages || []).map((m) => ({
+    ...m,
+    role: m.role || (m.from === 'client' || m.from === 'You' ? 'client' : 'support'),
+    author: m.author || (m.from === 'client' ? 'You' : 'Support Team'),
+  }))
+  return { ...ticket, relatedService: related, messages }
+}
+
 /** GET /api/client/support */
 export async function fetchClientSupportTickets() {
   if (USE_MOCK) {
     await delay()
-    return supportTickets.map((item) => ({
-      ...item,
-      messages: item.messages.map((m) => ({ ...m })),
-    }))
+    return supportTickets.map((item) =>
+      normalizeTicket({
+        ...item,
+        messages: item.messages.map((m) => ({ ...m })),
+      }),
+    )
   }
-  return apiRequest('/api/client/support')
+  const data = await apiRequest('/api/client/support')
+  return (Array.isArray(data) ? data : []).map(normalizeTicket)
 }
 
 /** GET /api/client/support/:id */
@@ -142,49 +159,76 @@ export async function fetchClientSupportTicketById(id) {
     await delay()
     const found = supportTickets.find((item) => item.id === id)
     if (!found) throw new Error('Ticket not found')
-    return {
+    return normalizeTicket({
       ...found,
       messages: found.messages.map((m) => ({ ...m })),
-    }
+    })
   }
-  return apiRequest(`/api/client/support/${id}`)
+  return normalizeTicket(await apiRequest(`/api/client/support/${id}`))
 }
 
 /** POST /api/client/support */
 export async function createClientSupportTicket(payload) {
   if (USE_MOCK) {
     await delay(600)
-    return {
+    const now = new Date().toISOString()
+    const created = {
       id: `tkt-${Math.floor(1000 + Math.random() * 9000)}`,
+      subject: payload.subject,
+      category: payload.category,
       status: 'Open',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      relatedService: payload.relatedService || 'General',
+      createdAt: now,
+      updatedAt: now,
       messages: [
         {
           id: 'm1',
           author: 'You',
           role: 'client',
-          at: new Date().toISOString(),
+          at: now,
           body: payload.description,
         },
       ],
-      ...payload,
     }
+    supportTickets.unshift(created)
+    return normalizeTicket({
+      ...created,
+      messages: created.messages.map((m) => ({ ...m })),
+    })
   }
-  return apiRequest('/api/client/support', { method: 'POST', body: JSON.stringify(payload) })
+  return normalizeTicket(
+    await apiRequest('/api/client/support', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        message: payload.description,
+        body: payload.description,
+      }),
+    }),
+  )
 }
 
 /** POST /api/client/support/:id/replies */
 export async function replyToClientSupportTicket(id, body) {
   if (USE_MOCK) {
     await delay(450)
-    return {
+    const ticket = supportTickets.find((item) => item.id === id)
+    const message = {
       id: `m-${Date.now()}`,
       author: 'You',
       role: 'client',
       at: new Date().toISOString(),
       body,
     }
+    if (ticket) {
+      ticket.messages.push(message)
+      ticket.updatedAt = message.at
+      if (ticket.status === 'Pending Reply') ticket.status = 'In Progress'
+    }
+    return message
   }
-  return apiRequest(`/api/client/support/${id}/replies`, { method: 'POST', body: JSON.stringify({ message: body }) })
+  return apiRequest(`/api/client/support/${id}/replies`, {
+    method: 'POST',
+    body: JSON.stringify({ message: body }),
+  })
 }
