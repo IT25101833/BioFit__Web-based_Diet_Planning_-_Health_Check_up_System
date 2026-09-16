@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Menu, X } from 'lucide-react'
-import ThemeToggle from '../ui/ThemeToggle'
 import DashboardSidebar from './DashboardSidebar'
 
 export default function DashboardShell({ children, title = 'Dashboard' }) {
@@ -22,13 +21,9 @@ export default function DashboardShell({ children, title = 'Dashboard' }) {
               <Menu className="h-5 w-5" strokeWidth={2.1} />
             </button>
             <p className="font-display text-sm font-bold text-[var(--bf-ink)]">{title}</p>
-            <ThemeToggle />
+            <span className="inline-flex h-10 w-10" aria-hidden />
           </div>
         </header>
-
-        <div className="hidden items-center justify-end gap-2 px-8 pt-4 lg:flex">
-          <ThemeToggle />
-        </div>
 
         {mobileOpen ? (
           <button

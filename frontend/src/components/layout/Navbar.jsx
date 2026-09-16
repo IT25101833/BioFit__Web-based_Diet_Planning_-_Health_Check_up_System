@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom'
 import { Leaf, Menu, X } from 'lucide-react'
 import Button from '../ui/Button'
 import Container from '../ui/Container'
-import ThemeToggle from '../ui/ThemeToggle'
 
 const links = [
   { label: 'Home', to: '/' },
@@ -57,11 +56,10 @@ export default function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-2.5 sm:flex">
-          <ThemeToggle />
           <Button
             to="/login"
             size="sm"
-            className="rounded-full !bg-[var(--bf-primary-soft)] !px-5 !text-[var(--bf-primary)] hover:opacity-90 shadow-[var(--bf-shadow-out)]"
+            className="rounded-full !bg-[var(--bf-primary-soft)] !px-5 !text-[var(--bf-primary)] hover:opacity-90"
           >
             Login
           </Button>
@@ -74,19 +72,16 @@ export default function Navbar() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-2 xl:hidden">
-          <ThemeToggle />
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded-lg p-2 text-[var(--bf-ink)]"
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            aria-label={open ? 'Close menu' : 'Open menu'}
-            onClick={() => setOpen((prev) => !prev)}
-          >
-            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-lg p-2 text-[var(--bf-ink)] xl:hidden"
+          aria-expanded={open}
+          aria-controls="mobile-nav"
+          aria-label={open ? 'Close menu' : 'Open menu'}
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </button>
       </Container>
 
       {open ? (

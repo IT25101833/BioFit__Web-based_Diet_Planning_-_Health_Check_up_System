@@ -2,7 +2,6 @@ import { Bell, Menu } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import Avatar from '../ui/Avatar'
-import ThemeToggle from '../ui/ThemeToggle'
 
 const ROLE_LABELS = {
   CLIENT: 'Client',
@@ -51,7 +50,6 @@ export default function PortalTopbar({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <ThemeToggle />
           <Link
             to={notificationsTo}
             className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--bf-border)] bg-[var(--bf-surface-raised)] text-[var(--bf-muted)] shadow-[var(--bf-shadow-out)] hover:text-[var(--bf-ink)]"

@@ -6,11 +6,11 @@ const variants = {
   secondary:
     'bg-lavender text-on-lavender hover:bg-lavender-hover',
   mint:
-    'bg-accent-soft text-on-secondary hover:bg-secondary-container',
+    'bg-accent-soft text-on-surface hover:bg-secondary-container',
   outline:
-    'bg-surface text-primary border border-outline-variant hover:border-primary hover:bg-primary-container',
+    'bg-surface text-on-surface border border-outline-variant hover:border-primary hover:bg-primary-container',
   ghost:
-    'bg-transparent text-on-surface-variant hover:text-primary hover:bg-surface-soft',
+    'bg-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-soft',
 }
 
 const sizes = {

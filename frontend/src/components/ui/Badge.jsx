@@ -1,9 +1,9 @@
 export default function Badge({ children, tone = 'green', className = '' }) {
   const tones = {
-    green: 'bg-[#e6f5f0] text-[#005a40]',
-    teal: 'bg-[#ccfbf1] text-[#0f766e]',
+    green: 'bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]',
+    teal: 'bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]',
     amber: 'bg-[#fff7ed] text-[#b45309]',
-    gray: 'bg-[#f4f6fb] text-[#6b7280]',
+    gray: 'bg-[var(--bf-surface)] text-[var(--bf-muted)]',
   }
 
   return (

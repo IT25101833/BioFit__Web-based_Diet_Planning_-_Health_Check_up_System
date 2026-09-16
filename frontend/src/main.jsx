@@ -3,14 +3,15 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './auth/AuthContext.jsx'
-import { ThemeProvider } from './theme/ThemeContext.jsx'
+
+document.documentElement.classList.remove('dark')
+document.documentElement.removeAttribute('data-theme')
+localStorage.removeItem('biofit.theme')
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ThemeProvider>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </ThemeProvider>
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </StrictMode>,
 )

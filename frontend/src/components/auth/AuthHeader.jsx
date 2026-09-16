@@ -2,7 +2,6 @@ import { Leaf } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Button from '../ui/Button'
 import Container from '../ui/Container'
-import ThemeToggle from '../ui/ThemeToggle'
 
 export default function AuthHeader({
   prompt = 'Already have an account?',
@@ -37,7 +36,6 @@ export default function AuthHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          <ThemeToggle />
           {prompt ? (
             <p className="hidden text-sm text-[var(--bf-muted)] md:block">{prompt}</p>
           ) : null}

@@ -28,7 +28,7 @@ export default function CallToAction() {
                 <Button
                   to="/register"
                   size="lg"
-                  className="!bg-white !text-primary hover:!bg-primary-container"
+                  className="!bg-[var(--bf-surface-raised)] !text-[var(--bf-ink)] hover:!bg-[var(--bf-surface)]"
                 >
                   Get Started
                 </Button>

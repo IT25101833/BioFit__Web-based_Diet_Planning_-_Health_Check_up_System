@@ -12,11 +12,11 @@ export default function PageHeader({
       ].join(' ')}
     >
       <div className="min-w-0">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-[#111827] sm:text-[1.75rem]">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--bf-ink)] sm:text-[1.75rem]">
           {title}
         </h1>
         {description ? (
-          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[#6b7280]">
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--bf-muted)]">
             {description}
           </p>
         ) : null}

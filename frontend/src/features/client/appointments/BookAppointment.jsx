@@ -142,9 +142,9 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
             className={[
               'rounded-full px-3 py-1.5 text-[12px] font-semibold',
               index === step
-                ? 'bg-[var(--bf-primary)] text-white'
+                ? 'bg-[var(--bf-primary)] text-[var(--bf-ink)]'
                 : index < step
-                  ? 'bg-[var(--bf-primary-soft)] text-[var(--bf-primary)]'
+                  ? 'bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]'
                   : 'bg-[var(--bf-surface)] text-[var(--bf-muted)]',
             ].join(' ')}
           >
@@ -181,7 +181,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
               >
                 <p className="font-semibold text-[var(--bf-ink)]">{item.name}</p>
                 <p className="mt-1 text-[12px] text-[var(--bf-muted)]">{item.description}</p>
-                <p className="mt-2 text-[11px] font-semibold text-[var(--bf-primary)]">
+                <p className="mt-2 text-[11px] font-semibold text-[var(--bf-ink)]">
                   {item.duration}
                 </p>
               </button>
@@ -239,7 +239,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                   className={[
                     'rounded-2xl border px-3 py-3 text-sm font-semibold transition-colors',
                     date === iso
-                      ? 'border-[var(--bf-primary)] bg-[var(--bf-primary-soft)] text-[var(--bf-primary)]'
+                      ? 'border-[var(--bf-primary)] bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]'
                       : 'border-[var(--bf-border)] text-[var(--bf-ink)] hover:bg-[var(--bf-surface)]',
                   ].join(' ')}
                 >
@@ -258,7 +258,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
 
             {availability?.workingHours ? (
               <div className="flex flex-wrap items-center gap-2 rounded-2xl bf-neo-inset px-4 py-3 text-sm text-[var(--bf-ink)]">
-                <Clock3 className="h-4 w-4 text-[var(--bf-primary)]" />
+                <Clock3 className="h-4 w-4 text-[var(--bf-ink)]" />
                 <span>
                   Available {availability.workingHours.start} – {availability.workingHours.end}
                 </span>
@@ -293,7 +293,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                   {availability.freeRanges.map((range) => (
                     <span
                       key={`${range.start}-${range.end}`}
-                      className="rounded-full bg-[var(--bf-primary-soft)] px-3 py-1.5 text-[12px] font-medium text-[var(--bf-primary)]"
+                      className="rounded-full bg-[var(--bf-primary-soft)] px-3 py-1.5 text-[12px] font-medium text-[var(--bf-ink)]"
                     >
                       {range.start}–{range.end}
                     </span>
@@ -303,7 +303,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
             ) : null}
 
             {availability?.message ? (
-              <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-sm text-[var(--bf-primary)]">
+              <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-sm text-[var(--bf-ink)]">
                 {availability.message}
               </p>
             ) : null}
@@ -320,7 +320,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                   className={[
                     'rounded-2xl border px-3 py-3 text-sm font-semibold transition-colors',
                     time === slot
-                      ? 'border-[var(--bf-primary)] bg-[var(--bf-primary-soft)] text-[var(--bf-primary)]'
+                      ? 'border-[var(--bf-primary)] bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]'
                       : 'border-[var(--bf-border)] text-[var(--bf-ink)] hover:bg-[var(--bf-surface)]',
                   ].join(' ')}
                 >
@@ -351,7 +351,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
             <ReviewRow label="Time" value={time} />
             <ReviewRow label="Duration" value={service?.duration} />
             {step === 5 ? (
-              <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-[var(--bf-primary)]">
+              <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-[var(--bf-ink)]">
                 Confirm to book this slot. Overlaps and blocked times are rejected automatically.
               </p>
             ) : null}
