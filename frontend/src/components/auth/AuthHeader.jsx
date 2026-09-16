@@ -32,7 +32,7 @@ export default function AuthHeader({
             to={backTo}
             className="hidden text-sm font-medium text-[var(--bf-muted)] transition-colors hover:text-[var(--bf-primary)] sm:inline-flex"
           >
-            {backLabel}
+            
           </Link>
         </div>
 
