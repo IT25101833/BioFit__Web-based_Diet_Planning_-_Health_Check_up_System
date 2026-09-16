@@ -43,6 +43,7 @@ export default function CreateSupportTicket() {
     event.preventDefault()
     if (!validate()) return
     setSubmitting(true)
+    setToast('')
     try {
       const created = await createClientSupportTicket({
         subject: form.subject.trim(),
@@ -53,6 +54,8 @@ export default function CreateSupportTicket() {
       })
       setToast('Support ticket submitted.')
       window.setTimeout(() => navigate(`/client/support/${created.id}`), 700)
+    } catch (err) {
+      setToast(err?.message || 'Could not submit the ticket. Please try again.')
     } finally {
       setSubmitting(false)
     }
