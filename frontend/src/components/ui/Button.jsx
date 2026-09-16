@@ -2,11 +2,11 @@ import { Link } from 'react-router-dom'
 
 const variants = {
   primary:
-    'bg-primary text-on-primary hover:bg-primary-hover shadow-ambient',
+    'bg-primary text-on-primary hover:bg-primary-hover border border-transparent shadow-ambient',
   secondary:
     'bg-lavender text-on-lavender hover:bg-lavender-hover',
   mint:
-    'bg-accent-soft text-on-secondary-container hover:bg-accent-muted/40',
+    'bg-accent-soft text-on-secondary hover:bg-secondary-container',
   outline:
     'bg-surface text-primary border border-outline-variant hover:border-primary hover:bg-primary-container',
   ghost:
