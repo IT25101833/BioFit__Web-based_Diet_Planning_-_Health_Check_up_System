@@ -1,4 +1,4 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
 export function formatMedicalDate(iso) {
   if (!iso) return '—'
   const date = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`)
@@ -452,12 +452,12 @@ function toListItem(record) {
 }
 
 export async function fetchHealthRecords() {
-  if (USE_MOCK) { await delay(); return store.map((r) => toListItem(r)) }
+  if (shouldUseMockData()) { await delay(); return store.map((r) => toListItem(r)) }
   return apiRequest('/api/medical/health-records')
 }
 
 export async function fetchHealthRecordById(id) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay()
     const found = store.find((r) => r.id === id)
     if (!found) throw new Error('Not found')
@@ -468,7 +468,7 @@ export async function fetchHealthRecordById(id) {
 }
 
 export async function createHealthRecord(payload) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     const created = { id: `hr-${Date.now()}`, ...payload }
     store = [created, ...store]
@@ -478,7 +478,7 @@ export async function createHealthRecord(payload) {
 }
 
 export async function updateHealthRecord(id, payload) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     store = store.map((r) => (r.id === id ? { ...r, ...payload } : r))
     return structuredClone(store.find((r) => r.id === id))

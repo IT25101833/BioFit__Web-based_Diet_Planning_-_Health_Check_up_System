@@ -51,6 +51,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         if (userRepository.count() == 0) {
             seedUsers();
         }
+        seedMedicalPortalClients();
         if (healthProfileRepository.count() == 0) {
             seedClientHealth();
         }
@@ -119,6 +120,109 @@ public class DemoDataSeeder implements ApplicationRunner {
 
         log.info("Seeded {} BioFit demo users (password: Demo123!)", seeds.size());
     }
+
+    private void seedMedicalPortalClients() {
+        Role clientRole =
+                roleRepository
+                        .findByName(RoleName.CLIENT)
+                        .orElseThrow(() -> new IllegalStateException("Missing role CLIENT"));
+        String hash = passwordEncoder.encode("Demo123!");
+        List<MedicalClientSeed> seeds =
+                List.of(
+                        new MedicalClientSeed(
+                                "alex.perera@biofit.demo",
+                                "Alex",
+                                "Perera",
+                                "BF-C1024",
+                                "Weight Management Programme"),
+                        new MedicalClientSeed(
+                                "nimali.silva@biofit.demo",
+                                "Nimali",
+                                "Silva",
+                                "BF-C1095",
+                                "Health Monitoring Pathway"),
+                        new MedicalClientSeed(
+                                "sahan.desilva@biofit.demo",
+                                "Sahan",
+                                "De Silva",
+                                "BF-C1088",
+                                "Complete Wellness Programme"),
+                        new MedicalClientSeed(
+                                "dilani.fernando@biofit.demo",
+                                "Dilani",
+                                "Fernando",
+                                "BF-C1110",
+                                "Weight Management Programme"),
+                        new MedicalClientSeed(
+                                "taylor.kim@biofit.demo",
+                                "Taylor",
+                                "Kim",
+                                "BF-C1102",
+                                "Health Monitoring Pathway"),
+                        new MedicalClientSeed(
+                                "kasuni.abeysekara@biofit.demo",
+                                "Kasuni",
+                                "Abeysekara",
+                                "BF-C1201",
+                                "Complete Wellness Programme"));
+
+        int created = 0;
+        for (MedicalClientSeed seed : seeds) {
+            User user =
+                    userRepository
+                            .findByEmailIgnoreCaseAndDeletedAtIsNull(seed.email())
+                            .orElseGet(
+                                    () -> {
+                                        User createdUser = new User();
+                                        createdUser.setEmail(seed.email());
+                                        createdUser.setPasswordHash(hash);
+                                        createdUser.setFirstName(seed.firstName());
+                                        createdUser.setLastName(seed.lastName());
+                                        createdUser.setStatus(UserStatus.ACTIVE);
+                                        createdUser.setEmailVerified(true);
+                                        createdUser.setRoles(Set.of(clientRole));
+                                        return userRepository.save(createdUser);
+                                    });
+
+            HealthProfile profile =
+                    healthProfileRepository
+                            .findByUserId(user.getId())
+                            .orElseGet(
+                                    () -> {
+                                        HealthProfile createdProfile = new HealthProfile();
+                                        createdProfile.setUserId(user.getId());
+                                        createdProfile.setMedicalRecordStatus("Up to Date");
+                                        return createdProfile;
+                                    });
+            boolean dirty = profile.getId() == null;
+            if (profile.getClientCode() == null || !seed.clientCode().equals(profile.getClientCode())) {
+                profile.setClientCode(seed.clientCode());
+                dirty = true;
+            }
+            if (profile.getProgrammeLabel() == null || profile.getProgrammeLabel().isBlank()) {
+                profile.setProgrammeLabel(seed.programme());
+                dirty = true;
+            }
+            if (profile.getAssignedCoach() == null) {
+                profile.setAssignedCoach("Daniel Perera");
+                dirty = true;
+            }
+            if (profile.getAssignedNutrition() == null) {
+                profile.setAssignedNutrition("Maya Fernando");
+                dirty = true;
+            }
+            if (dirty) {
+                healthProfileRepository.save(profile);
+                created += 1;
+            }
+        }
+        if (created > 0) {
+            log.info("Ensured {} medical portal demo clients/profiles", created);
+        }
+    }
+
+    private record MedicalClientSeed(
+            String email, String firstName, String lastName, String clientCode, String programme) {}
 
     private void seedClientHealth() {
         User client =

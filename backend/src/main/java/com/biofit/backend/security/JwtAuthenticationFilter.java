@@ -44,12 +44,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             UserPrincipal principal =
                     (UserPrincipal) userDetailsService.loadUserByUsername(claims.get("email", String.class));
-            @SuppressWarnings("unchecked")
-            List<String> roles = claims.get("roles", List.class);
-            var authorities =
-                    roles == null
-                            ? principal.getAuthorities()
-                            : roles.stream().map(r -> new SimpleGrantedAuthority("ROLE_" + r)).toList();
+            // Always trust DB roles for authorization (JWT role claims can be empty/mismatched).
+            var authorities = principal.getAuthorities();
+            if (authorities == null || authorities.isEmpty()) {
+                @SuppressWarnings("unchecked")
+                List<String> roles = claims.get("roles", List.class);
+                if (roles != null && !roles.isEmpty()) {
+                    authorities =
+                            roles.stream()
+                                    .map(String::valueOf)
+                                    .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r)
+                                    .map(SimpleGrantedAuthority::new)
+                                    .toList();
+                }
+            }
 
             var authentication =
                     new UsernamePasswordAuthenticationToken(principal, null, authorities);
