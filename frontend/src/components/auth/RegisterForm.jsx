@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
-  CalendarDays,
   Check,
   Circle,
   Eye,
@@ -387,9 +386,6 @@ export default function RegisterForm() {
               onChange={(e) => updateField('dateOfBirth', e.target.value)}
               error={errors.dateOfBirth}
               footNote="Age is automatically computed for your biometric baseline."
-              rightSlot={
-                <CalendarDays className="h-4 w-4 text-outline" strokeWidth={2} />
-              }
             />
             <Select
               id="reg-gender"
