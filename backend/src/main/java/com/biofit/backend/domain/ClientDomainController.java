@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -23,6 +24,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class ClientDomainController {
 
     private final DomainService domainService;
+    private final BookingAvailabilityService bookingAvailabilityService;
+
+    @GetMapping("/booking/catalog")
+    public ApiResponse<Map<String, Object>> bookingCatalog(
+            @RequestParam(defaultValue = "CLIENT") String audience) {
+        return ApiResponse.ok(bookingAvailabilityService.bookingCatalog(audience));
+    }
+
+    @GetMapping("/booking/availability")
+    public ApiResponse<Map<String, Object>> bookingAvailability(
+            @RequestParam String professionalId,
+            @RequestParam String date,
+            @RequestParam(defaultValue = "45 min") String duration) {
+        return ApiResponse.ok(bookingAvailabilityService.dayAvailability(professionalId, date, duration));
+    }
 
     @GetMapping("/programmes")
     public ApiResponse<List<Map<String, Object>>> programmes(@AuthenticationPrincipal UserPrincipal principal) {

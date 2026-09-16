@@ -1,6 +1,8 @@
 import {
   Bell,
+  CalendarClock,
   CalendarDays,
+  CalendarPlus,
   ClipboardPlus,
   FileHeart,
   LayoutDashboard,
@@ -20,6 +22,8 @@ const navItems = [
   { label: 'Health Assessments', to: '/medical/assessments', icon: ClipboardPlus },
   { label: 'Health Risk Alerts', to: '/medical/health-alerts', icon: ShieldAlert },
   { label: 'Appointments', to: '/medical/appointments', icon: CalendarDays },
+  { label: 'My Availability', to: '/medical/availability', icon: CalendarClock },
+  { label: 'Book Manager', to: '/medical/book-appointment', icon: CalendarPlus },
   { label: 'Notifications', to: '/medical/notifications', icon: Bell },
 ]
 

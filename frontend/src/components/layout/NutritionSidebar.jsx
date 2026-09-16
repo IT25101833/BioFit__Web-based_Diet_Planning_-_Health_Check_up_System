@@ -1,6 +1,8 @@
 import {
   Bell,
+  CalendarClock,
   CalendarDays,
+  CalendarPlus,
   ChartColumn,
   LayoutDashboard,
   Leaf,
@@ -22,6 +24,8 @@ const navItems = [
   { label: 'Dietary Restrictions', to: '/nutrition/dietary-restrictions', icon: ShieldAlert },
   { label: 'Nutrition Progress', to: '/nutrition/progress', icon: ChartColumn },
   { label: 'Appointments', to: '/nutrition/appointments', icon: CalendarDays },
+  { label: 'My Availability', to: '/nutrition/availability', icon: CalendarClock },
+  { label: 'Book Manager', to: '/nutrition/book-appointment', icon: CalendarPlus },
   { label: 'Notifications', to: '/nutrition/notifications', icon: Bell },
 ]
 

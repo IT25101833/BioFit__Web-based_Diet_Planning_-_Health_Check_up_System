@@ -82,6 +82,16 @@ import ManagerProgrammeDetailsPage from './pages/manager/ManagerProgrammeDetails
 import ManagerProgrammesPage from './pages/manager/ManagerProgrammesPage'
 import ManagerReportsPage from './pages/manager/ManagerReportsPage'
 import ManagerStaffSchedulingPage from './pages/manager/ManagerStaffSchedulingPage'
+import ManagerAvailabilityPage from './pages/manager/ManagerAvailabilityPage'
+import CoachAvailabilityPage from './pages/coach/CoachAvailabilityPage'
+import CoachBookAppointmentPage from './pages/coach/CoachBookAppointmentPage'
+import MedicalAvailabilityPage from './pages/medical/MedicalAvailabilityPage'
+import MedicalBookAppointmentPage from './pages/medical/MedicalBookAppointmentPage'
+import NutritionAvailabilityPage from './pages/nutrition/NutritionAvailabilityPage'
+import NutritionBookAppointmentPage from './pages/nutrition/NutritionBookAppointmentPage'
+import SupportAvailabilityPage from './pages/support/SupportAvailabilityPage'
+import SupportBookAppointmentPage from './pages/support/SupportBookAppointmentPage'
+import BookingAlertListener from './features/booking/BookingAlertListener'
 import RegisterPage from './pages/RegisterPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import SupportDashboardPage from './pages/support/SupportDashboardPage'
@@ -115,6 +125,7 @@ function guard(roles, element) {
 function App() {
   return (
     <BrowserRouter>
+      <BookingAlertListener />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/services" element={<ServicesPage />} />
@@ -160,6 +171,7 @@ function App() {
         <Route path="/manager/programmes/:id/edit" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerEditProgrammePage />)} />
         <Route path="/manager/programmes/:id" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerProgrammeDetailsPage />)} />
         <Route path="/manager/staff-scheduling" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerStaffSchedulingPage />)} />
+        <Route path="/manager/availability" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerAvailabilityPage />)} />
         <Route path="/manager/enrolments" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerEnrolmentsPage />)} />
         <Route path="/manager/reports" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerReportsPage />)} />
         <Route path="/manager/notifications" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerNotificationsPage />)} />
@@ -182,6 +194,8 @@ function App() {
         <Route path="/coach/progress" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachProgressPage />)} />
         <Route path="/coach/progress/:clientId" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachClientProgressPage />)} />
         <Route path="/coach/notifications" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachNotificationsPage />)} />
+        <Route path="/coach/availability" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAvailabilityPage />)} />
+        <Route path="/coach/book-appointment" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachBookAppointmentPage />)} />
         <Route path="/coach/profile" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachProfilePage />)} />
 
         {/* Phase 4 — Nutrition Consultant portal */}
@@ -196,6 +210,8 @@ function App() {
         <Route path="/nutrition/progress" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionProgressPage />)} />
         <Route path="/nutrition/progress/:clientId" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionClientProgressPage />)} />
         <Route path="/nutrition/appointments" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionAppointmentsPage />)} />
+        <Route path="/nutrition/availability" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionAvailabilityPage />)} />
+        <Route path="/nutrition/book-appointment" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionBookAppointmentPage />)} />
         <Route path="/nutrition/notifications" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionNotificationsPage />)} />
         <Route path="/nutrition/profile" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionProfilePage />)} />
 
@@ -212,6 +228,8 @@ function App() {
         <Route path="/medical/health-alerts/create" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalCreateHealthAlertPage />)} />
         <Route path="/medical/health-alerts/:id" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalHealthAlertDetailsPage />)} />
         <Route path="/medical/appointments" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalAppointmentsPage />)} />
+        <Route path="/medical/availability" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalAvailabilityPage />)} />
+        <Route path="/medical/book-appointment" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalBookAppointmentPage />)} />
         <Route path="/medical/notifications" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalNotificationsPage />)} />
         <Route path="/medical/profile" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalProfilePage />)} />
 
@@ -223,6 +241,8 @@ function App() {
         <Route path="/support/tickets/:id/resolve" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportResolveTicketPage />)} />
         <Route path="/support/inquiries" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportInquiriesPage />)} />
         <Route path="/support/feedback" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportFeedbackPage />)} />
+        <Route path="/support/availability" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportAvailabilityPage />)} />
+        <Route path="/support/book-appointment" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportBookAppointmentPage />)} />
         <Route path="/support/notifications" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportNotificationsPage />)} />
         <Route path="/support/profile" element={guard(['CUSTOMER_EXPERIENCE_OFFICER', 'ADMIN'], <SupportProfilePage />)} />
 

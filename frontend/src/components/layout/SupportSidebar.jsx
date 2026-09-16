@@ -1,5 +1,7 @@
 import {
   Bell,
+  CalendarClock,
+  CalendarPlus,
   ClipboardList,
   Inbox,
   LayoutDashboard,
@@ -20,6 +22,8 @@ const navItems = [
   { label: 'Ticket Queue', to: '/support/ticket-queue', icon: Inbox },
   { label: 'Client Inquiries', to: '/support/inquiries', icon: MessageSquareText },
   { label: 'Feedback & Complaints', to: '/support/feedback', icon: ClipboardList },
+  { label: 'My Availability', to: '/support/availability', icon: CalendarClock },
+  { label: 'Book Manager', to: '/support/book-appointment', icon: CalendarPlus },
   { label: 'Notifications', to: '/support/notifications', icon: Bell },
 ]
 

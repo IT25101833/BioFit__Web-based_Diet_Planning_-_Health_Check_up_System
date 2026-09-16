@@ -1,5 +1,7 @@
 import {
   Bell,
+  CalendarClock,
+  CalendarPlus,
   ChartColumn,
   ClipboardCheck,
   Dumbbell,
@@ -22,6 +24,8 @@ const navItems = [
   { label: 'Workout Plans', to: '/coach/workout-plans', icon: Dumbbell },
   { label: 'Fitness Assessments', to: '/coach/assessments', icon: ClipboardCheck },
   { label: 'Progress Tracking', to: '/coach/progress', icon: ChartColumn },
+  { label: 'My Availability', to: '/coach/availability', icon: CalendarClock },
+  { label: 'Book Manager', to: '/coach/book-appointment', icon: CalendarPlus },
   { label: 'Notifications', to: '/coach/notifications', icon: Bell },
 ]
 

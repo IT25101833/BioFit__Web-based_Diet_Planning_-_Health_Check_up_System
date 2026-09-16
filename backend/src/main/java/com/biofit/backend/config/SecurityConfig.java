@@ -74,6 +74,15 @@ public class SecurityConfig {
                                         .hasAnyRole("NUTRITION_CONSULTANT", "ADMIN")
                                         .requestMatchers("/api/support/**")
                                         .hasAnyRole("CUSTOMER_EXPERIENCE_OFFICER", "ADMIN")
+                                        .requestMatchers("/api/staff/**")
+                                        .hasAnyRole(
+                                                "WELLNESS_CENTRE_MANAGER",
+                                                "FITNESS_COACH",
+                                                "NUTRITION_CONSULTANT",
+                                                "MEDICAL_ADVISOR",
+                                                "CUSTOMER_EXPERIENCE_OFFICER",
+                                                "DIGITAL_OPERATIONS_EXECUTIVE",
+                                                "ADMIN")
                                         .requestMatchers("/api/**")
                                         .authenticated()
                                         .anyRequest()

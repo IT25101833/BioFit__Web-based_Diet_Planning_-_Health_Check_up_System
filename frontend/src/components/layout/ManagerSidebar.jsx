@@ -1,6 +1,7 @@
 import {
   Activity,
   Bell,
+  CalendarClock,
   CalendarDays,
   ChartColumn,
   LayoutDashboard,
@@ -18,6 +19,7 @@ const navItems = [
   { label: 'Dashboard', to: '/manager/dashboard', icon: LayoutDashboard },
   { label: 'Wellness Programmes', to: '/manager/programmes', icon: Activity },
   { label: 'Staff Scheduling', to: '/manager/staff-scheduling', icon: CalendarDays },
+  { label: 'Availability', to: '/manager/availability', icon: CalendarClock },
   { label: 'Enrolments', to: '/manager/enrolments', icon: Users },
   { label: 'Reports', to: '/manager/reports', icon: ChartColumn },
   { label: 'Notifications', to: '/manager/notifications', icon: Bell },

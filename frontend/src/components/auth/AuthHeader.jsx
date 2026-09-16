@@ -2,6 +2,7 @@ import { Leaf } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Button from '../ui/Button'
 import Container from '../ui/Container'
+import ThemeToggle from '../ui/ThemeToggle'
 
 export default function AuthHeader({
   prompt = 'Already have an account?',
@@ -11,39 +12,40 @@ export default function AuthHeader({
   backTo = '/',
 }) {
   return (
-    <header className="border-b border-[#e8ecf1] bg-white/95 backdrop-blur-md">
+    <header className="bf-topbar backdrop-blur-md">
       <Container className="flex h-16 items-center justify-between gap-4 lg:h-[72px]">
         <div className="flex items-center gap-4 sm:gap-6">
           <Link to="/" className="inline-flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#005a40] text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--bf-primary)] text-white shadow-[var(--bf-shadow-out)]">
               <Leaf className="h-4 w-4" strokeWidth={2.4} />
             </span>
             <span className="leading-tight">
-              <span className="block font-display text-xl font-bold tracking-tight text-[#111827]">
+              <span className="block font-display text-xl font-bold tracking-tight text-[var(--bf-ink)]">
                 BioFit
               </span>
-              <span className="hidden text-[9px] font-semibold tracking-[0.14em] text-[#005a40] uppercase sm:block">
+              <span className="hidden text-[9px] font-semibold tracking-[0.14em] text-[var(--bf-primary)] uppercase sm:block">
                 VitalLife Wellness
               </span>
             </span>
           </Link>
           <Link
             to={backTo}
-            className="hidden text-sm font-medium text-[#6b7280] transition-colors hover:text-[#005a40] sm:inline-flex"
+            className="hidden text-sm font-medium text-[var(--bf-muted)] transition-colors hover:text-[var(--bf-primary)] sm:inline-flex"
           >
             {backLabel}
           </Link>
         </div>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           {prompt ? (
-            <p className="hidden text-sm text-[#6b7280] md:block">{prompt}</p>
+            <p className="hidden text-sm text-[var(--bf-muted)] md:block">{prompt}</p>
           ) : null}
           <Button
             to={actionTo}
             variant="outline"
             size="sm"
-            className="rounded-full !border-[#cfd8e3] !px-5 !text-[#005a40] hover:!border-[#005a40] hover:!bg-[#e6f5f0]"
+            className="rounded-full !border-[var(--bf-border)] !px-5 !text-[var(--bf-primary)] hover:!bg-[var(--bf-primary-soft)]"
           >
             {actionLabel}
           </Button>

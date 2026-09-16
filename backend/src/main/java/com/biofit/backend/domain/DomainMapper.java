@@ -72,6 +72,8 @@ public class DomainMapper {
         m.put("serviceType", a.getServiceType());
         m.put("type", a.getServiceType());
         m.put("professional", a.getProfessional());
+        m.put("professionalUserId", a.getProfessionalUserId());
+        m.put("professionalId", a.getProfessionalUserId() == null ? null : "user-" + a.getProfessionalUserId());
         m.put("professionalRole", a.getProfessionalRole());
         m.put("programme", a.getProgramme());
         m.put("date", str(a.getAppointmentDate()));

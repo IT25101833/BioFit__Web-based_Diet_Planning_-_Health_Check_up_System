@@ -33,6 +33,7 @@ public class DomainService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final DomainMapper mapper;
+    private final BookingAvailabilityService bookingAvailabilityService;
 
     /* ---------- Client ---------- */
 
@@ -99,6 +100,15 @@ public class DomainService {
     @Transactional
     public Map<String, Object> createClientAppointment(Long userId, Map<String, Object> payload) {
         User user = userRepository.findById(userId).orElseThrow();
+        String professionalId = str(payload.get("professionalId"));
+        LocalDate date = LocalDate.parse(str(payload.get("date")));
+        String time = str(payload.get("time"));
+        String duration = str(payload.getOrDefault("duration", "45 min"));
+
+        if (professionalId != null && !professionalId.isBlank()) {
+            bookingAvailabilityService.assertSlotAvailable(professionalId, date, time, duration);
+        }
+
         Appointment a = new Appointment();
         a.setId("apt-" + UUID.randomUUID().toString().substring(0, 8));
         a.setClientUserId(userId);
@@ -106,17 +116,38 @@ public class DomainService {
         a.setClientName(user.getFirstName() + " " + user.getLastName());
         a.setServiceType(str(payload.getOrDefault("service", payload.get("serviceType"))));
         a.setProfessional(str(payload.get("professional")));
+        Long professionalUserId = null;
+        if (payload.get("professionalUserId") != null) {
+            professionalUserId = asLong(payload.get("professionalUserId"));
+        } else if (professionalId != null && professionalId.startsWith("user-")) {
+            professionalUserId = asLong(professionalId.substring(5));
+        }
+        a.setProfessionalUserId(professionalUserId);
         a.setProfessionalRole(str(payload.get("professionalRole")));
         a.setProgramme(str(payload.get("programme")));
-        a.setAppointmentDate(LocalDate.parse(str(payload.get("date"))));
-        a.setAppointmentTime(str(payload.get("time")));
-        a.setDuration(str(payload.getOrDefault("duration", "45 min")));
+        a.setAppointmentDate(date);
+        a.setAppointmentTime(time);
+        a.setDuration(duration);
         a.setStatus("Upcoming");
         a.setBookingReference("BF-APT-" + (10000 + (int) (Math.random() * 90000)));
         a.setNotes(str(payload.get("notes")));
         a.setLocation(str(payload.getOrDefault("location", "VitalLife Wellness Centre")));
-        a.setAudience("CLIENT");
+        a.setAudience(nullTo(str(payload.get("audience")), "CLIENT"));
         appointmentRepository.save(a);
+
+        bookingAvailabilityService.notifyProfessional(
+                professionalUserId,
+                "New appointment booked",
+                a.getClientName()
+                        + " booked "
+                        + a.getServiceType()
+                        + " on "
+                        + a.getAppointmentDate()
+                        + " at "
+                        + a.getAppointmentTime()
+                        + ".",
+                "/notifications");
+
         return mapper.appointmentMap(a);
     }
 
@@ -1665,6 +1696,16 @@ public class DomainService {
             return Integer.parseInt(String.valueOf(o));
         } catch (Exception e) {
             return fallback;
+        }
+    }
+
+    private static Long asLong(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number n) return n.longValue();
+        try {
+            return Long.parseLong(String.valueOf(o));
+        } catch (Exception e) {
+            return null;
         }
     }
 }

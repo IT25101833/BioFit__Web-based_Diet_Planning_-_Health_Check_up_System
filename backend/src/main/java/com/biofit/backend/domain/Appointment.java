@@ -21,6 +21,7 @@ public class Appointment {
     private String clientName;
     private String serviceType;
     private String professional;
+    private Long professionalUserId;
     private String professionalRole;
     private String programme;
     private LocalDate appointmentDate;
