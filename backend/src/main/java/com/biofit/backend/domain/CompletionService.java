@@ -71,18 +71,26 @@ public class CompletionService {
         a.setClientCode(str(body.getOrDefault("clientId", "BF-C" + userId)));
         a.setTitle(str(body.getOrDefault("type", body.getOrDefault("title", "Health assessment"))));
         a.setAssessmentType(str(body.getOrDefault("type", "General")));
-        a.setStatus(str(body.getOrDefault("status", "Completed")));
         a.setAdvisorName(str(body.getOrDefault("advisor", "Medical Advisor")));
         a.setFollowUpRequired(Boolean.TRUE.equals(body.get("followUpRequired")));
-        a.setRelatedAlertId(str(body.get("relatedAlertId")));
+        String status = str(body.get("status"));
+        if (isBlank(status)) {
+            status = Boolean.TRUE.equals(a.getFollowUpRequired()) ? "Follow-up Required" : "Completed";
+        }
+        a.setStatus(status);
+        a.setRelatedAlertId(isBlank(body.get("relatedAlertId")) ? null : str(body.get("relatedAlertId")));
         a.setProfessionalNotes(str(body.get("professionalNotes")));
         a.setSummary(str(body.getOrDefault("summary", a.getProfessionalNotes())));
         a.setObservationsJson(mapper.toJson(body.getOrDefault("observations", Map.of())));
-        if (body.get("date") != null) {
-            a.setAssessedAt(LocalDate.parse(str(body.get("date"))).atStartOfDay().toInstant(ZoneOffset.UTC));
+        Instant assessedAt = parseOptionalDate(body.get("date"));
+        if (assessedAt != null) {
+            a.setAssessedAt(assessedAt);
         }
-        if (body.get("nextReview") != null) {
-            a.setNextReviewAt(LocalDate.parse(str(body.get("nextReview"))).atStartOfDay().toInstant(ZoneOffset.UTC));
+        if (body.containsKey("nextReview")) {
+            a.setNextReviewAt(parseOptionalDate(body.get("nextReview")));
+        }
+        if (isBlank(a.getTitle())) {
+            a.setTitle(isBlank(a.getAssessmentType()) ? "Health assessment" : a.getAssessmentType());
         }
         healthAssessmentRepository.save(a);
         return mapMedicalAssessment(a);
@@ -117,8 +125,9 @@ public class CompletionService {
         alert.setAssignedAdvisor(str(body.getOrDefault("assignedAdvisor", "Elena Costa")));
         alert.setRelatedAssessmentId(str(body.get("relatedAssessmentId")));
         if (alert.getDateRaised() == null) alert.setDateRaised(Instant.now());
-        if (body.get("followUpDate") != null) {
-            alert.setFollowUpAt(LocalDate.parse(str(body.get("followUpDate"))).atStartOfDay().toInstant(ZoneOffset.UTC));
+        Instant followUpAt = parseOptionalDate(body.get("followUpDate"));
+        if (followUpAt != null || (body.containsKey("followUpDate") && isBlank(body.get("followUpDate")))) {
+            alert.setFollowUpAt(followUpAt);
         }
         Map<String, Object> details = new LinkedHashMap<>();
         if (body.get("followUp") != null) details.put("followUp", body.get("followUp"));
@@ -190,21 +199,41 @@ public class CompletionService {
 
     @Transactional
     public Map<String, Object> saveHealthRecord(Long id, Map<String, Object> body) {
-        HealthProfile profile =
-                id == null
-                        ? new HealthProfile()
-                        : healthProfileRepository.findById(id).orElse(new HealthProfile());
         Long userId = resolveUserId(body);
+        HealthProfile profile;
+        if (id != null) {
+            profile =
+                    healthProfileRepository
+                            .findById(id)
+                            .orElseThrow(() -> new ApiException("NOT_FOUND", "Record not found", HttpStatus.NOT_FOUND));
+        } else {
+            // One medical record per client — create or update by user.
+            profile = healthProfileRepository.findByUserId(userId).orElseGet(HealthProfile::new);
+        }
         profile.setUserId(userId);
         profile.setClientCode(str(body.getOrDefault("clientId", "BF-C" + userId)));
-        profile.setProgrammeLabel(str(body.get("programme")));
-        profile.setAssignedCoach(str(body.get("assignedCoach")));
-        profile.setAssignedNutrition(str(body.get("assignedNutrition")));
-        profile.setMedicalRecordStatus(str(body.getOrDefault("recordStatus", "Current")));
+        if (!isBlank(body.get("programme"))) {
+            profile.setProgrammeLabel(str(body.get("programme")));
+        }
+        if (body.containsKey("assignedCoach")) {
+            profile.setAssignedCoach(str(body.get("assignedCoach")));
+        }
+        if (body.containsKey("assignedNutrition")) {
+            profile.setAssignedNutrition(str(body.get("assignedNutrition")));
+        }
+        String recordStatus = str(body.getOrDefault("recordStatus", body.get("reviewStatus")));
+        if (isBlank(recordStatus)) {
+            recordStatus = Boolean.TRUE.equals(body.get("followUpRequired")) ? "Review Required" : "Up to Date";
+        }
+        profile.setMedicalRecordStatus(recordStatus);
         profile.setRecordJson(mapper.toJson(body));
-        if (body.get("nextCheckup") != null) {
-            profile.setNextCheckupAt(
-                    LocalDate.parse(str(body.get("nextCheckup"))).atStartOfDay().toInstant(ZoneOffset.UTC));
+        if (body.containsKey("nextCheckup") || body.containsKey("nextReviewDate")) {
+            Instant next =
+                    parseOptionalDate(
+                            body.containsKey("nextCheckup") && !isBlank(body.get("nextCheckup"))
+                                    ? body.get("nextCheckup")
+                                    : body.get("nextReviewDate"));
+            profile.setNextCheckupAt(next);
         }
         healthProfileRepository.save(profile);
         return mapRecordListItem(profile);
@@ -778,19 +807,99 @@ public class CompletionService {
     }
 
     private Long resolveUserId(Map<String, Object> body) {
-        if (body.get("userId") instanceof Number n) return n.longValue();
-        if (body.get("clientUserId") instanceof Number n) return n.longValue();
+        Long fromNumber = asExistingUserId(body.get("userId"));
+        if (fromNumber != null) return fromNumber;
+        fromNumber = asExistingUserId(body.get("clientUserId"));
+        if (fromNumber != null) return fromNumber;
+
         String clientId = str(body.get("clientId"));
-        if (clientId != null && clientId.startsWith("BF-C")) {
-            try {
-                return Long.parseLong(clientId.substring(4));
-            } catch (Exception ignored) {
+        if (!isBlank(clientId)) {
+            Long fromProfile =
+                    healthProfileRepository.findAll().stream()
+                            .filter(p -> clientId.equalsIgnoreCase(p.getClientCode()))
+                            .map(HealthProfile::getUserId)
+                            .filter(id -> id != null && userRepository.existsById(id))
+                            .findFirst()
+                            .orElse(null);
+            if (fromProfile != null) return fromProfile;
+
+            String mappedEmail = DEMO_CLIENT_EMAILS.get(clientId.toUpperCase());
+            if (mappedEmail != null) {
+                Long fromEmail =
+                        userRepository
+                                .findByEmailIgnoreCaseAndDeletedAtIsNull(mappedEmail)
+                                .map(User::getId)
+                                .orElse(null);
+                if (fromEmail != null) return fromEmail;
+            }
+
+            if (clientId.regionMatches(true, 0, "BF-C", 0, 4)) {
+                try {
+                    Long parsed = Long.parseLong(clientId.substring(4).trim());
+                    if (userRepository.existsById(parsed)) return parsed;
+                } catch (Exception ignored) {
+                    // Demo UI codes like BF-C1024 are not database user ids.
+                }
             }
         }
+
+        String name = str(body.get("clientName"));
+        if (!isBlank(name)) {
+            String cleaned = name.replaceAll("\\s*\\(.*\\)$", "").trim();
+            Long fromName =
+                    userRepository.findAll().stream()
+                            .filter(u -> u.getDeletedAt() == null)
+                            .filter(u -> cleaned.equalsIgnoreCase(u.getFullName()))
+                            .map(User::getId)
+                            .findFirst()
+                            .orElse(null);
+            if (fromName != null) return fromName;
+        }
+
         return userRepository
                 .findByEmailIgnoreCaseAndDeletedAtIsNull("client@biofit.demo")
                 .map(User::getId)
                 .orElseThrow(() -> new ApiException("NOT_FOUND", "Client not found", HttpStatus.NOT_FOUND));
+    }
+
+    private static final Map<String, String> DEMO_CLIENT_EMAILS =
+            Map.of(
+                    "BF-C1024", "alex.perera@biofit.demo",
+                    "BF-C1095", "nimali.silva@biofit.demo",
+                    "BF-C1088", "sahan.desilva@biofit.demo",
+                    "BF-C1110", "dilani.fernando@biofit.demo",
+                    "BF-C1102", "taylor.kim@biofit.demo",
+                    "BF-C1201", "kasuni.abeysekara@biofit.demo");
+
+    private Long asExistingUserId(Object value) {
+        if (value instanceof Number n) {
+            long id = n.longValue();
+            return userRepository.existsById(id) ? id : null;
+        }
+        if (value instanceof String s && !s.isBlank()) {
+            try {
+                long id = Long.parseLong(s.trim());
+                return userRepository.existsById(id) ? id : null;
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Instant parseOptionalDate(Object value) {
+        if (isBlank(value)) return null;
+        try {
+            return LocalDate.parse(str(value).trim()).atStartOfDay().toInstant(ZoneOffset.UTC);
+        } catch (Exception ex) {
+            throw new ApiException("VALIDATION_ERROR", "Invalid date: " + value, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private static boolean isBlank(Object value) {
+        if (value == null) return true;
+        String s = String.valueOf(value).trim();
+        return s.isEmpty() || "null".equalsIgnoreCase(s);
     }
 
     private String clientName(Long userId) {

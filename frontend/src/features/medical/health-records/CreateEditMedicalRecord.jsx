@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { USE_MOCK, shouldUseMockData } from '../../../api/client'
 import ErrorState from '../../../components/ui/ErrorState'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
@@ -10,6 +11,7 @@ import {
   clientOptions,
   createHealthRecord,
   fetchHealthRecordById,
+  fetchHealthRecords,
   updateHealthRecord,
 } from './data/healthRecordData'
 
@@ -17,11 +19,39 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
   const navigate = useNavigate()
   const { id } = useParams()
   const [initial, setInitial] = useState(null)
+  const [clients, setClients] = useState(clientOptions)
   const [loading, setLoading] = useState(mode === 'edit')
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
+
+  useEffect(() => {
+    async function loadClients() {
+      if (shouldUseMockData()) {
+        setClients(clientOptions)
+        return
+      }
+      try {
+        const records = await fetchHealthRecords()
+        const fromRecords = (Array.isArray(records) ? records : [])
+          .map((r) => ({
+            value: r.clientId,
+            label: `${r.clientName || 'Client'} (${r.clientId})`,
+            programme: r.programme || '',
+          }))
+          .filter((c) => c.value)
+        const merged = [...fromRecords]
+        for (const option of clientOptions) {
+          if (!merged.some((c) => c.value === option.value)) merged.push(option)
+        }
+        setClients(merged.length ? merged : clientOptions)
+      } catch {
+        setClients(clientOptions)
+      }
+    }
+    loadClients()
+  }, [])
 
   useEffect(() => {
     if (mode !== 'edit') return
@@ -49,8 +79,12 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
           : await createHealthRecord(payload)
       setToast(mode === 'edit' ? 'Medical record updated.' : 'Medical record saved.')
       window.setTimeout(() => navigate(`/medical/health-records/${saved.id}`), 650)
-    } catch {
-      setFormError('We couldn’t save this medical record. Your entries are still on the form.')
+    } catch (err) {
+      setFormError(
+        err?.message
+          ? `We couldn’t save this medical record: ${err.message}`
+          : 'We couldn’t save this medical record. Your entries are still on the form.',
+      )
     } finally {
       setSaving(false)
     }
@@ -71,7 +105,7 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
       <MedicalRecordForm
         mode={mode}
         initialValues={initial}
-        clients={clientOptions}
+        clients={clients}
         saving={saving}
         formError={formError}
         onCancel={() => navigate('/medical/health-records')}

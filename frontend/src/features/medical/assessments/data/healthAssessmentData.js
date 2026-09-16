@@ -1,4 +1,4 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
 let store = [
   {
     id: 'ha-1',
@@ -186,12 +186,12 @@ export function getAssessmentSummaryStats(list = store) {
 }
 
 export async function fetchAssessments() {
-  if (USE_MOCK) { await delay(); return store.map((a) => structuredClone(a)) }
+  if (shouldUseMockData()) { await delay(); return store.map((a) => structuredClone(a)) }
   return apiRequest('/api/medical/assessments')
 }
 
 export async function fetchAssessmentById(id) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay()
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -201,7 +201,7 @@ export async function fetchAssessmentById(id) {
 }
 
 export async function createAssessment(payload) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     const created = { id: `ha-${Date.now()}`, ...payload }
     store = [created, ...store]
@@ -211,7 +211,7 @@ export async function createAssessment(payload) {
 }
 
 export async function updateAssessment(id, payload) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     store = store.map((a) => (a.id === id ? { ...a, ...payload } : a))
     return structuredClone(store.find((a) => a.id === id))

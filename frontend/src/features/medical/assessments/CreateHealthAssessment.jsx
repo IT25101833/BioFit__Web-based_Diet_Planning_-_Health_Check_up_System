@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { USE_MOCK, shouldUseMockData } from '../../../api/client'
 import ErrorState from '../../../components/ui/ErrorState'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { clientOptions } from '../health-records/data/healthRecordData'
+import { clientOptions, fetchHealthRecords } from '../health-records/data/healthRecordData'
 import HealthAssessmentForm from './components/HealthAssessmentForm'
 import {
   createAssessment,
@@ -21,11 +22,39 @@ export default function CreateHealthAssessment({ mode: modeProp = 'create' }) {
   const mode = editId ? 'edit' : modeProp
   const preselectedClientId = new URLSearchParams(location.search).get('client') || ''
   const [initial, setInitial] = useState(null)
+  const [clients, setClients] = useState(clientOptions)
   const [loading, setLoading] = useState(Boolean(editId))
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
+
+  useEffect(() => {
+    async function loadClients() {
+      if (shouldUseMockData()) {
+        setClients(clientOptions)
+        return
+      }
+      try {
+        const records = await fetchHealthRecords()
+        const fromRecords = (Array.isArray(records) ? records : [])
+          .map((r) => ({
+            value: r.clientId,
+            label: `${r.clientName || 'Client'} (${r.clientId})`,
+            programme: r.programme || '',
+          }))
+          .filter((c) => c.value)
+        if (fromRecords.length) {
+          setClients(fromRecords)
+          return
+        }
+      } catch {
+        // Fall back to demo options; backend will map unknown codes to demo client.
+      }
+      setClients(clientOptions)
+    }
+    loadClients()
+  }, [])
 
   useEffect(() => {
     if (editId) {
@@ -44,7 +73,7 @@ export default function CreateHealthAssessment({ mode: modeProp = 'create' }) {
       return
     }
     if (preselectedClientId) {
-      const match = clientOptions.find((c) => c.value === preselectedClientId)
+      const match = clients.find((c) => c.value === preselectedClientId)
       if (match) {
         setInitial({
           clientId: match.value,
@@ -52,7 +81,7 @@ export default function CreateHealthAssessment({ mode: modeProp = 'create' }) {
         })
       }
     }
-  }, [editId, preselectedClientId])
+  }, [editId, preselectedClientId, clients])
 
   async function handleSubmit(payload) {
     setSaving(true)
@@ -64,8 +93,12 @@ export default function CreateHealthAssessment({ mode: modeProp = 'create' }) {
           : await createAssessment(payload)
       setToast(mode === 'edit' ? 'Assessment updated.' : 'Assessment saved.')
       window.setTimeout(() => navigate(`/medical/assessments/${saved.id}`), 650)
-    } catch {
-      setFormError('We couldn’t save this assessment. Your entries are still on the form.')
+    } catch (err) {
+      setFormError(
+        err?.message
+          ? `We couldn’t save this assessment: ${err.message}`
+          : 'We couldn’t save this assessment. Your entries are still on the form.',
+      )
     } finally {
       setSaving(false)
     }
@@ -84,7 +117,7 @@ export default function CreateHealthAssessment({ mode: modeProp = 'create' }) {
       <HealthAssessmentForm
         mode={mode}
         initialValues={initial}
-        clients={clientOptions}
+        clients={clients}
         saving={saving}
         formError={formError}
         onCancel={() => navigate('/medical/assessments')}
