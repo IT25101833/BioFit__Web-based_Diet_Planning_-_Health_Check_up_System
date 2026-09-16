@@ -79,25 +79,30 @@ export default function HealthAssessmentForm({
     event.preventDefault()
     if (!validate()) return
     const selected = options.find((c) => c.value === form.clientId)
-    await onSubmit?.({
+    const payload = {
       clientId: form.clientId,
       clientName:
         selected?.label?.split(' (')[0] || form.clientName || selected?.label || '',
       date: form.date,
       type: form.type,
-      professionalNotes: form.professionalNotes,
+      professionalNotes: form.professionalNotes || '',
       followUpRequired: form.followUpRequired,
-      nextReview: form.nextReview,
       alertRequired: form.alertRequired,
       guidanceRequired: form.guidanceRequired,
+      status: form.followUpRequired ? 'Follow-up Required' : 'Completed',
+      advisor: 'Elena Costa',
       observations: {
-        general: form.general,
-        concerns: form.concerns,
-        restrictions: form.restrictions,
-        allergyReview: form.allergyReview,
-        safety: form.safety,
+        general: form.general || '',
+        concerns: form.concerns || '',
+        restrictions: form.restrictions || '',
+        allergyReview: form.allergyReview || '',
+        safety: form.safety || '',
       },
-    })
+    }
+    if (form.nextReview) {
+      payload.nextReview = form.nextReview
+    }
+    await onSubmit?.(payload)
   }
 
   return (

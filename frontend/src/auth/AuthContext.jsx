@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import {
   clearTokens,
   getAccessToken,
+  isMockAccessToken,
+  USE_MOCK,
 } from './../api/client'
 import {
   fetchMe,
@@ -21,7 +23,17 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false
     async function bootstrap() {
-      if (!getAccessToken()) {
+      const token = getAccessToken()
+      if (!token) {
+        if (!cancelled) {
+          setUser(null)
+          setLoading(false)
+        }
+        return
+      }
+      // Live API mode cannot use leftover mock sessions from earlier demos.
+      if (!USE_MOCK && isMockAccessToken(token)) {
+        clearTokens()
         if (!cancelled) {
           setUser(null)
           setLoading(false)

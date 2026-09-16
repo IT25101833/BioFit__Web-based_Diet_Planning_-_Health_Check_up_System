@@ -96,9 +96,10 @@ export default function MedicalRecordForm({
   async function handleSubmit(event) {
     event.preventDefault()
     if (!validate()) return
-    await onSubmit?.({
+    const payload = {
       clientId: form.clientId,
-      clientName: selectedClient?.label || form.clientName,
+      clientName:
+        selectedClient?.label?.replace(/\s*\(.*\)$/, '') || form.clientName || selectedClient?.label || '',
       programme: selectedClient?.programme || form.programme,
       medicalHistory: {
         conditions: textToList(form.conditions),
@@ -107,17 +108,21 @@ export default function MedicalRecordForm({
         previousNotes: textToList(form.medicalNotes),
         summary: form.previousHistory,
       },
-      professionalNotes: form.professionalNotes,
+      professionalNotes: form.professionalNotes || '',
       followUpRequired: form.followUpRequired,
-      nextReviewDate: form.nextReviewDate,
-      nextCheckup: form.nextReviewDate,
       guidanceRequired: form.guidanceRequired,
+      recordStatus: form.followUpRequired ? 'Review Required' : 'Up to Date',
       wellnessGuidance: {
-        fitness: form.fitnessGuidance,
-        nutrition: form.nutritionGuidance,
+        fitness: form.fitnessGuidance || '',
+        nutrition: form.nutritionGuidance || '',
         status: form.guidanceRequired ? 'Update Required' : 'Current',
       },
-    })
+    }
+    if (form.nextReviewDate) {
+      payload.nextReviewDate = form.nextReviewDate
+      payload.nextCheckup = form.nextReviewDate
+    }
+    await onSubmit?.(payload)
   }
 
   return (

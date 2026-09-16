@@ -1,52 +1,48 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Leaf } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
-const LOGOUT_MS = 5000
+const LOGOUT_SECONDS = 5
 
 export default function LogoutPage() {
   const navigate = useNavigate()
   const { logout } = useAuth()
-  const [secondsLeft, setSecondsLeft] = useState(5)
-  const started = useRef(false)
+  const [secondsLeft, setSecondsLeft] = useState(LOGOUT_SECONDS)
 
   useEffect(() => {
-    if (started.current) return
-    started.current = true
-
     let cancelled = false
+    let remaining = LOGOUT_SECONDS
 
-    async function run() {
-      try {
-        await logout()
-      } catch {
-        // Continue to login even if API logout fails
-      }
-    }
+    logout().catch(() => {
+      // Continue to login even if API logout fails
+    })
 
-    run()
-
-    const tick = setInterval(() => {
-      if (!cancelled) setSecondsLeft((s) => Math.max(0, s - 1))
+    const tick = window.setInterval(() => {
+      remaining -= 1
+      if (cancelled) return
+      setSecondsLeft(Math.max(0, remaining))
+      if (remaining <= 0) window.clearInterval(tick)
     }, 1000)
 
-    const done = setTimeout(() => {
+    const done = window.setTimeout(() => {
       if (!cancelled) navigate('/login', { replace: true })
-    }, LOGOUT_MS)
+    }, LOGOUT_SECONDS * 1000)
 
     return () => {
       cancelled = true
-      clearInterval(tick)
-      clearTimeout(done)
+      window.clearInterval(tick)
+      window.clearTimeout(done)
     }
-    // Run once on mount only
+    // Mount once: restarting on auth identity changes would reset the countdown.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const progress = ((LOGOUT_SECONDS - secondsLeft) / LOGOUT_SECONDS) * 100
+
   return (
-    <div className="flex min-h-svh items-center justify-center bg-[#f4f7f6] px-4">
-      <div className="w-full max-w-md rounded-[1.5rem] border border-[#e8ecf1] bg-white px-8 py-10 text-center shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+    <div className="grid min-h-svh w-full place-items-center bg-[#f4f7f6] px-4 py-8">
+      <div className="w-[min(100%,28rem)] rounded-[1.5rem] border border-[#e8ecf1] bg-white px-8 py-10 text-center shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
         <span className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#005a40] text-white">
           <Leaf className="h-5 w-5" strokeWidth={2.4} />
         </span>
@@ -60,7 +56,7 @@ export default function LogoutPage() {
         <div className="mx-auto mt-6 h-1.5 w-full max-w-[220px] overflow-hidden rounded-full bg-[#eef2f0]">
           <div
             className="h-full rounded-full bg-[#005a40] transition-[width] duration-1000 ease-linear"
-            style={{ width: `${((5 - secondsLeft) / 5) * 100}%` }}
+            style={{ width: `${progress}%` }}
           />
         </div>
         <p className="mt-3 text-xs font-semibold tracking-wide text-[#005a40] uppercase">

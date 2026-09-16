@@ -22,6 +22,21 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY)
 }
 
+/** True when the stored token is a frontend mock session, not a real JWT. */
+export function isMockAccessToken(token = getAccessToken()) {
+  const value = String(token || '')
+  return !value || value.startsWith('mock-')
+}
+
+/**
+ * Prefer live API only when mocks are disabled AND a real JWT is present.
+ * Prevents 403s from leftover mock tokens after switching VITE_USE_MOCK=false.
+ */
+export function shouldUseMockData() {
+  if (USE_MOCK) return true
+  return isMockAccessToken()
+}
+
 export class ApiError extends Error {
   constructor(message, { status, code } = {}) {
     super(message)
@@ -49,6 +64,14 @@ export async function apiRequest(path, options = {}) {
   const token = getAccessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
+  if (!USE_MOCK && token && isMockAccessToken(token)) {
+    clearTokens()
+    throw new ApiError('Please sign in again with your medical advisor account.', {
+      status: 401,
+      code: 'MOCK_TOKEN',
+    })
+  }
+
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers,
@@ -62,7 +85,7 @@ export async function apiRequest(path, options = {}) {
       (response.status === 401
         ? 'Please sign in again.'
         : response.status === 403
-          ? 'You do not have permission to do that.'
+          ? 'You do not have permission to do that. Sign out and sign in as medical@biofit.demo.'
           : 'Something went wrong. Please try again.')
     throw new ApiError(message, {
       status: response.status,
