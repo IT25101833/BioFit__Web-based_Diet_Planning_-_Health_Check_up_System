@@ -280,25 +280,25 @@ public class DomainService {
         t.setClientId("BF-C" + userId);
         t.setClientName(user.getFirstName() + " " + user.getLastName());
         t.setSubject(str(payload.get("subject")));
-        t.setCategory(str(payload.getOrDefault("category", "General")));
-        t.setPriority(str(payload.getOrDefault("priority", "Medium")));
+        t.setCategory(nullTo(str(payload.get("category")), "General"));
+        t.setPriority(nullTo(str(payload.get("priority")), "Medium"));
         t.setStatus("Open");
         t.setAssignedTo("Support Desk");
-        t.setRelatedService(str(payload.getOrDefault("relatedService", "General")));
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(
-                Map.of(
-                        "id",
-                        "msg-1",
-                        "from",
-                        "client",
-                        "author",
-                        t.getClientName(),
-                        "body",
-                        str(payload.getOrDefault("message", payload.get("body"))),
-                        "at",
-                        Instant.now().toString()));
-        t.setMessagesJson(mapper.toJson(messages));
+        t.setRelatedService(nullTo(str(payload.get("relatedService")), "General"));
+        String messageBody = firstNonBlank(
+                str(payload.get("description")),
+                str(payload.get("message")),
+                str(payload.get("body")));
+        Map<String, Object> firstMessage = new LinkedHashMap<>();
+        firstMessage.put("id", "msg-1");
+        firstMessage.put("from", "client");
+        firstMessage.put("role", "client");
+        firstMessage.put("author", "You");
+        firstMessage.put("body", messageBody == null ? "" : messageBody);
+        firstMessage.put("at", Instant.now().toString());
+        t.setMessagesJson(mapper.toJson(List.of(firstMessage)));
+        t.setCreatedAt(Instant.now());
+        t.setUpdatedAt(Instant.now());
         supportTicketRepository.save(t);
         return mapper.ticketSummary(t);
     }
@@ -1656,6 +1656,14 @@ public class DomainService {
 
     private static String nullTo(String v, String fallback) {
         return v == null || v.isBlank() ? fallback : v;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null && !value.isBlank()) return value;
+        }
+        return null;
     }
 
     private static int asInt(Object o, int fallback) {
