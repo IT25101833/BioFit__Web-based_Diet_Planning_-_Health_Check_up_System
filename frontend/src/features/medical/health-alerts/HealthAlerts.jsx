@@ -3,6 +3,7 @@ import { Plus, ShieldAlert } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog'
 import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
 import FilterTabs from '../../../components/ui/FilterTabs'
@@ -12,9 +13,10 @@ import SearchBar from '../../../components/ui/SearchBar'
 import Select from '../../../components/ui/Select'
 import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
 import { clientOptions, formatMedicalDate } from '../health-records/data/healthRecordData'
-import { fetchHealthAlerts } from './data/healthAlertData'
+import { deactivateHealthAlert, fetchHealthAlerts } from './data/healthAlertData'
 
 const tabs = [
   { value: 'all', label: 'All Alerts' },
@@ -38,6 +40,8 @@ export default function HealthAlerts() {
   const [programme, setProgramme] = useState('')
   const [followUpStatus, setFollowUpStatus] = useState('')
   const [sort, setSort] = useState('recent')
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [toast, setToast] = useState('')
 
   async function load() {
     setLoading(true)
@@ -110,6 +114,14 @@ export default function HealthAlerts() {
     () => [...new Set(clientOptions.map((c) => c.programme))].filter(Boolean),
     [],
   )
+
+  async function handleDeactivate() {
+    if (!deactivateTarget) return
+    await deactivateHealthAlert(deactivateTarget.id)
+    setDeactivateTarget(null)
+    setToast('Alert marked inactive (soft delete).')
+    await load()
+  }
 
   if (loading) return <LoadingSkeleton rows={5} />
   if (error) {
@@ -256,6 +268,14 @@ export default function HealthAlerts() {
                             label: item.status === 'Open' ? 'Review' : 'Continue Review',
                             onClick: () => navigate(`/medical/health-alerts/${item.id}`),
                           },
+                          ...(item.active !== false
+                            ? [
+                                {
+                                  label: 'Mark Inactive',
+                                  onClick: () => setDeactivateTarget(item),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>
@@ -266,6 +286,18 @@ export default function HealthAlerts() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deactivateTarget)}
+        onClose={() => setDeactivateTarget(null)}
+        onConfirm={handleDeactivate}
+        title="Mark alert inactive?"
+        description="This soft-deletes the health risk alert. The record stays in the database and is hidden from the active alert list."
+        confirmLabel="Mark Inactive"
+        tone="danger"
+      />
+
+      <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
 }

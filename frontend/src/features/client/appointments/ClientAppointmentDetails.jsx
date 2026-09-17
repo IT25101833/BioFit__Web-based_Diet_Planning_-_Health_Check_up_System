@@ -12,7 +12,9 @@ import Toast from '../../../components/ui/Toast'
 import {
   cancelClientAppointment,
   fetchClientAppointmentById,
-  formatAppointmentDate,
+  formatAppointmentDateLong,
+  formatAppointmentTimeRange,
+  formatDurationLabel,
 } from './data/appointmentData'
 
 export default function ClientAppointmentDetails() {
@@ -21,6 +23,7 @@ export default function ClientAppointmentDetails() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [toast, setToast] = useState('')
 
   async function load() {
@@ -41,10 +44,17 @@ export default function ClientAppointmentDetails() {
   }, [id])
 
   async function handleCancel() {
-    await cancelClientAppointment(id)
-    setAppointment((prev) => ({ ...prev, status: 'Cancelled' }))
-    setCancelOpen(false)
-    setToast('Appointment cancelled.')
+    setCancelling(true)
+    try {
+      await cancelClientAppointment(id)
+      setAppointment((prev) => ({ ...prev, status: 'Cancelled' }))
+      setCancelOpen(false)
+      setToast('Appointment cancelled successfully.')
+    } catch (err) {
+      setToast(err?.message || 'Unable to cancel this appointment.')
+    } finally {
+      setCancelling(false)
+    }
   }
 
   if (loading) return <LoadingSkeleton rows={3} />
@@ -57,7 +67,7 @@ export default function ClientAppointmentDetails() {
     )
   }
 
-  const canModify = appointment.status === 'Upcoming'
+  const canModify = String(appointment.status).toLowerCase() === 'upcoming'
 
   return (
     <div>
@@ -73,23 +83,25 @@ export default function ClientAppointmentDetails() {
 
       <PageHeader
         title={appointment.service}
-        description={`Booking reference ${appointment.bookingReference}`}
+        description={`Booking reference ${appointment.bookingReference || '—'}`}
         actions={<StatusBadge status={appointment.status} />}
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <SectionCard title="Appointment details" className="lg:col-span-2">
-          <DetailRow label="Type" value={appointment.service} />
-          <DetailRow label="Date" value={formatAppointmentDate(appointment.date)} />
-          <DetailRow label="Time" value={appointment.time} />
+          <DetailRow label="Service" value={appointment.service} />
           <DetailRow label="Professional" value={appointment.professional} />
           <DetailRow label="Role" value={appointment.professionalRole} />
-          <DetailRow label="Location" value={appointment.location} />
+          <DetailRow label="Date" value={formatAppointmentDateLong(appointment.date)} />
+          <DetailRow label="Time" value={formatAppointmentTimeRange(appointment)} />
+          <DetailRow label="Duration" value={formatDurationLabel(appointment.duration)} />
+          <DetailRow label="Status" value={appointment.status} />
+          <DetailRow label="Location" value={appointment.location || '—'} />
         </SectionCard>
 
         <SectionCard title="Notes & instructions">
           <p className="text-sm leading-relaxed text-[#4b5563]">
-            {appointment.notes}
+            {appointment.notes || 'No additional notes for this appointment.'}
           </p>
         </SectionCard>
       </div>
@@ -105,17 +117,17 @@ export default function ClientAppointmentDetails() {
         {canModify ? (
           <>
             <Button
-              to="/client/appointments/book"
+              to={`/client/appointments/${appointment.id}/reschedule`}
               variant="outline"
               className="!border-[#005a40]/25 !text-[#005a40]"
             >
-              Reschedule
+              Reschedule Appointment
             </Button>
             <Button
               onClick={() => setCancelOpen(true)}
               className="!bg-[#fff7ed] !text-[#b45309] hover:!bg-[#ffedd5]"
             >
-              Cancel
+              Cancel Appointment
             </Button>
           </>
         ) : null}
@@ -123,26 +135,28 @@ export default function ClientAppointmentDetails() {
 
       <Modal
         open={cancelOpen}
-        onClose={() => setCancelOpen(false)}
-        title="Cancel appointment?"
-        description="You can book another time whenever you are ready."
+        onClose={() => !cancelling && setCancelOpen(false)}
+        title="Cancel this appointment?"
+        description="Are you sure you want to cancel this booking?"
         footer={
           <>
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>
-              Keep appointment
+            <Button variant="outline" disabled={cancelling} onClick={() => setCancelOpen(false)}>
+              Keep Appointment
             </Button>
             <Button
+              disabled={cancelling}
               onClick={handleCancel}
               className="!bg-[#b45309] !text-white hover:!bg-[#92400e]"
             >
-              Confirm cancel
+              {cancelling ? 'Cancelling…' : 'Cancel Appointment'}
             </Button>
           </>
         }
       >
         <p className="text-sm text-[#4b5563]">
-          This will cancel your {appointment.service} on{' '}
-          {formatAppointmentDate(appointment.date)} at {appointment.time}.
+          Are you sure you want to cancel your {appointment.service} appointment on{' '}
+          {formatAppointmentDateLong(appointment.date)} at{' '}
+          {formatAppointmentTimeRange(appointment)}?
         </p>
       </Modal>
 

@@ -1,6 +1,5 @@
 package com.biofit.backend.health;
 
-import jakarta.persistence.Lob;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -12,12 +11,14 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "health_risk_alerts")
+@Table(name = "safety_validations")
 @Getter
 @Setter
-public class HealthRiskAlert {
+public class SafetyValidation {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,48 +27,37 @@ public class HealthRiskAlert {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(nullable = false, length = 200)
-    private String title;
-
-    @Column(nullable = false, length = 40)
-    private String status = "Monitoring";
-
-    @Column(length = 2000)
-    private String guidance;
-
-    @Column(name = "date_raised", nullable = false)
-    private Instant dateRaised;
-
-    @Column(name = "follow_up_at")
-    private Instant followUpAt;
-
     @Column(name = "client_code", length = 40)
     private String clientCode;
 
     @Column(name = "client_name", length = 120)
     private String clientName;
 
-    @Column(length = 40)
-    private String priority = "Medium";
+    @Column(name = "reference_type", length = 40)
+    private String referenceType;
 
-    @Column(length = 2000)
-    private String reason;
+    @Column(name = "reference_id", length = 80)
+    private String referenceId;
 
-    @Column(name = "assigned_advisor", length = 120)
-    private String assignedAdvisor;
+    @Column(name = "result_status", nullable = false, length = 40)
+    private String resultStatus;
 
-    @Column(name = "related_assessment_id", length = 40)
-    private String relatedAssessmentId;
+    /** Matches NVARCHAR(MAX) on SQL Server and large text on H2. */
+    @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
+    @Column(name = "warnings_json")
+    private String warningsJson;
 
-    @Lob
-    @Column(name = "details_json")
-    private String detailsJson;
+    @Column(name = "advisor_notes", length = 2000)
+    private String advisorNotes;
 
-    @Column(name = "is_active", nullable = false)
-    private boolean active = true;
+    @Column(name = "validated_by_user_id")
+    private Long validatedByUserId;
 
-    @Column(name = "deleted_at")
-    private Instant deletedAt;
+    @Column(name = "validated_by_name", length = 120)
+    private String validatedByName;
+
+    @Column(name = "validated_at", nullable = false)
+    private Instant validatedAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -80,6 +70,7 @@ public class HealthRiskAlert {
         Instant now = Instant.now();
         createdAt = now;
         updatedAt = now;
+        if (validatedAt == null) validatedAt = now;
     }
 
     @PreUpdate

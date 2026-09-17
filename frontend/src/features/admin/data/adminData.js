@@ -90,3 +90,110 @@ export async function fetchAdminAuditLogs() {
   }
   return apiRequest('/api/admin/audit-logs')
 }
+
+/** GET /api/admin/erasure-requests */
+export async function fetchErasureRequests() {
+  if (USE_MOCK) {
+    await delay()
+    return mockErasureRequests.map((r) => ({ ...r }))
+  }
+  return apiRequest('/api/admin/erasure-requests')
+}
+
+/** POST /api/admin/erasure-requests */
+export async function createErasureRequest(payload) {
+  if (USE_MOCK) {
+    await delay(400)
+    const created = {
+      id: mockErasureSeq++,
+      recordType: payload.recordType,
+      recordId: Number(payload.recordId),
+      clientUserId: Number(payload.clientUserId) || null,
+      legalBasis: payload.legalBasis,
+      reason: payload.reason,
+      status: 'PENDING',
+      requestedByUserId: 1,
+      requestedAt: new Date().toISOString(),
+      reviewedByUserId: null,
+      reviewedAt: null,
+      reviewNotes: null,
+      executedByUserId: null,
+      executedAt: null,
+    }
+    mockErasureRequests = [created, ...mockErasureRequests]
+    return { ...created }
+  }
+  return apiRequest('/api/admin/erasure-requests', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** PATCH /api/admin/erasure-requests/{id}/approve */
+export async function approveErasureRequest(id, payload = {}) {
+  if (USE_MOCK) {
+    await delay(350)
+    mockErasureRequests = mockErasureRequests.map((r) =>
+      String(r.id) === String(id)
+        ? {
+            ...r,
+            status: 'APPROVED',
+            reviewedByUserId: 2,
+            reviewedAt: new Date().toISOString(),
+            reviewNotes: payload.reviewNotes || '',
+          }
+        : r,
+    )
+    return { ...mockErasureRequests.find((r) => String(r.id) === String(id)) }
+  }
+  return apiRequest(`/api/admin/erasure-requests/${id}/approve`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** PATCH /api/admin/erasure-requests/{id}/reject */
+export async function rejectErasureRequest(id, payload = {}) {
+  if (USE_MOCK) {
+    await delay(350)
+    mockErasureRequests = mockErasureRequests.map((r) =>
+      String(r.id) === String(id)
+        ? {
+            ...r,
+            status: 'REJECTED',
+            reviewedByUserId: 2,
+            reviewedAt: new Date().toISOString(),
+            reviewNotes: payload.reviewNotes || '',
+          }
+        : r,
+    )
+    return { ...mockErasureRequests.find((r) => String(r.id) === String(id)) }
+  }
+  return apiRequest(`/api/admin/erasure-requests/${id}/reject`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** POST /api/admin/erasure-requests/{id}/execute */
+export async function executeErasureRequest(id) {
+  if (USE_MOCK) {
+    await delay(400)
+    mockErasureRequests = mockErasureRequests.map((r) =>
+      String(r.id) === String(id)
+        ? {
+            ...r,
+            status: 'EXECUTED',
+            executedByUserId: 2,
+            executedAt: new Date().toISOString(),
+          }
+        : r,
+    )
+    return { ...mockErasureRequests.find((r) => String(r.id) === String(id)) }
+  }
+  return apiRequest(`/api/admin/erasure-requests/${id}/execute`, { method: 'POST' })
+}
+
+let mockErasureSeq = 1
+let mockErasureRequests = []
+

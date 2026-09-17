@@ -105,6 +105,8 @@ public class DomainService {
         String time = str(payload.get("time"));
         String duration = str(payload.getOrDefault("duration", "45 min"));
 
+        assertAppointmentDateNotPast(date);
+
         if (professionalId != null && !professionalId.isBlank()) {
             bookingAvailabilityService.assertSlotAvailable(professionalId, date, time, duration);
         }
@@ -157,10 +159,88 @@ public class DomainService {
                 appointmentRepository
                         .findByIdAndClientUserId(id, userId)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
+        if ("Cancelled".equalsIgnoreCase(a.getStatus())) {
+            return Map.of("id", id, "status", "Cancelled");
+        }
         a.setStatus("Cancelled");
         a.setUpdatedAt(Instant.now());
         appointmentRepository.save(a);
         return Map.of("id", id, "status", "Cancelled");
+    }
+
+    @Transactional
+    public Map<String, Object> rescheduleClientAppointment(Long userId, String id, Map<String, Object> payload) {
+        Appointment a =
+                appointmentRepository
+                        .findByIdAndClientUserId(id, userId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
+        if ("Cancelled".equalsIgnoreCase(a.getStatus())) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "Cancelled appointments cannot be rescheduled", HttpStatus.BAD_REQUEST);
+        }
+        if ("Completed".equalsIgnoreCase(a.getStatus())) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "Completed appointments cannot be rescheduled", HttpStatus.BAD_REQUEST);
+        }
+
+        String dateStr = str(payload.get("date"));
+        String time = str(payload.get("time"));
+        if (isBlank(dateStr) || isBlank(time)) {
+            throw new ApiException("VALIDATION_ERROR", "New date and time are required", HttpStatus.BAD_REQUEST);
+        }
+        LocalDate date = LocalDate.parse(dateStr);
+        assertAppointmentDateNotPast(date);
+        String duration = nullTo(str(payload.get("duration")), a.getDuration());
+        if (isBlank(duration)) duration = "45 min";
+
+        String professionalId = str(payload.get("professionalId"));
+        if (isBlank(professionalId) && a.getProfessionalUserId() != null) {
+            professionalId = "user-" + a.getProfessionalUserId();
+        }
+        if (isBlank(professionalId) && !isBlank(a.getProfessional())) {
+            Long matched =
+                    userRepository.findAll().stream()
+                            .filter(u -> u.getDeletedAt() == null)
+                            .filter(
+                                    u ->
+                                            (u.getFirstName() + " " + u.getLastName())
+                                                    .equalsIgnoreCase(a.getProfessional()))
+                            .map(User::getId)
+                            .findFirst()
+                            .orElse(null);
+            if (matched != null) {
+                professionalId = "user-" + matched;
+                a.setProfessionalUserId(matched);
+            }
+        }
+        if (isBlank(professionalId)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR", "Professional is required to reschedule", HttpStatus.BAD_REQUEST);
+        }
+
+        bookingAvailabilityService.assertSlotAvailable(professionalId, date, time, duration, a.getId());
+
+        a.setAppointmentDate(date);
+        a.setAppointmentTime(time);
+        a.setDuration(duration);
+        a.setStatus("Upcoming");
+        a.setUpdatedAt(Instant.now());
+        appointmentRepository.save(a);
+
+        bookingAvailabilityService.notifyProfessional(
+                a.getProfessionalUserId(),
+                "Appointment rescheduled",
+                (a.getClientName() == null ? "A client" : a.getClientName())
+                        + " rescheduled "
+                        + a.getServiceType()
+                        + " to "
+                        + a.getAppointmentDate()
+                        + " at "
+                        + a.getAppointmentTime()
+                        + ".",
+                "/notifications");
+
+        return mapper.appointmentMap(a);
     }
 
     public Map<String, Object> clientWorkoutPlan(Long userId) {
@@ -609,9 +689,11 @@ public class DomainService {
 
     @Transactional
     public Map<String, Object> saveSchedule(Map<String, Object> payload) {
+        LocalDate scheduleDate = LocalDate.parse(str(payload.get("date")));
+        assertAppointmentDateNotPast(scheduleDate);
         StaffScheduleEntity s = new StaffScheduleEntity();
         s.setId(str(payload.getOrDefault("id", "sch-" + UUID.randomUUID().toString().substring(0, 8))));
-        s.setScheduleDate(LocalDate.parse(str(payload.get("date"))));
+        s.setScheduleDate(scheduleDate);
         s.setStartTime(str(payload.get("startTime")));
         s.setEndTime(str(payload.get("endTime")));
         s.setStaffId(str(payload.get("staffId")));
@@ -1681,8 +1763,22 @@ public class DomainService {
                         .count();
     }
 
+    private static void assertAppointmentDateNotPast(LocalDate date) {
+        LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
+        if (date.isBefore(today)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Appointment date cannot be in the past.",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private static String str(Object o) {
         return o == null ? null : String.valueOf(o);
+    }
+
+    private static boolean isBlank(String v) {
+        return v == null || v.isBlank();
     }
 
     private static String nullTo(String v, String fallback) {

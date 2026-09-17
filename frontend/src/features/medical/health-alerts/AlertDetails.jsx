@@ -16,9 +16,11 @@ import { formatMedicalDate } from '../health-records/data/healthRecordData'
 import {
   addFollowUp,
   completeFollowUp,
+  deactivateHealthAlert,
   fetchHealthAlertById,
   resolveAlert,
   startAlertReview,
+  updateAlertStatus,
   updateGuidance,
   updateHealthAlert,
 } from './data/healthAlertData'
@@ -34,6 +36,7 @@ export default function AlertDetails() {
   const [savingNotes, setSavingNotes] = useState(false)
   const [startReviewOpen, setStartReviewOpen] = useState(false)
   const [resolveOpen, setResolveOpen] = useState(false)
+  const [deactivateOpen, setDeactivateOpen] = useState(false)
   const [followUpOpen, setFollowUpOpen] = useState(false)
   const [guidanceOpen, setGuidanceOpen] = useState(false)
   const [resolutionNotes, setResolutionNotes] = useState('')
@@ -131,6 +134,15 @@ export default function AlertDetails() {
                 </Button>
               </>
             ) : null}
+            {alert.active !== false ? (
+              <Button
+                variant="outline"
+                className="!border-[#b45309]/30 !text-[#b45309]"
+                onClick={() => setDeactivateOpen(true)}
+              >
+                Mark Inactive
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -157,6 +169,30 @@ export default function AlertDetails() {
             These notes remain restricted to authorized medical workflows.
           </p>
           <p className="mb-3 text-sm text-[#6b7280]">Review status: {alert.status}</p>
+          {alert.status !== 'Resolved' ? (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {['Open', 'Under Review', 'Resolved'].map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={alert.status === status ? 'primary' : 'outline'}
+                  className={
+                    alert.status === status
+                      ? '!bg-[#005a40] !text-white'
+                      : '!text-[#005a40]'
+                  }
+                  onClick={async () => {
+                    const updated = await updateAlertStatus(alert.id, status)
+                    setAlert((prev) => ({ ...prev, ...updated, status }))
+                    setToast(`Alert status updated to ${status}.`)
+                    await load()
+                  }}
+                >
+                  {status}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           <TextArea
             label="Professional notes"
             value={reviewNotes}
@@ -346,6 +382,21 @@ export default function AlertDetails() {
           onChange={(e) => setResolutionNotes(e.target.value)}
         />
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={deactivateOpen}
+        onClose={() => setDeactivateOpen(false)}
+        title="Mark alert inactive?"
+        description="This soft-deletes the health risk alert. The record stays in the database and is hidden from the active alert list."
+        confirmLabel="Mark Inactive"
+        tone="danger"
+        onConfirm={async () => {
+          const updated = await deactivateHealthAlert(alert.id)
+          setAlert(updated)
+          setDeactivateOpen(false)
+          setToast('Alert marked inactive (soft delete).')
+        }}
+      />
 
       <Modal
         open={followUpOpen}

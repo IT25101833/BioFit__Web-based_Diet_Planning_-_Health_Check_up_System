@@ -486,3 +486,21 @@ export async function updateHealthRecord(id, payload) {
   const numeric = String(id).startsWith('hr-') ? String(id).slice(3) : id
   return apiRequest(`/api/medical/health-records/${numeric}`, { method: 'PUT', body: JSON.stringify(payload) })
 }
+
+export async function deactivateHealthRecord(id) {
+  if (shouldUseMockData()) {
+    await delay(350)
+    store = store.map((r) =>
+      String(r.id) === String(id)
+        ? { ...r, active: false, recordStatus: 'Inactive', status: 'Inactive' }
+        : r,
+    )
+    return structuredClone(store.find((r) => String(r.id) === String(id))) || {
+      id,
+      active: false,
+      recordStatus: 'Inactive',
+    }
+  }
+  const numeric = String(id).startsWith('hr-') ? String(id).slice(3) : id
+  return apiRequest(`/api/medical/health-records/${numeric}/deactivate`, { method: 'PATCH' })
+}

@@ -185,9 +185,22 @@ export function getAssessmentSummaryStats(list = store) {
   return counts
 }
 
-export async function fetchAssessments() {
-  if (shouldUseMockData()) { await delay(); return store.map((a) => structuredClone(a)) }
-  return apiRequest('/api/medical/assessments')
+export async function fetchAssessments({ clientUserId } = {}) {
+  if (shouldUseMockData()) {
+    await delay()
+    const all = store.map((a) => structuredClone(a))
+    if (!clientUserId) return all
+    return all.filter(
+      (a) =>
+        String(a.userId) === String(clientUserId) ||
+        String(a.clientId) === String(clientUserId) ||
+        String(a.clientId).replace(/\D+/g, '') === String(clientUserId),
+    )
+  }
+  const params = new URLSearchParams()
+  if (clientUserId) params.set('clientUserId', String(clientUserId))
+  const q = params.toString()
+  return apiRequest(`/api/medical/assessments${q ? `?${q}` : ''}`)
 }
 
 export async function fetchAssessmentById(id) {

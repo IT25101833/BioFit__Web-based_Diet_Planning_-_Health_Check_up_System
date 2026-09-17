@@ -3,6 +3,7 @@ import { FileHeart, Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog'
 import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
@@ -11,8 +12,9 @@ import SearchBar from '../../../components/ui/SearchBar'
 import Select from '../../../components/ui/Select'
 import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { fetchHealthRecords, formatMedicalDate } from './data/healthRecordData'
+import { deactivateHealthRecord, fetchHealthRecords, formatMedicalDate } from './data/healthRecordData'
 
 export default function HealthRecords() {
   const navigate = useNavigate()
@@ -25,6 +27,8 @@ export default function HealthRecords() {
   const [reviewStatus, setReviewStatus] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
   const [followUpFilter, setFollowUpFilter] = useState('')
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [toast, setToast] = useState('')
 
   async function load() {
     setLoading(true)
@@ -232,6 +236,10 @@ export default function HealthRecords() {
                             onClick: () =>
                               navigate(`/medical/health-alerts?client=${record.clientId}`),
                           },
+                          {
+                            label: 'Mark Inactive',
+                            onClick: () => setDeactivateTarget(record),
+                          },
                         ]}
                       />
                     </td>
@@ -242,6 +250,23 @@ export default function HealthRecords() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deactivateTarget)}
+        onClose={() => setDeactivateTarget(null)}
+        title="Mark health record inactive?"
+        description="This soft-deletes the client health record. Data remains in the database and is hidden from the active list."
+        confirmLabel="Mark Inactive"
+        tone="danger"
+        onConfirm={async () => {
+          await deactivateHealthRecord(deactivateTarget.id)
+          setDeactivateTarget(null)
+          setToast('Health record marked inactive.')
+          await load()
+        }}
+      />
+
+      <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
 }

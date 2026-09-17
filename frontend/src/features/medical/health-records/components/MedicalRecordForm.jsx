@@ -40,6 +40,7 @@ export default function MedicalRecordForm({
   mode = 'create',
   initialValues,
   clients,
+  clientsEmptyMessage,
   onSubmit,
   onCancel,
   saving = false,
@@ -47,7 +48,10 @@ export default function MedicalRecordForm({
 }) {
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState({})
-  const options = useMemo(() => clients || clientOptions || [], [clients])
+  const options = useMemo(
+    () => (Array.isArray(clients) ? clients : clientOptions || []),
+    [clients],
+  )
 
   useEffect(() => {
     if (!initialValues) return
@@ -96,7 +100,9 @@ export default function MedicalRecordForm({
   async function handleSubmit(event) {
     event.preventDefault()
     if (!validate()) return
+    const userId = Number(selectedClient?.userId ?? form.clientId)
     const payload = {
+      userId: Number.isFinite(userId) ? userId : undefined,
       clientId: form.clientId,
       clientName:
         selectedClient?.label?.replace(/\s*\(.*\)$/, '') || form.clientName || selectedClient?.label || '',
@@ -135,22 +141,28 @@ export default function MedicalRecordForm({
 
       <SectionCard title="Client">
         {mode === 'create' ? (
-          <Select
-            label="Select client"
-            required
-            value={form.clientId}
-            onChange={(e) => {
-              const next = options.find((c) => c.value === e.target.value)
-              setForm((prev) => ({
-                ...prev,
-                clientId: e.target.value,
-                clientName: next?.label || '',
-                programme: next?.programme || '',
-              }))
-            }}
-            options={options.map(({ value, label }) => ({ value, label }))}
-            error={errors.clientId}
-          />
+          options.length === 0 ? (
+            <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
+              {clientsEmptyMessage || 'No clients with appointments are currently available.'}
+            </p>
+          ) : (
+            <Select
+              label="Select client"
+              required
+              value={form.clientId}
+              onChange={(e) => {
+                const next = options.find((c) => c.value === e.target.value)
+                setForm((prev) => ({
+                  ...prev,
+                  clientId: e.target.value,
+                  clientName: next?.label || '',
+                  programme: next?.programme || '',
+                }))
+              }}
+              options={options.map(({ value, label }) => ({ value, label }))}
+              error={errors.clientId}
+            />
+          )
         ) : (
           <div className="grid gap-3 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] p-4 sm:grid-cols-3">
             <Info label="Name" value={form.clientName || '—'} />
@@ -265,7 +277,7 @@ export default function MedicalRecordForm({
         </Button>
         <Button
           type="submit"
-          disabled={saving}
+          disabled={saving || (mode === 'create' && options.length === 0)}
           className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
         >
           {saving ? 'Saving…' : mode === 'edit' ? 'Save Changes' : 'Save Medical Record'}

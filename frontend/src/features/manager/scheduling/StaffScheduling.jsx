@@ -15,6 +15,12 @@ import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import {
+  PAST_DATE_MESSAGE,
+  isDateBeforeToday,
+  localTodayIso,
+  toLocalIsoDate,
+} from '../../booking/bookingEngine'
+import {
   cancelStaffSchedule,
   fetchStaffSchedules,
   saveStaffSchedule,
@@ -36,7 +42,7 @@ function startOfWeek(date) {
 }
 
 function toIso(date) {
-  return date.toISOString().slice(0, 10)
+  return toLocalIsoDate(date)
 }
 
 function addDays(date, amount) {
@@ -71,8 +77,10 @@ export default function StaffScheduling() {
   const [statusFilter, setStatusFilter] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
+  const [dateError, setDateError] = useState('')
   const [cancelId, setCancelId] = useState('')
   const [toast, setToast] = useState('')
+  const minDate = localTodayIso()
 
   async function load() {
     setLoading(true)
@@ -122,25 +130,42 @@ export default function StaffScheduling() {
   }, [events, visibleDates, roleFilter, staffFilter, serviceFilter, statusFilter])
 
   function openCreate(dateIso) {
-    setForm({ ...emptyForm, date: dateIso || toIso(anchor) })
+    const nextDate = dateIso || toIso(anchor)
+    setForm({
+      ...emptyForm,
+      date: isDateBeforeToday(nextDate) ? minDate : nextDate,
+    })
+    setDateError('')
     setFormOpen(true)
   }
 
   function openEdit(event) {
-    setForm({ ...emptyForm, ...event })
+    const nextDate =
+      event.date && !isDateBeforeToday(event.date) ? event.date : minDate
+    setForm({ ...emptyForm, ...event, date: nextDate })
+    setDateError('')
     setFormOpen(true)
   }
 
   async function handleSave() {
+    if (!form.date || isDateBeforeToday(form.date)) {
+      setDateError(PAST_DATE_MESSAGE)
+      return
+    }
+    setDateError('')
     const member = staff.find((item) => item.id === form.staffId)
-    await saveStaffSchedule({
-      ...form,
-      staffName: member?.name || form.staffName,
-      role: member?.role || form.role,
-    })
-    setFormOpen(false)
-    setToast(form.id ? 'Schedule updated.' : 'Schedule saved.')
-    await load()
+    try {
+      await saveStaffSchedule({
+        ...form,
+        staffName: member?.name || form.staffName,
+        role: member?.role || form.role,
+      })
+      setFormOpen(false)
+      setToast(form.id ? 'Schedule updated.' : 'Schedule saved.')
+      await load()
+    } catch (err) {
+      setDateError(err?.message || PAST_DATE_MESSAGE)
+    }
   }
 
   async function handleCancel() {
@@ -351,7 +376,7 @@ export default function StaffScheduling() {
               disabled={!form.staffId || !form.service || !form.date || !form.startTime}
               className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
             >
-              Save Schedule
+              {form.id ? 'Save Changes' : 'Save Schedule'}
             </Button>
           </>
         }
@@ -381,8 +406,18 @@ export default function StaffScheduling() {
             type="date"
             label="Date"
             required
+            min={minDate}
             value={form.date}
-            onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+            onChange={(e) => {
+              const value = e.target.value
+              setForm((prev) => ({ ...prev, date: value }))
+              if (!value || isDateBeforeToday(value)) {
+                setDateError(PAST_DATE_MESSAGE)
+              } else {
+                setDateError('')
+              }
+            }}
+            error={dateError}
           />
           <Select
             label="Status"

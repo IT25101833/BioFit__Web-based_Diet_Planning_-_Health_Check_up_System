@@ -198,15 +198,59 @@ export function validateBookingSlot({
 
 export function buildUpcomingDates(days = 21, { skipSundays = true } = {}) {
   const dates = []
-  const start = new Date()
-  start.setHours(12, 0, 0, 0)
+  const today = localTodayIso()
+  const start = parseLocalIsoDate(today)
   for (let i = 0; i < days; i += 1) {
     const d = new Date(start)
     d.setDate(start.getDate() + i)
     if (skipSundays && d.getDay() === 0) continue
-    dates.push(d.toISOString().slice(0, 10))
+    dates.push(toLocalIsoDate(d))
   }
   return dates
+}
+
+/** Local calendar date as YYYY-MM-DD (avoids UTC off-by-one). */
+export function toLocalIsoDate(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export function localTodayIso() {
+  return toLocalIsoDate(new Date())
+}
+
+export function parseLocalIsoDate(iso) {
+  if (!iso) return null
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d, 12, 0, 0, 0)
+}
+
+export function isDateBeforeToday(iso, todayIso = localTodayIso()) {
+  if (!iso) return false
+  return String(iso).slice(0, 10) < String(todayIso).slice(0, 10)
+}
+
+export function isDateTodayOrFuture(iso, todayIso = localTodayIso()) {
+  if (!iso) return false
+  return String(iso).slice(0, 10) >= String(todayIso).slice(0, 10)
+}
+
+export const PAST_DATE_MESSAGE =
+  'Please select today or a future date. Past dates are not allowed.'
+
+/** Drop already-passed start times when the selected day is today. */
+export function filterAvailableSlotsForDate(slots, dateIso, now = new Date()) {
+  const list = Array.isArray(slots) ? slots : []
+  if (!dateIso || dateIso !== toLocalIsoDate(now)) return list
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  return list.filter((slot) => {
+    const mins = parseTimeToMinutes(slot)
+    return mins != null && mins > nowMinutes
+  })
 }
 
 /** Default Mon–Sat 09:00–17:00 */

@@ -1,4 +1,4 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
 let store = [
   {
     id: 'HRA-201',
@@ -276,12 +276,12 @@ export function findSimilarActiveAlert(clientId, title) {
 }
 
 export async function fetchHealthAlerts() {
-  if (USE_MOCK) { await delay(); return store.map((a) => structuredClone(a)) }
+  if (shouldUseMockData()) { await delay(); return store.map((a) => structuredClone(a)) }
   return apiRequest('/api/medical/health-alerts')
 }
 
 export async function fetchHealthAlertById(id) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay()
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -291,7 +291,7 @@ export async function fetchHealthAlertById(id) {
 }
 
 export async function createHealthAlert(payload) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     const created = { id: `alert-${Date.now()}`, ...payload }
     store = [created, ...store]
@@ -301,7 +301,7 @@ export async function createHealthAlert(payload) {
 }
 
 export async function updateHealthAlert(id, payload) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     store = store.map((a) => (a.id === id ? { ...a, ...payload } : a))
     return structuredClone(store.find((a) => a.id === id))
@@ -309,8 +309,24 @@ export async function updateHealthAlert(id, payload) {
   return apiRequest(`/api/medical/health-alerts/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
 }
 
+export async function updateAlertStatus(id, status) {
+  if (shouldUseMockData()) {
+    await delay(300)
+    store = store.map((a) =>
+      String(a.id) === String(id)
+        ? { ...a, status, activity: pushActivity(a, `Status updated to ${status}`) }
+        : a,
+    )
+    return structuredClone(store.find((a) => String(a.id) === String(id)))
+  }
+  return apiRequest(`/api/medical/health-alerts/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
 export async function startAlertReview(id, payload = {}) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -321,7 +337,7 @@ export async function startAlertReview(id, payload = {}) {
 }
 
 export async function resolveAlert(id, payload = {}) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -332,7 +348,7 @@ export async function resolveAlert(id, payload = {}) {
 }
 
 export async function addFollowUp(id, payload = {}) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -343,7 +359,7 @@ export async function addFollowUp(id, payload = {}) {
 }
 
 export async function completeFollowUp(id, payload = {}) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -354,7 +370,7 @@ export async function completeFollowUp(id, payload = {}) {
 }
 
 export async function updateGuidance(id, payload = {}) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const found = store.find((a) => a.id === id)
     if (!found) throw new Error('Not found')
@@ -362,4 +378,25 @@ export async function updateGuidance(id, payload = {}) {
     return structuredClone(found)
   }
   return apiRequest(`/api/medical/health-alerts/${id}`, { method: 'PATCH', body: JSON.stringify({ action: 'updateGuidance', ...(typeof payload === 'object' ? payload : {}) }) })
+}
+
+export async function deactivateHealthAlert(id) {
+  if (shouldUseMockData()) {
+    await delay(350)
+    store = store.map((a) =>
+      String(a.id) === String(id)
+        ? {
+            ...a,
+            active: false,
+            status: 'Resolved',
+            deletedAt: new Date().toISOString(),
+            activity: pushActivity(a, 'Alert marked inactive (soft delete).'),
+          }
+        : a,
+    )
+    const found = store.find((a) => String(a.id) === String(id))
+    if (!found) throw new Error('Not found')
+    return structuredClone(found)
+  }
+  return apiRequest(`/api/medical/health-alerts/${id}/deactivate`, { method: 'PATCH' })
 }

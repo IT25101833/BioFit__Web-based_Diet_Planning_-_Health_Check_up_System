@@ -81,6 +81,11 @@ public class BookingAvailabilityService {
     }
 
     public Map<String, Object> dayAvailability(String professionalId, String dateIso, String durationLabel) {
+        return dayAvailability(professionalId, dateIso, durationLabel, null);
+    }
+
+    public Map<String, Object> dayAvailability(
+            String professionalId, String dateIso, String durationLabel, String excludeAppointmentId) {
         LocalDate date = LocalDate.parse(dateIso);
         int duration = parseDuration(durationLabel);
         // Java DayOfWeek Mon=1..Sun=7 → JS-style Sun=0
@@ -107,6 +112,7 @@ public class BookingAvailabilityService {
         }
 
         for (Appointment apt : appointmentRepository.findAll()) {
+            if (excludeAppointmentId != null && excludeAppointmentId.equals(apt.getId())) continue;
             if (apt.getAppointmentDate() == null || !apt.getAppointmentDate().equals(date)) continue;
             if ("Cancelled".equalsIgnoreCase(apt.getStatus())) continue;
             boolean matches =
@@ -127,9 +133,15 @@ public class BookingAvailabilityService {
         }
 
         List<int[]> free = subtract(working, occupied);
+        int nowMinutes = -1;
+        if (date.equals(LocalDate.now(java.time.ZoneId.systemDefault()))) {
+            java.time.LocalTime now = java.time.LocalTime.now(java.time.ZoneId.systemDefault());
+            nowMinutes = now.getHour() * 60 + now.getMinute();
+        }
         List<String> slots = new ArrayList<>();
         for (int[] seg : free) {
             for (int t = seg[0]; t + duration <= seg[1]; t += 30) {
+                if (nowMinutes >= 0 && t <= nowMinutes) continue;
                 slots.add(formatLabel(t));
             }
         }
@@ -158,7 +170,35 @@ public class BookingAvailabilityService {
     }
 
     public void assertSlotAvailable(String professionalId, LocalDate date, String time, String durationLabel) {
-        Map<String, Object> day = dayAvailability(professionalId, date.toString(), durationLabel);
+        assertSlotAvailable(professionalId, date, time, durationLabel, null);
+    }
+
+    public void assertSlotAvailable(
+            String professionalId,
+            LocalDate date,
+            String time,
+            String durationLabel,
+            String excludeAppointmentId) {
+        LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
+        if (date.isBefore(today)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Appointment date cannot be in the past.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (date.equals(today)) {
+            Integer start = parseMinutes(time);
+            java.time.LocalTime now = java.time.LocalTime.now(java.time.ZoneId.systemDefault());
+            int nowMinutes = now.getHour() * 60 + now.getMinute();
+            if (start != null && start <= nowMinutes) {
+                throw new ApiException(
+                        "SLOT_UNAVAILABLE",
+                        "That time has already passed today. Please choose a later slot.",
+                        HttpStatus.CONFLICT);
+            }
+        }
+        Map<String, Object> day =
+                dayAvailability(professionalId, date.toString(), durationLabel, excludeAppointmentId);
         @SuppressWarnings("unchecked")
         List<String> slots = (List<String>) day.getOrDefault("availableSlots", List.of());
         String normalized = formatLabel(parseMinutes(time));
