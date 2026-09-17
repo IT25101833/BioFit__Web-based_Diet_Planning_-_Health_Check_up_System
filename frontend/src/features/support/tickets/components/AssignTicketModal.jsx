@@ -4,7 +4,7 @@ import Modal from '../../../../components/ui/Modal'
 import Button from '../../../../components/ui/Button'
 import { supportOfficers } from '../data/supportTicketsData'
 
-export default function AssignTicketModal({ open, onClose, ticket, onAssign }) {
+export default function AssignTicketModal({ open, onClose, ticket, onAssign, officerName }) {
   const [selectedOfficer, setSelectedOfficer] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -29,7 +29,7 @@ export default function AssignTicketModal({ open, onClose, ticket, onAssign }) {
   }
 
   function handleAssignToMe() {
-    setSelectedOfficer('Priya Nair')
+    if (officerName) setSelectedOfficer(officerName)
   }
 
   return (

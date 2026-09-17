@@ -7,6 +7,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ClientDomainController {
 
     private final DomainService domainService;
+    private final CompletionService completionService;
     private final BookingAvailabilityService bookingAvailabilityService;
 
     @GetMapping("/booking/catalog")
@@ -132,6 +134,28 @@ public class ClientDomainController {
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
         return ApiResponse.ok(domainService.replyClientTicket(principal.getId(), id, body));
+    }
+
+    @PostMapping("/support/{id}/reopen")
+    public ApiResponse<Map<String, Object>> reopen(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        return ApiResponse.ok(
+                domainService.reopenClientTicket(
+                        principal.getId(), id, body == null ? Map.of() : body));
+    }
+
+    @DeleteMapping("/support/{id}")
+    public ApiResponse<Map<String, Object>> deleteTicket(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.deleteClientTicket(principal.getId(), id));
+    }
+
+    @PostMapping("/inquiries")
+    public ApiResponse<Map<String, Object>> createInquiry(
+            @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
+        return ApiResponse.ok(completionService.createClientInquiry(principal.getId(), body));
     }
 
     @GetMapping("/profile")

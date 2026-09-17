@@ -312,9 +312,12 @@ public class DomainService {
         t.setClientName(user.getFirstName() + " " + user.getLastName());
         t.setSubject(str(payload.get("subject")));
         t.setCategory(nullTo(str(payload.get("category")), "General"));
-        t.setPriority(nullTo(str(payload.get("priority")), "Medium"));
+        String priority = nullTo(str(payload.get("priority")), "Medium");
+        if ("Normal".equalsIgnoreCase(priority)) priority = "Medium";
+        t.setPriority(priority);
         t.setStatus("Open");
-        t.setAssignedTo("Support Desk");
+        t.setAssignedTo(null);
+        t.setWaitingOn("Support");
         t.setRelatedService(nullTo(str(payload.get("relatedService")), "General"));
         String messageBody = firstNonBlank(
                 str(payload.get("description")),
@@ -327,10 +330,33 @@ public class DomainService {
         firstMessage.put("author", "You");
         firstMessage.put("body", messageBody == null ? "" : messageBody);
         firstMessage.put("at", Instant.now().toString());
+        String attachmentName = str(payload.get("attachmentName"));
+        if (attachmentName != null && !attachmentName.isBlank()) {
+            firstMessage.put("attachments", List.of(Map.of("name", attachmentName)));
+        } else {
+            firstMessage.put("attachments", List.of());
+        }
         t.setMessagesJson(mapper.toJson(List.of(firstMessage)));
+        t.setActivityJson(
+                mapper.toJson(
+                        List.of(
+                                Map.of(
+                                        "id",
+                                        "act-1",
+                                        "text",
+                                        "Ticket created by client",
+                                        "at",
+                                        Instant.now().toString()))));
         t.setCreatedAt(Instant.now());
         t.setUpdatedAt(Instant.now());
         supportTicketRepository.save(t);
+        createNotification(
+                null,
+                "SUPPORT",
+                "tickets",
+                "New support ticket " + t.getId(),
+                t.getClientName() + " opened \"" + t.getSubject() + "\" (" + t.getPriority() + ").",
+                "/support/tickets/" + t.getId());
         return mapper.ticketSummary(t);
     }
 
@@ -340,24 +366,153 @@ public class DomainService {
                 supportTicketRepository
                         .findByIdAndClientUserId(id, userId)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        if ("Closed".equalsIgnoreCase(t.getStatus())) {
+            throw new ApiException("CONFLICT", "Closed tickets cannot accept replies", HttpStatus.CONFLICT);
+        }
         @SuppressWarnings("unchecked")
         List<Object> messages = new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
+        String body = str(payload.getOrDefault("message", payload.get("body")));
         messages.add(
                 Map.of(
                         "id",
                         "msg-" + (messages.size() + 1),
                         "from",
                         "client",
+                        "role",
+                        "client",
                         "author",
-                        t.getClientName(),
+                        t.getClientName() == null ? "You" : t.getClientName(),
                         "body",
-                        str(payload.getOrDefault("message", payload.get("body"))),
+                        body == null ? "" : body,
                         "at",
                         Instant.now().toString()));
         t.setMessagesJson(mapper.toJson(messages));
+        String status = t.getStatus() == null ? "" : t.getStatus();
+        if ("Pending Client Reply".equalsIgnoreCase(status)
+                || "Pending Reply".equalsIgnoreCase(status)
+                || "Resolved".equalsIgnoreCase(status)
+                || "Open".equalsIgnoreCase(status)) {
+            t.setStatus("In Progress");
+        }
+        t.setWaitingOn("Support");
+        if ("Resolved".equalsIgnoreCase(status)) {
+            t.setResolutionJson(null);
+            appendTicketActivity(t, "Resolution withdrawn — client replied");
+        } else {
+            appendTicketActivity(t, "Client replied");
+        }
         t.setUpdatedAt(Instant.now());
         supportTicketRepository.save(t);
+        createNotification(
+                null,
+                "SUPPORT",
+                "tickets",
+                "Client replied on " + t.getId(),
+                t.getClientName() + " sent a follow-up on \"" + t.getSubject() + "\".",
+                "/support/tickets/" + t.getId());
         return mapper.ticketSummary(t);
+    }
+
+    @Transactional
+    public Map<String, Object> reopenClientTicket(Long userId, String id, Map<String, Object> payload) {
+        SupportTicketEntity t =
+                supportTicketRepository
+                        .findByIdAndClientUserId(id, userId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        String status = t.getStatus() == null ? "" : t.getStatus();
+        if (!"Resolved".equalsIgnoreCase(status) && !"Closed".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    "CONFLICT", "Only resolved or closed tickets can be kept open", HttpStatus.CONFLICT);
+        }
+        String note = firstNonBlank(str(payload.get("message")), str(payload.get("body")), str(payload.get("reason")));
+        if (note != null && !note.isBlank()) {
+            @SuppressWarnings("unchecked")
+            List<Object> messages =
+                    new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
+            messages.add(
+                    Map.of(
+                            "id",
+                            "msg-" + (messages.size() + 1),
+                            "from",
+                            "client",
+                            "role",
+                            "client",
+                            "author",
+                            t.getClientName() == null ? "You" : t.getClientName(),
+                            "body",
+                            note,
+                            "at",
+                            Instant.now().toString()));
+            t.setMessagesJson(mapper.toJson(messages));
+        }
+        t.setStatus("In Progress");
+        t.setWaitingOn("Support");
+        t.setResolutionJson(null);
+        appendTicketActivity(t, "Client requested ticket remain open");
+        t.setUpdatedAt(Instant.now());
+        supportTicketRepository.save(t);
+        createNotification(
+                null,
+                "SUPPORT",
+                "tickets",
+                "Ticket reopened " + t.getId(),
+                t.getClientName() + " asked to keep \"" + t.getSubject() + "\" open.",
+                "/support/tickets/" + t.getId());
+        return mapper.ticketSummary(t);
+    }
+
+    @Transactional
+    public Map<String, Object> deleteClientTicket(Long userId, String id) {
+        SupportTicketEntity t =
+                supportTicketRepository
+                        .findByIdAndClientUserId(id, userId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        String status = t.getStatus() == null ? "" : t.getStatus();
+        if ("Resolved".equalsIgnoreCase(status) || "Closed".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    "CONFLICT", "Resolved or closed tickets cannot be deleted", HttpStatus.CONFLICT);
+        }
+        if (!"Open".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "Only open tickets that were sent by mistake can be deleted. Once support is handling the ticket it must stay on record.",
+                    HttpStatus.CONFLICT);
+        }
+        if (ticketHasSupportReply(t.getMessagesJson())) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "This ticket already has a support response and cannot be deleted",
+                    HttpStatus.CONFLICT);
+        }
+        String ticketId = t.getId();
+        supportTicketRepository.delete(t);
+        supportTicketRepository.flush();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", ticketId);
+        result.put("deleted", Boolean.TRUE);
+        return result;
+    }
+
+    private boolean ticketHasSupportReply(String messagesJson) {
+        Object parsed = mapper.parseJson(messagesJson, List.of());
+        if (!(parsed instanceof List<?> messages)) {
+            return false;
+        }
+        for (Object raw : messages) {
+            if (!(raw instanceof Map<?, ?> map)) {
+                continue;
+            }
+            String roleText = map.get("role") == null ? "" : String.valueOf(map.get("role"));
+            String fromText = map.get("from") == null ? "" : String.valueOf(map.get("from"));
+            if ("support".equalsIgnoreCase(roleText)
+                    || "internal".equalsIgnoreCase(roleText)
+                    || "internal_note".equalsIgnoreCase(roleText)
+                    || "specialist".equalsIgnoreCase(roleText)
+                    || "support".equalsIgnoreCase(fromText)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Map<String, Object> clientProfile(Long userId) {
@@ -883,46 +1038,6 @@ public class DomainService {
 
     public List<Map<String, Object>> allTickets() {
         return supportTicketRepository.findAll().stream().map(mapper::ticketSummary).toList();
-    }
-
-    public Map<String, Object> ticket(String id) {
-        return mapper.ticketSummary(
-                supportTicketRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND)));
-    }
-
-    @Transactional
-    public Map<String, Object> updateTicket(String id, Map<String, Object> payload) {
-        SupportTicketEntity t =
-                supportTicketRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
-        if (payload.get("status") != null) t.setStatus(str(payload.get("status")));
-        if (payload.get("priority") != null) t.setPriority(str(payload.get("priority")));
-        if (payload.get("category") != null) t.setCategory(str(payload.get("category")));
-        if (payload.get("assignedTo") != null) t.setAssignedTo(str(payload.get("assignedTo")));
-        if (payload.get("message") != null || payload.get("body") != null) {
-            @SuppressWarnings("unchecked")
-            List<Object> messages =
-                    new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
-            messages.add(
-                    Map.of(
-                            "id",
-                            "msg-" + (messages.size() + 1),
-                            "from",
-                            "support",
-                            "author",
-                            str(payload.getOrDefault("author", "Support")),
-                            "body",
-                            str(payload.getOrDefault("message", payload.get("body"))),
-                            "at",
-                            Instant.now().toString()));
-            t.setMessagesJson(mapper.toJson(messages));
-        }
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-        return mapper.ticketSummary(t);
     }
 
     public Map<String, Object> coachDashboard(Long userId) {
@@ -1679,6 +1794,33 @@ public class DomainService {
                 appointmentRepository.findByClientUserIdOrderByAppointmentDateAsc(userId).stream()
                         .filter(a -> "Upcoming".equalsIgnoreCase(a.getStatus()))
                         .count();
+    }
+
+    private void createNotification(
+            Long userId, String audience, String type, String title, String body, String link) {
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setUserId(userId);
+        n.setAudience(audience);
+        n.setType(type);
+        n.setTitle(title);
+        n.setBody(body);
+        n.setLink(link);
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void appendTicketActivity(SupportTicketEntity t, String text) {
+        List<Object> activity =
+                new ArrayList<>((List<Object>) mapper.parseJson(t.getActivityJson(), new ArrayList<>()));
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("id", "act-" + (activity.size() + 1));
+        entry.put("text", text);
+        entry.put("at", Instant.now().toString());
+        activity.add(entry);
+        t.setActivityJson(mapper.toJson(activity));
     }
 
     private static String str(Object o) {

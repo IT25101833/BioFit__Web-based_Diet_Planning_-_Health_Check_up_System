@@ -13,6 +13,7 @@ import SupportPerformance from './components/SupportPerformance'
 import SupportQuickActions from './components/SupportQuickActions'
 import { fetchSupportDashboard } from './data/supportDashboardData'
 import { fetchSupportTickets } from '../tickets/data/supportTicketsData'
+import { subscribeSupportMock } from '../data/supportMockStore'
 
 export default function SupportDashboard() {
   const [data, setData] = useState(null)
@@ -20,8 +21,8 @@ export default function SupportDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  async function load() {
-    setLoading(true)
+  async function load({ quiet = false } = {}) {
+    if (!quiet) setLoading(true)
     setError('')
     try {
       const [dashData, ticketsData] = await Promise.all([
@@ -33,12 +34,13 @@ export default function SupportDashboard() {
     } catch {
       setError('We couldn’t load the support dashboard.')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
   useEffect(() => {
     load()
+    return subscribeSupportMock(() => load({ quiet: true }))
   }, [])
 
   if (loading) return <LoadingSkeleton rows={6} />
@@ -56,14 +58,33 @@ export default function SupportDashboard() {
     month: 'long',
     year: 'numeric',
   })
-  const attentionTickets = Array.isArray(data.attentionTickets) ? data.attentionTickets : []
+  const ticketList = Array.isArray(tickets) ? tickets : []
+  const attentionTickets = (() => {
+    const live = ticketList
+      .filter((t) => ['Open', 'Escalated', 'Assigned'].includes(t.status) || !t.assignedTo)
+      .slice(0, 6)
+      .map((t) => ({
+        id: t.id,
+        subject: t.subject,
+        client: t.client?.name,
+        clientId: t.client?.id,
+        status: t.status,
+        priority: t.priority,
+        reason: !t.assignedTo
+          ? `Unassigned · ${t.priority || 'Normal'} priority`
+          : `${t.status} · ${t.category}`,
+        waitingTime: t.waitingTimeMinutes != null ? `Waiting ${t.waitingTimeMinutes} min` : 'Just now',
+        category: t.category,
+      }))
+    if (live.length > 0) return live
+    return Array.isArray(data.attentionTickets) ? data.attentionTickets : []
+  })()
   const categoryBreakdown = Array.isArray(data.categoryBreakdown) ? data.categoryBreakdown : []
   const statusOverview = Array.isArray(data.statusOverview) ? data.statusOverview : []
   const recentInquiries = Array.isArray(data.recentInquiries) ? data.recentInquiries : []
   const recentFeedback = Array.isArray(data.recentFeedback) ? data.recentFeedback : []
   const recentActivity = Array.isArray(data.recentActivity) ? data.recentActivity : []
   const performance = data.performance || {}
-  const ticketList = Array.isArray(tickets) ? tickets : []
 
   return (
     <div className="space-y-6">
@@ -81,7 +102,26 @@ export default function SupportDashboard() {
       </div>
 
       {/* Top 4 Summary Stat Cards */}
-      <SupportStats stats={data.stats || {}} />
+      <SupportStats
+        stats={{
+          openTickets: {
+            value: ticketList.filter((t) => t.status === 'Open' || !t.assignedTo).length,
+            hint: 'Awaiting action',
+          },
+          inProgress: {
+            value: ticketList.filter((t) => t.status === 'In Progress' || t.status === 'Assigned').length,
+            hint: 'Currently being handled',
+          },
+          resolvedToday: {
+            value: ticketList.filter((t) => t.status === 'Resolved' || t.status === 'Closed').length,
+            hint: 'Resolved or closed',
+          },
+          pendingReply: {
+            value: ticketList.filter((t) => t.status === 'Pending Client Reply').length,
+            hint: 'Awaiting client response',
+          },
+        }}
+      />
 
       {/* Tickets Requiring Attention */}
       <AttentionTickets items={attentionTickets} />

@@ -1,4 +1,4 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
 export let supportProfile = {
   id: 'BF-CX01',
   firstName: 'Amaya',
@@ -18,11 +18,11 @@ function delay(ms = 350) {
 }
 
 export async function fetchSupportProfile() {
-  if (USE_MOCK) { await delay(); return { ...supportProfile } }
+  if (shouldUseMockData()) { await delay(); return { ...supportProfile } }
   return apiRequest('/api/support/profile')
 }
 
 export async function updateSupportProfile(payload) {
-  if (USE_MOCK) { await delay(500); return { ...supportProfile, ...payload } }
+  if (shouldUseMockData()) { await delay(500); return { ...supportProfile, ...payload } }
   return apiRequest('/api/support/profile', { method: 'PATCH', body: JSON.stringify(payload) })
 }

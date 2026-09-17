@@ -140,6 +140,20 @@ public class CoachDomainController {
         return ApiResponse.ok(domainService.notificationsByAudience("COACH"));
     }
 
+    @GetMapping("/escalations")
+    public ApiResponse<List<Map<String, Object>>> escalations() {
+        return ApiResponse.ok(completionService.escalatedTicketsFor("Fitness Coach"));
+    }
+
+    @PostMapping("/escalations/{id}/respond")
+    public ApiResponse<Map<String, Object>> respondEscalation(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        String author = principal == null ? "Fitness Coach" : principal.getUsername();
+        return ApiResponse.ok(completionService.specialistRespond(id, author, body));
+    }
+
     @PatchMapping("/notifications/{id}/read")
     public ApiResponse<Map<String, Object>> markRead(@PathVariable String id) {
         return ApiResponse.ok(domainService.markNotificationRead(id));

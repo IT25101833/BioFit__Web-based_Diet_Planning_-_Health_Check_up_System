@@ -1,4 +1,5 @@
-﻿import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { hydrateList, persistList } from '../../data/supportMockStore'
 export const supportOfficers = [
   { id: 'off-1', name: 'Priya Nair', email: 'amaya.fernando@vitallife.lk', role: 'Customer Experience Officer' },
   { id: 'off-2', name: 'Daniel Perera', email: 'kasun.j@vitallife.lk', role: 'Customer Experience Specialist' },
@@ -26,7 +27,7 @@ export const supportStatuses = [
   'Closed',
 ]
 
-export const supportPriorities = ['Low', 'Normal', 'High']
+export const supportPriorities = ['Low', 'Medium', 'High', 'Urgent']
 
 export const escalationDestinations = [
   { label: 'Wellness Centre Manager', role: 'Management & Escalations', relevantCategories: ['Appointment Support', 'Account Support', 'Programme Questions', 'Other'] },
@@ -589,18 +590,29 @@ export let supportTickets = [
   },
 ]
 
+supportTickets = hydrateList('tickets', supportTickets)
+
+function persistTickets() {
+  persistList('tickets', supportTickets)
+}
+
 function delay(ms = 350) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export async function fetchSupportTickets() {
-  if (USE_MOCK) { await delay(); return supportTickets.map((t) => structuredClone(t)) }
+  if (shouldUseMockData()) {
+    await delay()
+    supportTickets = hydrateList('tickets', supportTickets)
+    return supportTickets.map((t) => structuredClone(t))
+  }
   return apiRequest('/api/support/tickets')
 }
 
 export async function fetchSupportTicketById(id) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay()
+    supportTickets = hydrateList('tickets', supportTickets)
     const found = supportTickets.find((t) => t.id === id)
     if (!found) throw new Error('Not found')
     return structuredClone(found)
@@ -609,73 +621,85 @@ export async function fetchSupportTicketById(id) {
 }
 
 export async function assignSupportTicket(id, officerName) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(400)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.assignedTo = officerName
-    if (ticket.status === 'Open') ticket.status = 'Assigned'
+    if (ticket.status === 'Open' || !ticket.status) ticket.status = 'Assigned'
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: `Assigned to ${officerName}`, at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
-  return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ assignedTo: officerName, status: 'Assigned', activity: `Assigned to ${officerName}` }) })
+  return apiRequest(`/api/support/tickets/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      assignedTo: officerName,
+      status: 'Assigned',
+      activity: `Assigned to ${officerName}`,
+    }),
+  })
 }
 
 export async function startTicketProgress(id) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.status = 'In Progress'
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: 'Work started; status changed to In Progress', at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'In Progress', activity: 'Work started' }) })
 }
 
 export async function updateSupportTicketStatus(id, newStatus) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.status = newStatus
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: `Status updated to ${newStatus}`, at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus, activity: `Status updated to ${newStatus}` }) })
 }
 
 export async function updateSupportTicketPriority(id, newPriority) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(300)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.priority = newPriority
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: `Priority updated to ${newPriority}`, at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ priority: newPriority, activity: `Priority updated to ${newPriority}` }) })
 }
 
 export async function updateSupportTicketCategory(id, newCategory) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(300)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.category = newCategory
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: `Category updated to ${newCategory}`, at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ category: newCategory, activity: `Category updated to ${newCategory}` }) })
 }
 
 export async function sendTicketReply(id, messageBody) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -684,41 +708,68 @@ export async function sendTicketReply(id, messageBody) {
     ticket.waitingOn = 'Client'
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: 'Response sent to client', at: 'Just now' })
+    try {
+      const { pushClientNotification } = await import('../../../client/notifications/data/notificationData')
+      const { supportTickets: clientTickets } = await import('../../../client/support/data/supportData')
+      const clientTicket = clientTickets.find((t) => t.id === id)
+      if (clientTicket) {
+        clientTicket.messages.push({
+          id: `m-${Date.now()}`,
+          author: 'Support Team',
+          role: 'support',
+          at: new Date().toISOString(),
+          body: messageBody,
+        })
+        clientTicket.status = 'Pending Reply'
+        clientTicket.updatedAt = ticket.updatedAt
+      }
+      pushClientNotification({
+        type: 'support',
+        title: 'Support replied to your ticket',
+        body: `Support replied on "${ticket.subject}". Please review and respond if needed.`,
+        link: `/client/support/${ticket.id}`,
+      })
+    } catch {
+      // optional mock bridge
+    }
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ message: messageBody, status: 'Pending Client Reply', waitingOn: 'Client', author: 'Support', activity: 'Response sent to client' }) })
 }
 
 export async function addTicketInternalNote(id, noteBody) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(350)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.messages.push({ id: `msg-${Date.now()}`, author: 'Priya Nair', role: 'internal_note', at: new Date().toISOString(), body: noteBody, attachments: [] })
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: 'Internal note added', at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ note: noteBody, internal: true, author: 'Support', activity: 'Internal note added' }) })
 }
 
 export async function escalateSupportTicket(id, { escalateTo, reason, additionalContext }) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(500)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.status = 'Escalated'
     ticket.waitingOn = 'Specialist'
-    ticket.escalation = { escalatedTo, escalatedBy: 'Priya Nair', escalatedAt: new Date().toISOString(), reason, additionalContext: additionalContext || '', status: 'Under Review', specialistResponse: null }
+    ticket.escalation = { escalatedTo: escalateTo, escalatedBy: 'Priya Nair', escalatedAt: new Date().toISOString(), reason, additionalContext: additionalContext || '', status: 'Under Review', specialistResponse: null }
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: `Ticket escalated to ${escalateTo}`, at: 'Just now' })
+    persistTickets()
     return structuredClone(ticket)
   }
-  return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'Escalated', waitingOn: 'Specialist', escalation: { escalatedTo, reason, additionalContext }, activity: `Escalated to ${escalateTo}` }) })
+  return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'Escalated', waitingOn: 'Specialist', escalation: { escalatedTo: escalateTo, reason, additionalContext }, activity: `Escalated to ${escalateTo}` }) })
 }
 
 export async function resolveSupportTicket(id, { summary, category }) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(450)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -727,26 +778,63 @@ export async function resolveSupportTicket(id, { summary, category }) {
     ticket.resolution = { resolvedBy: 'Priya Nair', resolvedAt: new Date().toISOString(), summary, category: category || 'General Resolution' }
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: `Ticket resolved: ${summary}`, at: 'Just now' })
+    try {
+      const { pushClientNotification } = await import('../../../client/notifications/data/notificationData')
+      const { supportTickets: clientTickets } = await import('../../../client/support/data/supportData')
+      const clientTicket = clientTickets.find((t) => t.id === id)
+      if (clientTicket) {
+        clientTicket.status = 'Resolved'
+        clientTicket.resolution = ticket.resolution
+        clientTicket.updatedAt = ticket.updatedAt
+      }
+      pushClientNotification({
+        type: 'support',
+        title: 'Support ticket resolved',
+        body: `Your ticket "${ticket.subject}" was marked resolved. You can reopen it if something is still outstanding.`,
+        link: `/client/support/${ticket.id}`,
+      })
+    } catch {
+      // optional mock bridge
+    }
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'Resolved', resolution: { summary, category }, activity: `Resolved: ${summary}` }) })
 }
 
 export async function closeSupportTicket(id) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(400)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
     ticket.status = 'Closed'
     ticket.updatedAt = new Date().toISOString()
     ticket.activityTimeline.unshift({ id: `act-${Date.now()}`, text: 'Ticket closed', at: 'Just now' })
+    try {
+      const { pushClientNotification } = await import('../../../client/notifications/data/notificationData')
+      const { supportTickets: clientTickets } = await import('../../../client/support/data/supportData')
+      const clientTicket = clientTickets.find((t) => t.id === id)
+      if (clientTicket) {
+        clientTicket.status = 'Closed'
+        clientTicket.updatedAt = ticket.updatedAt
+      }
+      pushClientNotification({
+        type: 'support',
+        title: 'Support ticket closed',
+        body: `Your ticket "${ticket.subject}" has been closed.`,
+        link: `/client/support/${ticket.id}`,
+      })
+    } catch {
+      // optional mock bridge
+    }
+    persistTickets()
     return structuredClone(ticket)
   }
   return apiRequest(`/api/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'Closed', activity: 'Ticket closed' }) })
 }
 
 export async function fetchClientSupportHistory(clientId) {
-  if (USE_MOCK) {
+  if (shouldUseMockData()) {
     await delay(300)
     return structuredClone(supportTickets.filter((t) => t.client.id === clientId))
   }

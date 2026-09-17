@@ -1,5 +1,7 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
-export let supportNotifications = [
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { hydrateList, persistList } from '../../data/supportMockStore'
+
+const NOTIFICATION_SEED = [
   {
     id: 'snotif-1',
     type: 'tickets',
@@ -56,21 +58,60 @@ export let supportNotifications = [
   },
 ]
 
+export let supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
+
 function delay(ms = 300) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function persistNotifications() {
+  persistList('supportNotifications', supportNotifications)
+}
+
 export async function fetchSupportNotifications() {
-  if (USE_MOCK) { await delay(); return supportNotifications.map((n) => ({ ...n })) }
+  if (shouldUseMockData()) {
+    await delay()
+    supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
+    return supportNotifications.map((n) => ({ ...n }))
+  }
   return apiRequest('/api/support/notifications')
 }
 
 export async function markSupportNotificationRead(id) {
-  if (USE_MOCK) { await delay(250); return { id, read: true } }
+  if (shouldUseMockData()) {
+    await delay(250)
+    supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
+    const found = supportNotifications.find((n) => n.id === id)
+    if (found) found.read = true
+    persistNotifications()
+    return { id, read: true }
+  }
   return apiRequest(`/api/support/notifications/${id}/read`, { method: 'PATCH' })
 }
 
 export async function markAllSupportNotificationsRead() {
-  if (USE_MOCK) { await delay(350); return { success: true } }
+  if (shouldUseMockData()) {
+    await delay(350)
+    supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
+    supportNotifications.forEach((n) => {
+      n.read = true
+    })
+    persistNotifications()
+    return { success: true }
+  }
   return apiRequest('/api/support/notifications/read-all', { method: 'PATCH' })
+}
+
+export function pushSupportNotification({ type = 'tickets', title, message, link }) {
+  supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
+  supportNotifications.unshift({
+    id: `snotif-${Date.now()}`,
+    type,
+    title,
+    message,
+    at: new Date().toISOString(),
+    read: false,
+    link: link || null,
+  })
+  persistNotifications()
 }

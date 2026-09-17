@@ -12,6 +12,7 @@ import {
   markSupportNotificationRead,
   markAllSupportNotificationsRead,
 } from './data/supportNotificationsData'
+import { subscribeSupportMock } from '../data/supportMockStore'
 
 const filterTabs = [
   { id: 'all', label: 'All Notifications' },
@@ -29,8 +30,8 @@ export default function SupportNotifications() {
   const [activeFilter, setActiveFilter] = useState('all')
   const [toast, setToast] = useState('')
 
-  async function load() {
-    setLoading(true)
+  async function load({ quiet = false } = {}) {
+    if (!quiet) setLoading(true)
     setError('')
     try {
       const data = await fetchSupportNotifications()
@@ -38,12 +39,13 @@ export default function SupportNotifications() {
     } catch {
       setError('We couldn’t load notifications.')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
   useEffect(() => {
     load()
+    return subscribeSupportMock(() => load({ quiet: true }))
   }, [])
 
   const filtered = useMemo(() => {
@@ -55,13 +57,13 @@ export default function SupportNotifications() {
   const unreadCount = notifications.filter((n) => !n.read).length
 
   async function handleMarkRead(id) {
-    const updated = await markSupportNotificationRead(id)
-    setNotifications(updated)
+    await markSupportNotificationRead(id)
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
   }
 
   async function handleMarkAllRead() {
-    const updated = await markAllSupportNotificationsRead()
-    setNotifications(updated)
+    await markAllSupportNotificationsRead()
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
     setToast('All notifications marked as read.')
   }
 

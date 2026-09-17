@@ -2,6 +2,8 @@ package com.biofit.backend.domain;
 
 import com.biofit.backend.common.ApiResponse;
 import com.biofit.backend.security.UserPrincipal;
+import com.biofit.backend.user.User;
+import com.biofit.backend.user.UserRepository;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ public class MedicalDomainController {
 
     private final DomainService domainService;
     private final CompletionService completionService;
+    private final UserRepository userRepository;
 
     @GetMapping("/dashboard")
     public ApiResponse<Map<String, Object>> dashboard(@AuthenticationPrincipal UserPrincipal principal) {
@@ -117,6 +120,26 @@ public class MedicalDomainController {
             @PathVariable String id, @RequestBody Map<String, Object> body) {
         String numeric = id.startsWith("hr-") ? id.substring(3) : id;
         return ApiResponse.ok(completionService.saveHealthRecord(Long.parseLong(numeric), body));
+    }
+
+    @GetMapping("/escalations")
+    public ApiResponse<List<Map<String, Object>>> escalations() {
+        return ApiResponse.ok(completionService.escalatedTicketsFor("Medical Advisor"));
+    }
+
+    @PostMapping("/escalations/{id}/respond")
+    public ApiResponse<Map<String, Object>> respondEscalation(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        String authorName =
+                principal == null
+                        ? "Medical Advisor"
+                        : userRepository
+                                .findById(principal.getId())
+                                .map(User::getFullName)
+                                .orElse(principal.getUsername());
+        return ApiResponse.ok(completionService.specialistRespond(id, authorName, body));
     }
 
     @GetMapping("/notifications")

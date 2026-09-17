@@ -85,8 +85,10 @@ export async function apiRequest(path, options = {}) {
       (response.status === 401
         ? 'Please sign in again.'
         : response.status === 403
-          ? 'You do not have permission to do that. Sign out and sign in as medical@biofit.demo.'
-          : 'Something went wrong. Please try again.')
+          ? 'You do not have permission to do that. Sign out and sign in again.'
+          : response.status === 405
+            ? 'Delete is not available on the server yet. Restart the backend and try again.'
+            : `Something went wrong. Please try again. (${response.status})`)
     throw new ApiError(message, {
       status: response.status,
       code: payload?.error?.code,

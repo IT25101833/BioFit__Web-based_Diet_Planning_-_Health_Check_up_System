@@ -1,8 +1,8 @@
 package com.biofit.backend.domain;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.Getter;
@@ -24,14 +24,15 @@ public class SupportTicketEntity {
     private String status;
     private String assignedTo;
     private String relatedService;
-    @Lob
+    /** Stored as VARCHAR(MAX) — do not use @Lob (breaks SQL Server deletes). */
+    @Column(columnDefinition = "varchar(max)")
     private String messagesJson;
-    @Lob
+    @Column(columnDefinition = "varchar(max)")
     private String activityJson;
     private String waitingOn;
-    @Lob
+    @Column(columnDefinition = "varchar(max)")
     private String escalationJson;
-    @Lob
+    @Column(columnDefinition = "varchar(max)")
     private String resolutionJson;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();

@@ -43,6 +43,7 @@ public class CompletionService {
     private final RoleRepository roleRepository;
     private final AuditLogRepository auditLogRepository;
     private final DomainMapper mapper;
+    private final NotificationRepository notificationRepository;
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -338,6 +339,16 @@ public class CompletionService {
         supportTicketRepository.save(t);
         inq.setStatus("Converted");
         inquiryRepository.save(inq);
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setAudience("SUPPORT");
+        n.setType("tickets");
+        n.setTitle("Inquiry converted to " + t.getId());
+        n.setBody(t.getClientName() + " inquiry became ticket \"" + t.getSubject() + "\".");
+        n.setLink("/support/tickets/" + t.getId());
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
         return mapper.ticketSummary(t);
     }
 
@@ -379,13 +390,43 @@ public class CompletionService {
                 supportTicketRepository
                         .findById(id)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        String previousStatus = t.getStatus();
+        String previousAssignedTo = t.getAssignedTo();
         if (body.get("status") != null) t.setStatus(str(body.get("status")));
         if (body.get("priority") != null) t.setPriority(str(body.get("priority")));
         if (body.get("category") != null) t.setCategory(str(body.get("category")));
-        if (body.get("assignedTo") != null) t.setAssignedTo(str(body.get("assignedTo")));
+        if (body.get("assignedTo") != null) {
+            t.setAssignedTo(str(body.get("assignedTo")));
+            if (isBlank(previousStatus) || "Open".equalsIgnoreCase(previousStatus)) {
+                if (body.get("status") == null) t.setStatus("Assigned");
+            }
+        }
         if (body.get("waitingOn") != null) t.setWaitingOn(str(body.get("waitingOn")));
-        if (body.get("escalation") != null) t.setEscalationJson(mapper.toJson(body.get("escalation")));
-        if (body.get("resolution") != null) t.setResolutionJson(mapper.toJson(body.get("resolution")));
+        if (body.get("escalation") != null) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> escalation =
+                    body.get("escalation") instanceof Map<?, ?>
+                            ? new LinkedHashMap<>((Map<String, Object>) body.get("escalation"))
+                            : new LinkedHashMap<>();
+            escalation.putIfAbsent("escalatedBy", str(body.getOrDefault("author", "Support")));
+            escalation.putIfAbsent("escalatedAt", Instant.now().toString());
+            escalation.putIfAbsent("status", "Under Review");
+            escalation.putIfAbsent("specialistResponse", null);
+            t.setEscalationJson(mapper.toJson(escalation));
+            if (body.get("status") == null) t.setStatus("Escalated");
+            notifyEscalationTarget(t, escalation);
+        }
+        if (body.get("resolution") != null) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> resolution =
+                    body.get("resolution") instanceof Map<?, ?>
+                            ? new LinkedHashMap<>((Map<String, Object>) body.get("resolution"))
+                            : new LinkedHashMap<>();
+            resolution.putIfAbsent("resolvedBy", str(body.getOrDefault("author", "Support")));
+            resolution.putIfAbsent("resolvedAt", Instant.now().toString());
+            t.setResolutionJson(mapper.toJson(resolution));
+            if (body.get("status") == null) t.setStatus("Resolved");
+        }
         if (body.get("message") != null || body.get("body") != null || body.get("note") != null) {
             @SuppressWarnings("unchecked")
             List<Object> messages =
@@ -410,7 +451,107 @@ public class CompletionService {
         appendActivity(t, str(body.getOrDefault("activity", "Ticket updated")));
         t.setUpdatedAt(Instant.now());
         supportTicketRepository.save(t);
+
+        if (body.get("assignedTo") != null) {
+            String newAssignedTo = str(body.get("assignedTo"));
+            if (previousAssignedTo == null || !previousAssignedTo.equals(newAssignedTo)) {
+                notifySupportAssignment(t, newAssignedTo);
+            }
+        }
+
+        String newStatus = t.getStatus() == null ? "" : t.getStatus();
+        boolean statusChanged = previousStatus == null || !previousStatus.equalsIgnoreCase(newStatus);
+        if (statusChanged && "Resolved".equalsIgnoreCase(newStatus)) {
+            notifyTicketClient(
+                    t,
+                    "Support ticket resolved",
+                    "Your ticket \"" + t.getSubject() + "\" was marked resolved. You can reopen it if something is still outstanding.",
+                    "/client/support/" + t.getId());
+        } else if (statusChanged && "Closed".equalsIgnoreCase(newStatus)) {
+            notifyTicketClient(
+                    t,
+                    "Support ticket closed",
+                    "Your ticket \"" + t.getSubject() + "\" has been closed.",
+                    "/client/support/" + t.getId());
+        } else if (statusChanged && "Pending Client Reply".equalsIgnoreCase(newStatus)) {
+            notifyTicketClient(
+                    t,
+                    "Support replied to your ticket",
+                    "Support replied on \"" + t.getSubject() + "\". Please review and respond if needed.",
+                    "/client/support/" + t.getId());
+        } else if (!Boolean.TRUE.equals(body.get("internal"))
+                && (body.get("message") != null || body.get("body") != null)
+                && !"Resolved".equalsIgnoreCase(newStatus)
+                && !"Closed".equalsIgnoreCase(newStatus)) {
+            notifyTicketClient(
+                    t,
+                    "Support replied to your ticket",
+                    "Support replied on \"" + t.getSubject() + "\".",
+                    "/client/support/" + t.getId());
+        }
+
         return fullTicket(t);
+    }
+
+    private void notifyTicketClient(SupportTicketEntity t, String title, String body, String link) {
+        if (t.getClientUserId() == null) return;
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setUserId(t.getClientUserId());
+        n.setAudience("CLIENT");
+        n.setType("support");
+        n.setTitle(title);
+        n.setBody(body);
+        n.setLink(link);
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+    }
+
+    private void notifyEscalationTarget(SupportTicketEntity t, Map<String, Object> escalation) {
+        String destination = str(escalation.getOrDefault("escalatedTo", escalation.get("destination")));
+        if (isBlank(destination)) return;
+        String audience = mapEscalationDestinationToAudience(destination);
+        if (audience == null) return;
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setAudience(audience);
+        n.setType("escalation");
+        n.setTitle("Ticket escalated: " + t.getId());
+        n.setBody(
+                "Support escalated \""
+                        + t.getSubject()
+                        + "\" to "
+                        + destination
+                        + ". Ticket: "
+                        + t.getId());
+        n.setLink("/support/tickets/" + t.getId());
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+    }
+
+    private void notifySupportAssignment(SupportTicketEntity t, String assignee) {
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setAudience("SUPPORT");
+        n.setType("assignment");
+        n.setTitle("Ticket assigned: " + t.getId());
+        n.setBody("Ticket \"" + t.getSubject() + "\" assigned to " + assignee + ".");
+        n.setLink("/support/tickets/" + t.getId());
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+    }
+
+    private static String mapEscalationDestinationToAudience(String destination) {
+        String d = destination.toLowerCase();
+        if (d.contains("medical")) return "MEDICAL";
+        if (d.contains("coach") || d.contains("fitness")) return "COACH";
+        if (d.contains("nutrition")) return "NUTRITION";
+        if (d.contains("manager") || d.contains("management")) return "MANAGER";
+        if (d.contains("admin") || d.contains("digital") || d.contains("operations")) return "STAFF";
+        return "STAFF";
     }
 
     public Map<String, Object> fullTicket(String id) {
@@ -420,11 +561,143 @@ public class CompletionService {
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND)));
     }
 
+    public List<Map<String, Object>> allFullTickets() {
+        return supportTicketRepository.findAll().stream().map(this::fullTicket).toList();
+    }
+
     public List<Map<String, Object>> ticketsByClient(String clientId) {
-        return supportTicketRepository.findAll().stream()
-                .filter(t -> clientId.equals(t.getClientId()))
+        return supportTicketRepository.findByClientIdOrderByUpdatedAtDesc(clientId).stream()
                 .map(this::fullTicket)
                 .toList();
+    }
+
+    public Map<String, Object> supportOverviewForManager() {
+        List<SupportTicketEntity> all = supportTicketRepository.findAll();
+        Map<String, Long> byStatus = new LinkedHashMap<>();
+        Map<String, Long> byCategory = new LinkedHashMap<>();
+        for (SupportTicketEntity t : all) {
+            String status = t.getStatus() == null ? "Unknown" : t.getStatus();
+            String category = t.getCategory() == null ? "Other" : t.getCategory();
+            byStatus.merge(status, 1L, Long::sum);
+            byCategory.merge(category, 1L, Long::sum);
+        }
+        long openEscalations =
+                all.stream()
+                        .filter(t -> "Escalated".equalsIgnoreCase(t.getStatus()))
+                        .count();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("totalTickets", all.size());
+        out.put("byStatus", byStatus);
+        out.put("byCategory", byCategory);
+        out.put("openEscalations", openEscalations);
+        out.put(
+                "unassigned",
+                all.stream()
+                        .filter(t -> t.getAssignedTo() == null || t.getAssignedTo().isBlank())
+                        .count());
+        return out;
+    }
+
+    public List<Map<String, Object>> escalatedTicketsFor(String destination) {
+        return supportTicketRepository.findAll().stream()
+                .filter(t -> t.getEscalationJson() != null && !t.getEscalationJson().isBlank())
+                .filter(
+                        t -> {
+                            Object esc = mapper.parseJson(t.getEscalationJson(), null);
+                            if (!(esc instanceof Map<?, ?> map)) return false;
+                            String escalatedTo = str(map.get("escalatedTo"));
+                            return escalatedTo != null && escalatedTo.equalsIgnoreCase(destination);
+                        })
+                .map(this::fullTicket)
+                .toList();
+    }
+
+    @Transactional
+    public Map<String, Object> specialistRespond(String id, String authorName, Map<String, Object> body) {
+        SupportTicketEntity t =
+                supportTicketRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> escalation =
+                new LinkedHashMap<>(
+                        (Map<String, Object>) mapper.parseJson(t.getEscalationJson(), new LinkedHashMap<>()));
+        String responseBody = str(body.getOrDefault("message", body.get("body")));
+        escalation.put("specialistResponse", responseBody == null ? "" : responseBody);
+        escalation.put("status", "Responded");
+        t.setEscalationJson(mapper.toJson(escalation));
+
+        @SuppressWarnings("unchecked")
+        List<Object> messages =
+                new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
+        Map<String, Object> msg = new LinkedHashMap<>();
+        msg.put("id", "msg-" + (messages.size() + 1));
+        msg.put("from", "specialist");
+        msg.put("role", "specialist");
+        msg.put("author", authorName == null || authorName.isBlank() ? "Specialist" : authorName);
+        msg.put("body", responseBody == null ? "" : responseBody);
+        msg.put("at", Instant.now().toString());
+        messages.add(msg);
+        t.setMessagesJson(mapper.toJson(messages));
+
+        t.setStatus("In Progress");
+        t.setWaitingOn("Support");
+        appendActivity(t, (authorName == null ? "Specialist" : authorName) + " responded to escalation");
+        t.setUpdatedAt(Instant.now());
+        supportTicketRepository.save(t);
+
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setAudience("SUPPORT");
+        n.setType("escalation");
+        n.setTitle("Specialist responded: " + t.getId());
+        n.setBody(
+                (authorName == null ? "Specialist" : authorName)
+                        + " responded to escalation on \""
+                        + t.getSubject()
+                        + "\".");
+        n.setLink("/support/tickets/" + t.getId());
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+
+        return fullTicket(t);
+    }
+
+    @Transactional
+    public Map<String, Object> createClientInquiry(Long userId, Map<String, Object> body) {
+        User user =
+                userRepository
+                        .findById(userId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+        ClientInquiry inq = new ClientInquiry();
+        inq.setId("inq-" + UUID.randomUUID().toString().substring(0, 8));
+        inq.setClientUserId(userId);
+        inq.setClientId("BF-C" + userId);
+        inq.setClientName(user.getFullName());
+        inq.setEmail(user.getEmail());
+        inq.setPhone(user.getContactNumber());
+        inq.setSubject(str(body.get("subject")));
+        inq.setCategory(isBlank(body.get("category")) ? "General" : str(body.get("category")));
+        inq.setMessage(str(body.getOrDefault("message", body.get("body"))));
+        inq.setStatus("New");
+        inq.setResponsesJson("[]");
+        inq.setReceivedAt(Instant.now());
+        inq.setCreatedAt(Instant.now());
+        inquiryRepository.save(inq);
+
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setAudience("SUPPORT");
+        n.setType("inquiries");
+        n.setTitle("New client inquiry " + inq.getId());
+        n.setBody(user.getFullName() + " submitted \"" + inq.getSubject() + "\".");
+        n.setLink("/support/inquiries");
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+
+        return mapInquiry(inq);
     }
 
     /* ---------- Admin ---------- */
@@ -782,6 +1055,34 @@ public class CompletionService {
 
     private Map<String, Object> fullTicket(SupportTicketEntity t) {
         Map<String, Object> m = mapper.ticketSummary(t);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> existingClient = (Map<String, Object>) m.get("client");
+        final Map<String, Object> client =
+                existingClient != null ? existingClient : new LinkedHashMap<>();
+        if (existingClient == null) {
+            m.put("client", client);
+        }
+        if (t.getClientUserId() != null) {
+            userRepository
+                    .findById(t.getClientUserId())
+                    .ifPresent(
+                            u -> {
+                                client.put("email", u.getEmail());
+                                client.put("phone", u.getContactNumber());
+                            });
+            healthProfileRepository
+                    .findByUserId(t.getClientUserId())
+                    .ifPresent(
+                            hp -> {
+                                if (hp.getProgrammeLabel() != null) {
+                                    client.put("programme", hp.getProgrammeLabel());
+                                }
+                            });
+        }
+        if (t.getClientId() != null) {
+            long ticketCount = supportTicketRepository.countByClientId(t.getClientId());
+            client.put("previousTicketCount", Math.max(0, ticketCount - 1));
+        }
         m.put("waitingOn", t.getWaitingOn());
         m.put("activityTimeline", mapper.parseJson(t.getActivityJson(), List.of()));
         m.put("escalation", mapper.parseJson(t.getEscalationJson(), null));
@@ -793,7 +1094,11 @@ public class CompletionService {
         @SuppressWarnings("unchecked")
         List<Object> activity =
                 new ArrayList<>((List<Object>) mapper.parseJson(t.getActivityJson(), new ArrayList<>()));
-        activity.add(Map.of("id", "act-" + (activity.size() + 1), "text", text, "at", Instant.now().toString()));
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("id", "act-" + (activity.size() + 1));
+        entry.put("text", text);
+        entry.put("at", Instant.now().toString());
+        activity.add(entry);
         t.setActivityJson(mapper.toJson(activity));
     }
 

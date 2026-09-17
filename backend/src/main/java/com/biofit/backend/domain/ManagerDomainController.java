@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ManagerDomainController {
 
     private final DomainService domainService;
+    private final CompletionService completionService;
 
     @GetMapping("/dashboard")
     public ApiResponse<Map<String, Object>> dashboard(@AuthenticationPrincipal UserPrincipal principal) {
@@ -93,6 +94,25 @@ public class ManagerDomainController {
     @GetMapping("/notifications")
     public ApiResponse<List<Map<String, Object>>> notifications() {
         return ApiResponse.ok(domainService.notificationsByAudience("MANAGER"));
+    }
+
+    @GetMapping("/escalations")
+    public ApiResponse<List<Map<String, Object>>> escalations() {
+        return ApiResponse.ok(completionService.escalatedTicketsFor("Wellness Centre Manager"));
+    }
+
+    @PostMapping("/escalations/{id}/respond")
+    public ApiResponse<Map<String, Object>> respondEscalation(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        String author = principal == null ? "Wellness Centre Manager" : principal.getUsername();
+        return ApiResponse.ok(completionService.specialistRespond(id, author, body));
+    }
+
+    @GetMapping("/support-overview")
+    public ApiResponse<Map<String, Object>> supportOverview() {
+        return ApiResponse.ok(completionService.supportOverviewForManager());
     }
 
     @PatchMapping("/notifications/{id}/read")

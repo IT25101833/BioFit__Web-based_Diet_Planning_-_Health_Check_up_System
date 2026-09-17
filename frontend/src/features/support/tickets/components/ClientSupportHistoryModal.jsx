@@ -6,20 +6,25 @@ import Button from '../../../../components/ui/Button'
 import StatusBadge from '../../../../components/ui/StatusBadge'
 import LoadingSkeleton from '../../../../components/ui/LoadingSkeleton'
 import EmptyState from '../../../../components/ui/EmptyState'
+import ErrorState from '../../../../components/ui/ErrorState'
 import { fetchClientSupportHistory } from '../data/supportTicketsData'
+import { formatWhen } from '../utils/formatWhen'
 
-export default function ClientSupportHistoryModal({ open, onClose, client }) {
+export default function ClientSupportHistoryModal({ open, onClose, client, currentTicketId }) {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (open && client?.id) {
       setLoading(true)
+      setError('')
       fetchClientSupportHistory(client.id)
-        .then((res) => setTickets(res))
+        .then((res) => setTickets(res.filter((t) => t.id !== currentTicketId)))
+        .catch(() => setError('We could not load this client\'s support history.'))
         .finally(() => setLoading(false))
     }
-  }, [open, client])
+  }, [open, client, currentTicketId])
 
   if (!client) return null
 
@@ -37,7 +42,6 @@ export default function ClientSupportHistoryModal({ open, onClose, client }) {
       }
     >
       <div className="space-y-4">
-        {/* Privacy Note */}
         <div className="flex items-center gap-2 rounded-xl bg-[#f4f6fb] px-3.5 py-2.5 text-xs text-[#4b5563]">
           <ShieldCheck className="h-4 w-4 text-[#005a40] shrink-0" />
           <span>Support history only. Medical consults and clinical diagnostics are restricted.</span>
@@ -45,6 +49,15 @@ export default function ClientSupportHistoryModal({ open, onClose, client }) {
 
         {loading ? (
           <LoadingSkeleton rows={3} />
+        ) : error ? (
+          <ErrorState title={error} onRetry={() => {
+            setLoading(true)
+            setError('')
+            fetchClientSupportHistory(client.id)
+              .then((res) => setTickets(res.filter((t) => t.id !== currentTicketId)))
+              .catch(() => setError('We could not load this client\'s support history.'))
+              .finally(() => setLoading(false))
+          }} />
         ) : tickets.length === 0 ? (
           <EmptyState
             icon={History}
@@ -63,7 +76,7 @@ export default function ClientSupportHistoryModal({ open, onClose, client }) {
                   </div>
                   <p className="mt-1 text-sm font-medium text-[#1f2937] truncate">{t.subject}</p>
                   <p className="mt-0.5 text-xs text-[#6b7280]">
-                    Created: {new Date(t.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    Created: {formatWhen(t.createdAt, { style: 'date' })}
                     {t.assignedTo ? ` · Assigned to ${t.assignedTo}` : ' · Unassigned'}
                   </p>
                 </div>

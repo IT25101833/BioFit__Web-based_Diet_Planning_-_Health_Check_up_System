@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class NutritionDomainController {
 
     private final DomainService domainService;
+    private final CompletionService completionService;
 
     @GetMapping("/dashboard")
     public ApiResponse<Map<String, Object>> dashboard(@AuthenticationPrincipal UserPrincipal principal) {
@@ -140,6 +141,20 @@ public class NutritionDomainController {
     @GetMapping("/notifications")
     public ApiResponse<List<Map<String, Object>>> notifications() {
         return ApiResponse.ok(domainService.notificationsByAudience("NUTRITION"));
+    }
+
+    @GetMapping("/escalations")
+    public ApiResponse<List<Map<String, Object>>> escalations() {
+        return ApiResponse.ok(completionService.escalatedTicketsFor("Nutrition Consultant"));
+    }
+
+    @PostMapping("/escalations/{id}/respond")
+    public ApiResponse<Map<String, Object>> respondEscalation(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        String author = principal == null ? "Nutrition Consultant" : principal.getUsername();
+        return ApiResponse.ok(completionService.specialistRespond(id, author, body));
     }
 
     @PatchMapping("/notifications/{id}/read")
