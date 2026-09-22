@@ -33,6 +33,11 @@ public class Appointment {
     private String notes;
     private String location;
     private String audience;
+    @Column(length = 40)
+    private String attendance;
+    @Column(length = 500)
+    private String attendanceNote;
+    private Instant attendanceMarkedAt;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 }

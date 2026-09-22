@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ErrorState from '../../../components/ui/ErrorState'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
 import Toast from '../../../components/ui/Toast'
 import { fetchMedicalClients } from '../medical-history/data/medicalHistoryData'
 import PrivacyBanner from '../shared/PrivacyBanner'
+import {
+  findClientOption,
+  readClientUserIdParam,
+} from '../shared/medicalNav'
 import MedicalRecordForm from './components/MedicalRecordForm'
 import {
   createHealthRecord,
@@ -28,10 +32,13 @@ function toSelectOptions(clients) {
 export default function CreateEditMedicalRecord({ mode = 'create' }) {
   const navigate = useNavigate()
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
+  const clientUserIdParam = mode === 'create' ? readClientUserIdParam(searchParams) : ''
   const [initial, setInitial] = useState(null)
   const [clients, setClients] = useState([])
   const [clientsLoading, setClientsLoading] = useState(mode === 'create')
   const [clientsError, setClientsError] = useState('')
+  const [clientWarning, setClientWarning] = useState('')
   const [loading, setLoading] = useState(mode === 'edit')
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
@@ -44,7 +51,25 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
     setClientsError('')
     try {
       const data = await fetchMedicalClients()
-      setClients(toSelectOptions(data))
+      const options = toSelectOptions(data)
+      setClients(options)
+
+      if (clientUserIdParam) {
+        const match = findClientOption(options, clientUserIdParam)
+        if (match) {
+          setInitial({
+            userId: match.userId ?? match.value,
+            clientId: match.clientCode || match.value,
+            clientName: match.label,
+            programme: match.programme || '',
+          })
+          setClientWarning('')
+        } else {
+          setClientWarning(
+            `Client user ID ${clientUserIdParam} is not in your attended clients list. Attend them from Appointments first.`,
+          )
+        }
+      }
     } catch {
       setClients([])
       setClientsError('Unable to load clients. Please try again.')
@@ -55,22 +80,23 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
 
   useEffect(() => {
     loadClients()
-  }, [mode])
+  }, [mode, clientUserIdParam])
+
+  async function loadRecord() {
+    if (mode !== 'edit') return
+    setLoading(true)
+    setError('')
+    try {
+      setInitial(await fetchHealthRecordById(id))
+    } catch {
+      setError('We couldn’t load this medical record.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    if (mode !== 'edit') return
-    async function load() {
-      setLoading(true)
-      setError('')
-      try {
-        setInitial(await fetchHealthRecordById(id))
-      } catch {
-        setError('We couldn’t load this medical record.')
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
+    loadRecord()
   }, [mode, id])
 
   async function handleSubmit(payload) {
@@ -102,16 +128,28 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
     }
   }
 
+  function handleCancel() {
+    if (window.history.length > 1) navigate(-1)
+    else navigate('/medical/health-records')
+  }
+
   if (loading || (mode === 'create' && clientsLoading)) {
     return <LoadingSkeleton rows={5} />
   }
-  if (error) return <ErrorState title={error} onRetry={() => window.location.reload()} />
+  if (error) return <ErrorState title={error} onRetry={loadRecord} />
   if (mode === 'create' && clientsError) {
     return <ErrorState title={clientsError} onRetry={loadClients} />
   }
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/health-records" className="hover:text-[#005a40] hover:underline">
+          Health Records
+        </Link>
+        {mode === 'edit' ? ' › Edit' : ' › Create'}
+      </p>
+
       <PageHeader
         title={mode === 'edit' ? 'Edit Medical Record' : 'Create Medical Record'}
         description="Record authorized wellness health information and shared safety guidance."
@@ -119,18 +157,26 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
       <PrivacyBanner
         description="Professional notes remain restricted. Only shared wellness guidance is visible to other care roles."
       />
+      {clientWarning ? (
+        <p
+          className="mb-4 rounded-2xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]"
+          role="status"
+        >
+          {clientWarning}
+        </p>
+      ) : null}
       <MedicalRecordForm
         mode={mode}
         initialValues={initial}
         clients={clients}
         clientsEmptyMessage={
           mode === 'create'
-            ? 'No clients with appointments are currently available.'
+            ? 'No attended clients available. Attend a patient from Appointments first to select a client.'
             : undefined
         }
         saving={saving}
         formError={formError}
-        onCancel={() => navigate('/medical/health-records')}
+        onCancel={handleCancel}
         onSubmit={handleSubmit}
       />
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />

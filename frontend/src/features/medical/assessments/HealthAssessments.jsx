@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ClipboardPlus, Plus } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
 import EmptyState from '../../../components/ui/EmptyState'
@@ -12,6 +12,10 @@ import Select from '../../../components/ui/Select'
 import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import PrivacyBanner from '../shared/PrivacyBanner'
+import {
+  isPendingAssessmentStatus,
+  readClientUserIdParam,
+} from '../shared/medicalNav'
 import { formatMedicalDate } from '../health-records/data/healthRecordData'
 import { fetchAssessments } from './data/healthAssessmentData'
 
@@ -24,13 +28,18 @@ export default function HealthAssessments() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [type, setType] = useState('')
-  const clientFilter = searchParams.get('client') || ''
+  const clientUserIdFilter = readClientUserIdParam(searchParams)
+  const statusParam = (searchParams.get('status') || '').trim().toLowerCase()
 
   async function load() {
     setLoading(true)
     setError('')
     try {
-      setItems(await fetchAssessments())
+      setItems(
+        await fetchAssessments(
+          clientUserIdFilter ? { clientUserId: clientUserIdFilter } : {},
+        ),
+      )
     } catch {
       setError('We couldn’t load health assessments.')
     } finally {
@@ -40,12 +49,12 @@ export default function HealthAssessments() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [clientUserIdFilter])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items.filter((item) => {
-      if (clientFilter && item.clientId !== clientFilter) return false
+      if (statusParam === 'pending' && !isPendingAssessmentStatus(item.status)) return false
       if (
         q &&
         !item.clientName.toLowerCase().includes(q) &&
@@ -58,7 +67,7 @@ export default function HealthAssessments() {
       if (type && item.type !== type) return false
       return true
     })
-  }, [items, search, status, type, clientFilter])
+  }, [items, search, status, type, statusParam])
 
   const summary = useMemo(
     () => ({
@@ -77,12 +86,23 @@ export default function HealthAssessments() {
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/dashboard" className="hover:text-[#005a40] hover:underline">
+          Medical Advisor
+        </Link>
+        {' › Health Assessments'}
+      </p>
+
       <PageHeader
         title="Health Assessments"
         description="Review and manage health assessments for authorized BioFit clients."
         actions={
           <Button
-            to="/medical/assessments/create"
+            to={
+              clientUserIdFilter
+                ? `/medical/assessments/create?clientUserId=${encodeURIComponent(clientUserIdFilter)}`
+                : '/medical/assessments/create'
+            }
             className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
           >
             <Plus className="h-4 w-4" />
@@ -156,7 +176,11 @@ export default function HealthAssessments() {
               </thead>
               <tbody>
                 {filtered.map((item) => (
-                  <tr key={item.id} className="border-t border-[#eef2f0]">
+                  <tr
+                    key={item.id}
+                    className="cursor-pointer border-t border-[#eef2f0] hover:bg-[#f8faf9]"
+                    onClick={() => navigate(`/medical/assessments/${item.id}`)}
+                  >
                     <td className="px-4 py-3.5">
                       <p className="font-semibold text-[#111827]">{item.clientName}</p>
                       <p className="text-[12px] text-[#8b93a1]">{item.clientId}</p>
@@ -164,7 +188,7 @@ export default function HealthAssessments() {
                     <td className="px-4 py-3.5 text-[#4b5563]">{formatMedicalDate(item.date)}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{item.type}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">
-                      {item.advisor || 'Elena Costa'}
+                      {item.advisor || '—'}
                     </td>
                     <td className="px-4 py-3.5">
                       <StatusBadge status={item.status} />
@@ -175,7 +199,7 @@ export default function HealthAssessments() {
                     <td className="px-4 py-3.5 text-[#4b5563]">
                       {formatMedicalDate(item.nextReview)}
                     </td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <ActionMenu
                         items={[
                           {

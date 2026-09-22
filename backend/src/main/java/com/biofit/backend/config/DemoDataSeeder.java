@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,9 +46,16 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final HealthRiskAlertRepository healthRiskAlertRepository;
     private final DomainSeedService domainSeedService;
 
+    @Value("${biofit.seed-demo-data:false}")
+    private boolean seedDemoData;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        if (!seedDemoData) {
+            log.info("Demo data seeding skipped (biofit.seed-demo-data=false)");
+            return;
+        }
         if (userRepository.count() == 0) {
             seedUsers();
         }

@@ -17,6 +17,7 @@ import {
   respondToInquiry,
   convertInquiryToTicket,
 } from './data/supportInquiriesData'
+import { subscribeSupportMock } from '../data/supportMockStore'
 
 const filterTabs = [
   { id: 'all', label: 'All Inquiries' },
@@ -41,8 +42,8 @@ export default function ClientInquiries() {
   const [replying, setReplying] = useState(false)
   const [converting, setConverting] = useState(false)
 
-  async function load() {
-    setLoading(true)
+  async function load({ quiet = false } = {}) {
+    if (!quiet) setLoading(true)
     setError('')
     try {
       const data = await fetchClientInquiries()
@@ -50,12 +51,13 @@ export default function ClientInquiries() {
     } catch {
       setError('We couldn’t load client inquiries.')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
   useEffect(() => {
     load()
+    return subscribeSupportMock(() => load({ quiet: true }))
   }, [])
 
   const filteredInquiries = useMemo(() => {
@@ -74,6 +76,8 @@ export default function ClientInquiries() {
       setReplyText('')
       setReplyModalOpen(false)
       setToast('Response sent to client.')
+    } catch (err) {
+      setToast(err?.message || 'Could not send the response. Please try again.')
     } finally {
       setReplying(false)
     }
@@ -88,6 +92,8 @@ export default function ClientInquiries() {
       setSelectedInquiry(updated)
       setDrawerOpen(false)
       setToast(`Inquiry converted to ticket ${ticketId}.`)
+    } catch (err) {
+      setToast(err?.message || 'Could not convert inquiry to a ticket.')
     } finally {
       setConverting(false)
     }

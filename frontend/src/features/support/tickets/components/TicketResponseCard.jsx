@@ -1,18 +1,13 @@
-import { Lock, Paperclip, Stethoscope, User, UserCheck } from 'lucide-react'
+import { Lock, Paperclip, Stethoscope } from 'lucide-react'
 import Avatar from '../../../../components/ui/Avatar'
+import { formatWhen } from '../utils/formatWhen'
 
 export default function TicketResponseCard({ response }) {
-  const isClient = response.role === 'client'
-  const isInternalNote = response.role === 'internal_note'
+  const isInternalNote = response.role === 'internal_note' || response.role === 'internal'
   const isSpecialist = response.role === 'specialist'
   const isSupport = response.role === 'support'
 
-  const formattedDate = new Date(response.at).toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const formattedDate = formatWhen(response.at)
 
   if (isInternalNote) {
     return (

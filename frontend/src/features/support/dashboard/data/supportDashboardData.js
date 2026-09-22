@@ -1,4 +1,4 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest, shouldUseMockData } from '../../../../api/client'
 export const supportDashboardData = {
   officerName: 'Priya',
   stats: {
@@ -151,6 +151,6 @@ function delay(ms = 350) {
 }
 
 export async function fetchSupportDashboard() {
-  if (USE_MOCK) { await delay(); return structuredClone(supportDashboardData) }
+  if (shouldUseMockData()) { await delay(); return structuredClone(supportDashboardData) }
   return apiRequest('/api/support/dashboard')
 }

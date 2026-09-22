@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -11,7 +12,13 @@ import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { formatMedicalDate } from '../health-records/data/healthRecordData'
+import {
+  findClientOption,
+  healthRecordHref,
+  indexHealthRecordsByClient,
+  readClientUserIdParam,
+} from '../shared/medicalNav'
+import { fetchHealthRecords, formatMedicalDate } from '../health-records/data/healthRecordData'
 import { fetchMedicalClients } from '../medical-history/data/medicalHistoryData'
 import {
   fetchSafetyValidations,
@@ -19,8 +26,11 @@ import {
 } from './data/safetyValidationData'
 
 export default function SafetyValidations() {
+  const [searchParams] = useSearchParams()
+  const clientUserIdParam = readClientUserIdParam(searchParams)
   const [items, setItems] = useState([])
   const [clients, setClients] = useState([])
+  const [recordIndex, setRecordIndex] = useState({})
   const [clientId, setClientId] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(true)
@@ -28,18 +38,37 @@ export default function SafetyValidations() {
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
   const [latest, setLatest] = useState(null)
+  const [clientWarning, setClientWarning] = useState('')
 
   async function load() {
     setLoading(true)
     setError('')
     try {
-      const [list, clientList] = await Promise.all([
-        fetchSafetyValidations(),
+      const [list, clientList, records] = await Promise.all([
+        fetchSafetyValidations(
+          clientUserIdParam ? { clientUserId: clientUserIdParam } : undefined,
+        ),
         fetchMedicalClients(),
+        fetchHealthRecords().catch(() => []),
       ])
       setItems(list)
       setClients(clientList)
-      if (!clientId && clientList[0]) setClientId(clientList[0].clientId)
+      setRecordIndex(indexHealthRecordsByClient(records))
+
+      if (clientUserIdParam) {
+        const match = findClientOption(clientList, clientUserIdParam)
+        if (match) {
+          setClientId(match.clientId)
+          setClientWarning('')
+        } else {
+          setClientWarning(
+            `Client user ID ${clientUserIdParam} is not in your attended clients list. Attend them from Appointments first.`,
+          )
+          if (!clientId && clientList[0]) setClientId(clientList[0].clientId)
+        }
+      } else if (!clientId && clientList[0]) {
+        setClientId(clientList[0].clientId)
+      }
     } catch {
       setError('We couldn’t load safety validation results.')
     } finally {
@@ -49,12 +78,15 @@ export default function SafetyValidations() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [clientUserIdParam])
 
   const selected = useMemo(
     () => clients.find((c) => c.clientId === clientId),
     [clients, clientId],
   )
+
+  const selectedUserId = selected?.userId != null ? String(selected.userId) : ''
+  const hasWarnings = (latest?.warnings || []).length > 0
 
   async function handleRun() {
     if (!selected) {
@@ -80,11 +112,29 @@ export default function SafetyValidations() {
     }
   }
 
+  function clientRecordHref(item) {
+    const userId =
+      item.userId != null
+        ? item.userId
+        : String(item.clientId || '').replace(/\D+/g, '') || undefined
+    return healthRecordHref(recordIndex, {
+      userId,
+      clientId: item.clientId,
+    })
+  }
+
   if (loading) return <LoadingSkeleton rows={5} />
   if (error) return <ErrorState title={error} onRetry={load} />
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/dashboard" className="hover:text-[#005a40] hover:underline">
+          Medical Advisor
+        </Link>
+        {' › Safety Validation'}
+      </p>
+
       <PageHeader
         title="Safety Validation"
         description="Run a safety review against the client’s medical history, allergies, alerts, and assessments."
@@ -95,20 +145,36 @@ export default function SafetyValidations() {
         description="This is a project safety/review check based on stored BioFit data — not a diagnostic system."
       />
 
+      {clientWarning ? (
+        <p
+          className="mb-4 rounded-2xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]"
+          role="status"
+        >
+          {clientWarning}
+        </p>
+      ) : null}
+
       <div className="mb-5 grid gap-4 lg:grid-cols-3">
         <SectionCard title="Run Safety Validation" className="lg:col-span-1">
           <div className="space-y-4">
-            <Select
-              label="Client"
-              required
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              options={clients.map((c) => ({
-                value: c.clientId,
-                label: `${c.clientName} (${c.clientId})`,
-              }))}
-              placeholder="Select client"
-            />
+            {clients.length === 0 ? (
+              <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
+                No attended clients available. Attend a patient from Appointments first to select a
+                client.
+              </p>
+            ) : (
+              <Select
+                label="Client"
+                required
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                options={clients.map((c) => ({
+                  value: c.clientId,
+                  label: `${c.clientName} (${c.clientId})`,
+                }))}
+                placeholder="Select client"
+              />
+            )}
             <TextArea
               label="Advisor notes (optional)"
               value={notes}
@@ -118,7 +184,7 @@ export default function SafetyValidations() {
             />
             <Button
               type="button"
-              disabled={running || !clientId}
+              disabled={running || !clientId || clients.length === 0}
               onClick={handleRun}
               className="w-full !bg-[#005a40] !text-white hover:!bg-[#004833]"
             >
@@ -163,6 +229,14 @@ export default function SafetyValidations() {
                   {latest.advisorNotes}
                 </p>
               ) : null}
+              {hasWarnings && selectedUserId ? (
+                <Button
+                  to={`/medical/health-alerts/create?clientUserId=${encodeURIComponent(selectedUserId)}`}
+                  className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
+                >
+                  Raise alert
+                </Button>
+              ) : null}
             </div>
           )}
         </SectionCard>
@@ -191,7 +265,12 @@ export default function SafetyValidations() {
                 {items.map((item) => (
                   <tr key={item.id} className="border-t border-[#eef2f0]">
                     <td className="px-2 py-3">
-                      <p className="font-semibold text-[#111827]">{item.clientName}</p>
+                      <Link
+                        to={clientRecordHref(item)}
+                        className="font-semibold text-[#005a40] hover:underline"
+                      >
+                        {item.clientName}
+                      </Link>
                       <p className="text-[12px] text-[#6b7280]">{item.clientId}</p>
                     </td>
                     <td className="px-2 py-3">

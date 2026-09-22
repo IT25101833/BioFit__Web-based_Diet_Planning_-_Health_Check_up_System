@@ -14,6 +14,7 @@ import {
   fetchClientAppointments,
   formatAppointmentDate,
   formatAppointmentTimeRange,
+  isCancelledAppointment,
   isPastAppointment,
   isUpcomingAppointment,
 } from './data/appointmentData'
@@ -54,7 +55,7 @@ export default function ClientAppointments() {
     if (tab === 'upcoming') return items.filter((item) => isUpcomingAppointment(item))
     if (tab === 'past') return items.filter((item) => isPastAppointment(item))
     if (tab === 'cancelled') {
-      return items.filter((item) => String(item.status).toLowerCase() === 'cancelled')
+      return items.filter((item) => isCancelledAppointment(item))
     }
     return items
   }, [items, tab])

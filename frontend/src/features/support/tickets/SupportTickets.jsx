@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Inbox, Layers, CheckCircle2, Clock, MessageSquare, AlertCircle } from 'lucide-react'
+import { useAuth } from '../../../auth/AuthContext'
 import PageHeader from '../../../components/ui/PageHeader'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -16,8 +16,15 @@ import {
   escalateSupportTicket,
   resolveSupportTicket,
 } from './data/supportTicketsData'
+import { subscribeSupportMock } from '../data/supportMockStore'
 
 export default function SupportTickets() {
+  const { user } = useAuth()
+  const officerName =
+    user?.fullName ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+    'Support'
+
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -39,8 +46,8 @@ export default function SupportTickets() {
   const [escalateModalOpen, setEscalateModalOpen] = useState(false)
   const [resolveModalOpen, setResolveModalOpen] = useState(false)
 
-  async function load() {
-    setLoading(true)
+  async function load({ quiet = false } = {}) {
+    if (!quiet) setLoading(true)
     setError('')
     try {
       const data = await fetchSupportTickets()
@@ -48,12 +55,13 @@ export default function SupportTickets() {
     } catch {
       setError('We couldn’t load the support tickets.')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
   useEffect(() => {
     load()
+    return subscribeSupportMock(() => load({ quiet: true }))
   }, [])
 
   // Filter and sort calculation
@@ -103,7 +111,7 @@ export default function SupportTickets() {
         return (b.waitingTimeMinutes || 0) - (a.waitingTimeMinutes || 0)
       }
       if (sortBy === 'priority') {
-        const weights = { High: 3, Normal: 2, Low: 1 }
+        const weights = { Urgent: 4, High: 3, Medium: 2, Low: 1 }
         return (weights[b.priority] || 0) - (weights[a.priority] || 0)
       }
       return 0
@@ -140,36 +148,55 @@ export default function SupportTickets() {
     setDrawerOpen(true)
   }
 
-  // Quick Assign
   async function handleAssignToMe(ticketId) {
-    const updated = await assignSupportTicket(ticketId, 'Priya Nair')
-    setTickets((prev) => prev.map((t) => (t.id === ticketId ? updated : t)))
-    if (selectedTicket?.id === ticketId) setSelectedTicket(updated)
-    setToast(`Ticket ${ticketId} assigned to you.`)
+    if (!officerName) {
+      setToast('Could not determine your officer profile. Please sign in again.')
+      return
+    }
+    try {
+      const updated = await assignSupportTicket(ticketId, officerName)
+      setTickets((prev) => prev.map((t) => (t.id === ticketId ? updated : t)))
+      if (selectedTicket?.id === ticketId) setSelectedTicket(updated)
+      setToast(`Ticket ${ticketId} assigned to you.`)
+    } catch {
+      setToast('Could not assign ticket. Please try again.')
+    }
   }
 
-  async function handleModalAssign(officerName) {
+  async function handleModalAssign(assignee) {
     if (!modalTargetTicket) return
-    const updated = await assignSupportTicket(modalTargetTicket.id, officerName)
-    setTickets((prev) => prev.map((t) => (t.id === modalTargetTicket.id ? updated : t)))
-    if (selectedTicket?.id === modalTargetTicket.id) setSelectedTicket(updated)
-    setToast(`Ticket assigned to ${officerName}.`)
+    try {
+      const updated = await assignSupportTicket(modalTargetTicket.id, assignee)
+      setTickets((prev) => prev.map((t) => (t.id === modalTargetTicket.id ? updated : t)))
+      if (selectedTicket?.id === modalTargetTicket.id) setSelectedTicket(updated)
+      setToast(`Ticket assigned to ${assignee}.`)
+    } catch {
+      setToast('Could not assign ticket. Please try again.')
+    }
   }
 
   async function handleModalEscalate(payload) {
     if (!modalTargetTicket) return
-    const updated = await escalateSupportTicket(modalTargetTicket.id, payload)
-    setTickets((prev) => prev.map((t) => (t.id === modalTargetTicket.id ? updated : t)))
-    if (selectedTicket?.id === modalTargetTicket.id) setSelectedTicket(updated)
-    setToast(`Ticket escalated to ${payload.escalateTo}.`)
+    try {
+      const updated = await escalateSupportTicket(modalTargetTicket.id, payload)
+      setTickets((prev) => prev.map((t) => (t.id === modalTargetTicket.id ? updated : t)))
+      if (selectedTicket?.id === modalTargetTicket.id) setSelectedTicket(updated)
+      setToast(`Ticket escalated to ${payload.escalateTo}.`)
+    } catch {
+      setToast('Could not escalate ticket. Please try again.')
+    }
   }
 
   async function handleModalResolve(payload) {
     if (!modalTargetTicket) return
-    const updated = await resolveSupportTicket(modalTargetTicket.id, payload)
-    setTickets((prev) => prev.map((t) => (t.id === modalTargetTicket.id ? updated : t)))
-    if (selectedTicket?.id === modalTargetTicket.id) setSelectedTicket(updated)
-    setToast(`Ticket ${modalTargetTicket.id} marked as Resolved.`)
+    try {
+      const updated = await resolveSupportTicket(modalTargetTicket.id, payload)
+      setTickets((prev) => prev.map((t) => (t.id === modalTargetTicket.id ? updated : t)))
+      if (selectedTicket?.id === modalTargetTicket.id) setSelectedTicket(updated)
+      setToast(`Ticket ${modalTargetTicket.id} marked as Resolved.`)
+    } catch {
+      setToast('Could not resolve ticket. Please try again.')
+    }
   }
 
   if (loading) return <LoadingSkeleton rows={6} />
@@ -261,6 +288,7 @@ export default function SupportTickets() {
       {/* Ticket Table */}
       <TicketTable
         tickets={filteredTickets}
+        officerName={officerName}
         onSelectTicket={handleSelectTicket}
         onAssignToMe={handleAssignToMe}
         onOpenAssignModal={(t) => {
@@ -294,6 +322,7 @@ export default function SupportTickets() {
         }}
         ticket={modalTargetTicket}
         onAssign={handleModalAssign}
+        officerName={officerName}
       />
 
       <EscalateTicketModal

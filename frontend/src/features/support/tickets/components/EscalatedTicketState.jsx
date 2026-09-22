@@ -1,7 +1,10 @@
-import { ArrowUpRight, Clock, ShieldAlert, Sparkles, UserCheck } from 'lucide-react'
+import { ArrowUpRight, Sparkles } from 'lucide-react'
+import { formatWhen } from '../utils/formatWhen'
 
 export default function EscalatedTicketState({ escalation }) {
   if (!escalation) return null
+
+  const escalationDate = formatWhen(escalation.escalatedAt, { style: 'date' })
 
   return (
     <div className="rounded-3xl border border-purple-200 bg-purple-50/50 p-5 shadow-xs mb-6 sm:p-6">
@@ -32,9 +35,7 @@ export default function EscalatedTicketState({ escalation }) {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-[#6b7280]">Escalation Date:</span>
-          <span className="font-medium text-[#111827]">
-            {new Date(escalation.escalatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-          </span>
+          <span className="font-medium text-[#111827]">{escalationDate}</span>
         </div>
         <div className="pt-1 border-t border-purple-100">
           <span className="text-[#6b7280] block mb-1 font-semibold">Reason for Escalation:</span>

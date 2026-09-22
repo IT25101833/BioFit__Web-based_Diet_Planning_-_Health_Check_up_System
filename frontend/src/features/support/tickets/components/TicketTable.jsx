@@ -1,12 +1,14 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowUpRight, CheckCircle, ExternalLink, Inbox, MessageSquare, UserCheck } from 'lucide-react'
+import { Inbox } from 'lucide-react'
 import StatusBadge from '../../../../components/ui/StatusBadge'
 import ActionMenu from '../../../../components/ui/ActionMenu'
 import Avatar from '../../../../components/ui/Avatar'
 import EmptyState from '../../../../components/ui/EmptyState'
+import { formatWhen } from '../utils/formatWhen'
 
 export default function TicketTable({
   tickets = [],
+  officerName,
   onSelectTicket,
   onAssignToMe,
   onOpenAssignModal,
@@ -47,7 +49,7 @@ export default function TicketTable({
           </thead>
           <tbody className="divide-y divide-[#e8ecf1]">
             {tickets.map((t) => {
-              const isHigh = t.priority === 'High'
+              const isHigh = t.priority === 'High' || t.priority === 'Urgent'
               const isResolved = t.status === 'Resolved' || t.status === 'Closed'
 
               return (
@@ -104,7 +106,7 @@ export default function TicketTable({
                     </span>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-[11px] text-[#6b7280]">
-                    {new Date(t.lastActivityAt || t.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatWhen(t.lastActivityAt || t.updatedAt, { style: 'time' })}
                   </td>
                   <td
                     className="px-4 py-4 text-right whitespace-nowrap"
@@ -120,7 +122,7 @@ export default function TicketTable({
                         {
                           label: 'Assign to Me',
                           onClick: () => onAssignToMe(t.id),
-                          disabled: t.assignedTo === 'Priya Nair',
+                          disabled: officerName ? t.assignedTo === officerName : false,
                         },
                         {
                           label: 'Assign to Officer…',

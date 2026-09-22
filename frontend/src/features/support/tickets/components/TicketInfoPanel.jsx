@@ -142,7 +142,9 @@ export default function TicketInfoPanel({
           <span className="text-[#6b7280]">Assigned Officer:</span>
           <div className="flex items-center gap-1.5">
             <span className="font-semibold text-[#005a40]">
-              {ticket.assignedTo || 'Unassigned'}
+              {!ticket.assignedTo || ticket.assignedTo === 'Support Desk' || ticket.assignedTo === 'Unassigned'
+                ? 'Unassigned'
+                : ticket.assignedTo}
             </span>
             <button
               type="button"
@@ -168,9 +170,16 @@ export default function TicketInfoPanel({
                 : 'bg-purple-50 text-purple-800',
             ].join(' ')}
           >
-            {ticket.waitingOn || 'Support'}
+            {ticket.waitingOn || '—'}
           </span>
         </div>
+
+        {ticket.resolution?.summary ? (
+          <div className="rounded-2xl border border-[#e6f5f0] bg-[#f4fbf8] p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#005a40]">Resolution</p>
+            <p className="mt-1 text-xs leading-relaxed text-[#374151]">{ticket.resolution.summary}</p>
+          </div>
+        ) : null}
 
         {/* Timestamps */}
         <div className="space-y-1.5 border-t border-[#eef2f0] pt-3 text-[11px] text-[#6b7280]">

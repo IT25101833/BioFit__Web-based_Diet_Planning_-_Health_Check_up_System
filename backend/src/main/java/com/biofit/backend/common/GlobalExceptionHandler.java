@@ -43,7 +43,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
+        ex.printStackTrace();
+        String detail = ex.getMessage();
+        String message =
+                detail == null || detail.isBlank()
+                        ? "Something went wrong. Please try again."
+                        : "Something went wrong: " + detail;
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail("SERVER_ERROR", "Something went wrong. Please try again."));
+                .body(ApiResponse.fail("SERVER_ERROR", message));
     }
 }

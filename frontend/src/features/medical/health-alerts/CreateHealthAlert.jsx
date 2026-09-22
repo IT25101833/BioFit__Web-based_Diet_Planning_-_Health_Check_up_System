@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Checkbox from '../../../components/ui/Checkbox'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
@@ -12,10 +12,15 @@ import Select from '../../../components/ui/Select'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
+import {
+  findClientOption,
+  readClientUserIdParam,
+} from '../shared/medicalNav'
 import { fetchAssessments } from '../assessments/data/healthAssessmentData'
 import { fetchMedicalClients } from '../medical-history/data/medicalHistoryData'
 import {
   createHealthAlert,
+  fetchHealthAlerts,
   findSimilarActiveAlert,
 } from './data/healthAlertData'
 
@@ -57,7 +62,13 @@ function formatAssessmentLabel(item) {
 
 export default function CreateHealthAlert() {
   const navigate = useNavigate()
-  const [form, setForm] = useState(emptyForm)
+  const [searchParams] = useSearchParams()
+  const preselectedClientUserId = readClientUserIdParam(searchParams)
+  const relatedAssessmentIdParam = (searchParams.get('relatedAssessmentId') || '').trim()
+  const [form, setForm] = useState({
+    ...emptyForm,
+    relatedAssessmentId: relatedAssessmentIdParam,
+  })
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -67,6 +78,7 @@ export default function CreateHealthAlert() {
   const [clients, setClients] = useState([])
   const [clientsLoading, setClientsLoading] = useState(true)
   const [clientsError, setClientsError] = useState('')
+  const [clientWarning, setClientWarning] = useState('')
   const [assessments, setAssessments] = useState([])
   const [assessmentsLoading, setAssessmentsLoading] = useState(false)
 
@@ -75,7 +87,23 @@ export default function CreateHealthAlert() {
     setClientsError('')
     try {
       const data = await fetchMedicalClients()
-      setClients(toSelectOptions(data))
+      const options = toSelectOptions(data)
+      setClients(options)
+      if (preselectedClientUserId) {
+        const match = findClientOption(options, preselectedClientUserId)
+        if (match) {
+          setForm((prev) => ({
+            ...prev,
+            clientId: match.value,
+            relatedAssessmentId: relatedAssessmentIdParam || prev.relatedAssessmentId,
+          }))
+          setClientWarning('')
+        } else {
+          setClientWarning(
+            `Client user ID ${preselectedClientUserId} is not in your assigned clients list. Select a client manually.`,
+          )
+        }
+      }
     } catch {
       setClients([])
       setClientsError('Unable to load clients. Please try again.')
@@ -86,7 +114,7 @@ export default function CreateHealthAlert() {
 
   useEffect(() => {
     loadClients()
-  }, [])
+  }, [preselectedClientUserId, relatedAssessmentIdParam])
 
   useEffect(() => {
     async function loadAssessmentsForClient() {
@@ -175,11 +203,16 @@ export default function CreateHealthAlert() {
     event.preventDefault()
     if (!validate()) return
     const payload = buildPayload()
-    const similar = findSimilarActiveAlert(payload.clientId, payload.title)
-    if (similar) {
-      setPendingPayload(payload)
-      setDuplicate(similar)
-      return
+    try {
+      const alerts = await fetchHealthAlerts()
+      const similar = findSimilarActiveAlert(alerts, payload.clientId, payload.title)
+      if (similar) {
+        setPendingPayload(payload)
+        setDuplicate(similar)
+        return
+      }
+    } catch {
+      // If duplicate check fails, continue with create.
     }
     await save(payload)
   }
@@ -189,11 +222,26 @@ export default function CreateHealthAlert() {
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/health-alerts" className="hover:text-[#005a40] hover:underline">
+          Health Risk Alerts
+        </Link>
+        {' › Create'}
+      </p>
+
       <PageHeader
         title="Create Health Risk Alert"
         description="Raise a tracked wellness safety alert for care-team awareness and follow-up."
       />
       <PrivacyBanner />
+      {clientWarning ? (
+        <p
+          className="mb-4 rounded-2xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]"
+          role="status"
+        >
+          {clientWarning}
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {formError ? (

@@ -32,6 +32,8 @@ export default function ReplyComposer({
       }
       setText('')
       setDraftNotice('')
+    } catch (err) {
+      setError(err?.message || 'Something went wrong. Your draft was preserved.')
     } finally {
       setSubmitting(false)
     }

@@ -15,6 +15,7 @@ import {
   formatAppointmentDateLong,
   formatAppointmentTimeRange,
   formatDurationLabel,
+  isAdvisorUnavailableAppointment,
 } from './data/appointmentData'
 
 export default function ClientAppointmentDetails() {
@@ -67,7 +68,13 @@ export default function ClientAppointmentDetails() {
     )
   }
 
-  const canModify = String(appointment.status).toLowerCase() === 'upcoming'
+  const advisorUnavailable = isAdvisorUnavailableAppointment(appointment)
+  const statusForBadge =
+    String(appointment.attendance || '').toUpperCase() === 'ATTENDED'
+      ? 'Completed'
+      : appointment.status
+  const canModify = String(appointment.status).toLowerCase() === 'upcoming' && !advisorUnavailable
+  const canReschedule = canModify || advisorUnavailable
 
   return (
     <div>
@@ -84,8 +91,15 @@ export default function ClientAppointmentDetails() {
       <PageHeader
         title={appointment.service}
         description={`Booking reference ${appointment.bookingReference || '—'}`}
-        actions={<StatusBadge status={appointment.status} />}
+        actions={<StatusBadge status={statusForBadge} />}
       />
+
+      {advisorUnavailable ? (
+        <p className="mb-4 rounded-xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#b45309]">
+          Advisor unavailable
+          {appointment.attendanceNote ? `: ${appointment.attendanceNote}` : ''}
+        </p>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <SectionCard title="Appointment details" className="lg:col-span-2">
@@ -95,7 +109,7 @@ export default function ClientAppointmentDetails() {
           <DetailRow label="Date" value={formatAppointmentDateLong(appointment.date)} />
           <DetailRow label="Time" value={formatAppointmentTimeRange(appointment)} />
           <DetailRow label="Duration" value={formatDurationLabel(appointment.duration)} />
-          <DetailRow label="Status" value={appointment.status} />
+          <DetailRow label="Status" value={statusForBadge} />
           <DetailRow label="Location" value={appointment.location || '—'} />
         </SectionCard>
 
@@ -114,22 +128,22 @@ export default function ClientAppointmentDetails() {
         >
           Back to Appointments
         </Button>
+        {canReschedule ? (
+          <Button
+            to={`/client/appointments/${appointment.id}/reschedule`}
+            variant="outline"
+            className="!border-[#005a40]/25 !text-[#005a40]"
+          >
+            Reschedule Appointment
+          </Button>
+        ) : null}
         {canModify ? (
-          <>
-            <Button
-              to={`/client/appointments/${appointment.id}/reschedule`}
-              variant="outline"
-              className="!border-[#005a40]/25 !text-[#005a40]"
-            >
-              Reschedule Appointment
-            </Button>
-            <Button
-              onClick={() => setCancelOpen(true)}
-              className="!bg-[#fff7ed] !text-[#b45309] hover:!bg-[#ffedd5]"
-            >
-              Cancel Appointment
-            </Button>
-          </>
+          <Button
+            onClick={() => setCancelOpen(true)}
+            className="!bg-[#fff7ed] !text-[#b45309] hover:!bg-[#ffedd5]"
+          >
+            Cancel Appointment
+          </Button>
         ) : null}
       </div>
 

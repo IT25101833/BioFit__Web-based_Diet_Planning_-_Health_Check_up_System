@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileHeart, Plus } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
@@ -12,7 +13,13 @@ import SearchBar from '../../../components/ui/SearchBar'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { formatMedicalDate } from '../health-records/data/healthRecordData'
+import {
+  findClientOption,
+  healthRecordHref,
+  indexHealthRecordsByClient,
+  readClientUserIdParam,
+} from '../shared/medicalNav'
+import { fetchHealthRecords, formatMedicalDate } from '../health-records/data/healthRecordData'
 import MedicalHistoryFormModal from './components/MedicalHistoryFormModal'
 import {
   createMedicalHistory,
@@ -29,27 +36,57 @@ const tabs = [
 ]
 
 export default function MedicalHistory() {
+  const [searchParams] = useSearchParams()
+  const clientUserIdParam = readClientUserIdParam(searchParams)
   const [items, setItems] = useState([])
   const [clients, setClients] = useState([])
+  const [recordIndex, setRecordIndex] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('Active')
   const [search, setSearch] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
+  const [prefillClient, setPrefillClient] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [toast, setToast] = useState('')
+  const openedForParam = useRef('')
+
+  function prefillFromClients(clientList, userId) {
+    const match = findClientOption(clientList, userId)
+    if (!match) return null
+    return {
+      clientId: match.clientId,
+      clientName: match.clientName || match.name,
+      userId: match.userId || match.id,
+    }
+  }
 
   async function load() {
     setLoading(true)
     setError('')
     try {
-      const [history, clientList] = await Promise.all([
-        fetchMedicalHistory({ status: tab === 'all' ? undefined : tab }),
+      const [history, clientList, records] = await Promise.all([
+        fetchMedicalHistory({
+          status: tab === 'all' ? undefined : tab,
+          clientUserId: clientUserIdParam || undefined,
+        }),
         fetchMedicalClients(),
+        fetchHealthRecords().catch(() => []),
       ])
       setItems(history)
       setClients(clientList)
+      setRecordIndex(indexHealthRecordsByClient(records))
+
+      if (clientUserIdParam && openedForParam.current !== clientUserIdParam) {
+        const prefill = prefillFromClients(clientList, clientUserIdParam)
+        if (prefill) {
+          setPrefillClient(prefill)
+          setEditTarget(null)
+          setFormOpen(true)
+          openedForParam.current = clientUserIdParam
+        }
+      }
     } catch {
       setError('We couldn’t load medical history.')
     } finally {
@@ -59,7 +96,7 @@ export default function MedicalHistory() {
 
   useEffect(() => {
     load()
-  }, [tab])
+  }, [tab, clientUserIdParam])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -73,6 +110,17 @@ export default function MedicalHistory() {
         item.recordType?.toLowerCase().includes(q),
     )
   }, [items, search])
+
+  function clientRecordHref(item) {
+    const userId =
+      item.userId != null
+        ? item.userId
+        : String(item.clientId || '').replace(/\D+/g, '') || undefined
+    return healthRecordHref(recordIndex, {
+      userId,
+      clientId: item.clientId,
+    })
+  }
 
   async function handleSave(payload) {
     if (editTarget?.id) {
@@ -98,6 +146,13 @@ export default function MedicalHistory() {
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/dashboard" className="hover:text-[#005a40] hover:underline">
+          Medical Advisor
+        </Link>
+        {' › Medical History'}
+      </p>
+
       <PageHeader
         title="Medical History"
         description="Add, review, update, and deactivate client condition and allergy records."
@@ -106,6 +161,9 @@ export default function MedicalHistory() {
             type="button"
             onClick={() => {
               setEditTarget(null)
+              setPrefillClient(
+                clientUserIdParam ? prefillFromClients(clients, clientUserIdParam) : null,
+              )
               setFormOpen(true)
             }}
             className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
@@ -153,7 +211,12 @@ export default function MedicalHistory() {
                 {filtered.map((item) => (
                   <tr key={item.id} className="border-t border-[#eef2f0]">
                     <td className="px-4 py-3.5">
-                      <p className="font-semibold text-[#111827]">{item.clientName}</p>
+                      <Link
+                        to={clientRecordHref(item)}
+                        className="font-semibold text-[#005a40] hover:underline"
+                      >
+                        {item.clientName}
+                      </Link>
                       <p className="text-[12px] text-[#6b7280]">{item.clientId}</p>
                     </td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{item.recordType}</td>
@@ -180,6 +243,7 @@ export default function MedicalHistory() {
                                 {
                                   label: 'Edit',
                                   onClick: () => {
+                                    setPrefillClient(null)
                                     setEditTarget(item)
                                     setFormOpen(true)
                                   },
@@ -203,11 +267,12 @@ export default function MedicalHistory() {
 
       <MedicalHistoryFormModal
         open={formOpen}
-        initial={editTarget}
+        initial={editTarget || prefillClient}
         clients={clients}
         onClose={() => {
           setFormOpen(false)
           setEditTarget(null)
+          setPrefillClient(null)
         }}
         onSave={handleSave}
       />

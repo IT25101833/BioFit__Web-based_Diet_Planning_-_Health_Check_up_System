@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import Avatar from '../../../components/ui/Avatar'
 import Button from '../../../components/ui/Button'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -8,6 +8,10 @@ import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import { fetchAssessments } from '../assessments/data/healthAssessmentData'
+import { fetchHealthAlerts } from '../health-alerts/data/healthAlertData'
+import { fetchMedicalHistory } from '../medical-history/data/medicalHistoryData'
+import { fetchSafetyValidations } from '../safety-validation/data/safetyValidationData'
 import PrivacyBanner from '../shared/PrivacyBanner'
 import { fetchHealthRecordById, formatMedicalDate } from './data/healthRecordData'
 
@@ -16,14 +20,30 @@ const tabs = [
   { value: 'history', label: 'Medical History' },
   { value: 'assessments', label: 'Health Assessments' },
   { value: 'alerts', label: 'Health Risk Alerts' },
+  { value: 'safety', label: 'Safety Validations' },
   { value: 'guidance', label: 'Wellness Safety Guidance' },
   { value: 'appointments', label: 'Appointments' },
   { value: 'record-history', label: 'Record History' },
 ]
 
+function matchesClient(row, clientUserId) {
+  if (clientUserId == null || clientUserId === '') return false
+  const key = String(clientUserId)
+  return (
+    String(row.userId ?? '') === key ||
+    String(row.clientUserId ?? '') === key ||
+    String(row.clientId || '').replace(/\D+/g, '') === key ||
+    String(row.clientId || '') === `BF-C${key}`
+  )
+}
+
 export default function MedicalRecordDetails() {
   const { id } = useParams()
   const [record, setRecord] = useState(null)
+  const [historyItems, setHistoryItems] = useState([])
+  const [assessments, setAssessments] = useState([])
+  const [alerts, setAlerts] = useState([])
+  const [safetyItems, setSafetyItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('overview')
@@ -32,7 +52,44 @@ export default function MedicalRecordDetails() {
     setLoading(true)
     setError('')
     try {
-      setRecord(await fetchHealthRecordById(id))
+      const recordData = await fetchHealthRecordById(id)
+      setRecord(recordData)
+      const clientUserId = recordData.userId
+      const uid = clientUserId != null ? String(clientUserId) : ''
+
+      const [history, assessmentList, alertList, safetyList] = await Promise.all([
+        uid
+          ? fetchMedicalHistory({ clientUserId: uid }).catch(() => [])
+          : Promise.resolve([]),
+        uid
+          ? fetchAssessments({ clientUserId: uid }).catch(() => recordData.assessments || [])
+          : Promise.resolve(recordData.assessments || []),
+        fetchHealthAlerts()
+          .then((list) =>
+            uid
+              ? (Array.isArray(list) ? list : []).filter((a) => matchesClient(a, uid))
+              : Array.isArray(list)
+                ? list
+                : [],
+          )
+          .catch(() => recordData.alerts || []),
+        uid
+          ? fetchSafetyValidations({ clientUserId: uid }).catch(() => [])
+          : Promise.resolve([]),
+      ])
+
+      setHistoryItems(Array.isArray(history) ? history : [])
+      setAssessments(
+        Array.isArray(assessmentList) && assessmentList.length
+          ? assessmentList
+          : recordData.assessments || [],
+      )
+      setAlerts(
+        Array.isArray(alertList) && alertList.length
+          ? alertList
+          : recordData.alerts || [],
+      )
+      setSafetyItems(Array.isArray(safetyList) ? safetyList : [])
     } catch {
       setError('We couldn’t load this medical record.')
     } finally {
@@ -49,17 +106,20 @@ export default function MedicalRecordDetails() {
     return <ErrorState title="We couldn’t load this medical record." onRetry={load} />
   }
 
+  const clientUserId = record.userId != null ? String(record.userId) : ''
+  const q = clientUserId ? `?clientUserId=${encodeURIComponent(clientUserId)}` : ''
   const history = record.medicalHistory || {}
   const guidance = record.wellnessGuidance || {}
-  const assessments = record.assessments || []
-  const alerts = record.alerts || []
   const appointments = record.appointments || []
   const timeline = record.history || []
 
   return (
     <div>
       <p className="mb-3 text-[12px] text-[#8b93a1]">
-        Medical Advisor / Client Health Records / {record.clientName}
+        <Link to="/medical/health-records" className="hover:text-[#005a40] hover:underline">
+          Health Records
+        </Link>
+        {` › ${record.clientName}`}
       </p>
 
       <PrivacyBanner />
@@ -76,22 +136,45 @@ export default function MedicalRecordDetails() {
               Edit Medical Record
             </Button>
             <Button
-              to={`/medical/assessments/create?client=${record.clientId}`}
+              to={`/medical/assessments/create${q}`}
               variant="outline"
               className="!text-[#005a40]"
             >
-              Add Health Assessment
+              New assessment
             </Button>
             <Button
-              to={`/medical/health-alerts/create?client=${record.clientId}`}
+              to={`/medical/health-alerts/create${q}`}
               variant="outline"
               className="!text-[#005a40]"
             >
-              Create Health Risk Alert
+              Raise alert
+            </Button>
+            <Button
+              to={`/medical/medical-history${q}`}
+              variant="outline"
+              className="!text-[#005a40]"
+            >
+              Add medical history
+            </Button>
+            <Button
+              to={`/medical/safety-validation${q}`}
+              variant="outline"
+              className="!text-[#005a40]"
+            >
+              Run safety validation
             </Button>
           </div>
         }
       />
+
+      <div className="mb-4">
+        <Link
+          to="/medical/health-records"
+          className="text-sm font-semibold text-[#005a40] hover:underline"
+        >
+          ← Back to Health Records
+        </Link>
+      </div>
 
       <SectionCard className="mb-4">
         <div className="flex flex-wrap items-center gap-4">
@@ -127,7 +210,7 @@ export default function MedicalRecordDetails() {
             <p className="mt-1 text-[12px] text-[#6b7280]">Most recent assessment date</p>
           </SectionCard>
           <SectionCard title="Active Risk Alerts">
-            <p className="text-sm font-semibold text-[#111827]">{record.activeRiskAlerts ?? 0}</p>
+            <p className="text-sm font-semibold text-[#111827]">{record.activeRiskAlerts ?? alerts.length}</p>
             <p className="mt-1 text-[12px] text-[#6b7280]">Open or under review</p>
           </SectionCard>
           <SectionCard title="Next Medical Review">
@@ -145,15 +228,44 @@ export default function MedicalRecordDetails() {
 
       {tab === 'history' ? (
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-between gap-2">
+            <p className="text-sm text-[#6b7280]">
+              History entries link back to this client record (no separate detail route).
+            </p>
             <Button
-              to={`/medical/health-records/${record.id}/edit`}
+              to={`/medical/medical-history${q}`}
               size="sm"
               className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
             >
-              Edit
+              Add medical history
             </Button>
           </div>
+          {historyItems.length > 0 ? (
+            <SectionCard title="Medical History Entries">
+              <div className="space-y-3">
+                {historyItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-col gap-2 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <Link
+                        to={`/medical/health-records/${record.id}`}
+                        className="text-sm font-semibold text-[#005a40] hover:underline"
+                      >
+                        {item.clientName || record.clientName}
+                      </Link>
+                      <p className="mt-1 text-[12px] text-[#6b7280]">
+                        {item.recordType} · {item.conditionName || item.allergyInfo || '—'}
+                        {item.recordedDate ? ` · ${formatMedicalDate(item.recordedDate)}` : ''}
+                      </p>
+                    </div>
+                    {item.status ? <StatusBadge status={item.status} /> : null}
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <ListCard title="Conditions" items={history.conditions} />
             <ListCard title="Allergies" items={history.allergies} />
@@ -177,7 +289,18 @@ export default function MedicalRecordDetails() {
       ) : null}
 
       {tab === 'assessments' ? (
-        <SectionCard title="Health Assessment History">
+        <SectionCard
+          title="Health Assessment History"
+          actions={
+            <Button
+              to={`/medical/assessments/create${q}`}
+              size="sm"
+              className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
+            >
+              New assessment
+            </Button>
+          }
+        >
           {assessments.length === 0 ? (
             <p className="text-sm text-[#6b7280]">No assessments linked to this record yet.</p>
           ) : (
@@ -190,7 +313,7 @@ export default function MedicalRecordDetails() {
                   <div>
                     <p className="text-sm font-semibold text-[#111827]">{item.type}</p>
                     <p className="mt-1 text-[12px] text-[#6b7280]">
-                      {formatMedicalDate(item.date)} · {item.advisor || 'Elena Costa'}
+                      {formatMedicalDate(item.date)} · {item.advisor || '—'}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <StatusBadge status={item.status} />
@@ -213,7 +336,18 @@ export default function MedicalRecordDetails() {
       ) : null}
 
       {tab === 'alerts' ? (
-        <SectionCard title="Health Risk Alerts">
+        <SectionCard
+          title="Health Risk Alerts"
+          actions={
+            <Button
+              to={`/medical/health-alerts/create${q}`}
+              size="sm"
+              className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
+            >
+              Raise alert
+            </Button>
+          }
+        >
           {alerts.length === 0 ? (
             <p className="text-sm text-[#6b7280]">No health risk alerts for this client.</p>
           ) : (
@@ -243,6 +377,47 @@ export default function MedicalRecordDetails() {
                   >
                     View
                   </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      ) : null}
+
+      {tab === 'safety' ? (
+        <SectionCard
+          title="Safety Validations"
+          actions={
+            <Button
+              to={`/medical/safety-validation${q}`}
+              size="sm"
+              className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
+            >
+              Run safety validation
+            </Button>
+          }
+        >
+          {safetyItems.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No safety validations for this client yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {safetyItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col gap-2 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-[#111827]">
+                      {item.resultStatus || item.status || 'Validation'}
+                    </p>
+                    <p className="mt-1 text-[12px] text-[#6b7280]">
+                      {formatMedicalDate(item.validatedAt)}
+                      {(item.warnings || []).length
+                        ? ` · ${(item.warnings || []).length} warning(s)`
+                        : ''}
+                    </p>
+                  </div>
+                  <StatusBadge status={item.resultStatus || item.status} />
                 </div>
               ))}
             </div>
@@ -290,7 +465,17 @@ export default function MedicalRecordDetails() {
       ) : null}
 
       {tab === 'appointments' ? (
-        <SectionCard title="Medical Appointments">
+        <SectionCard
+          title="Medical Appointments"
+          actions={
+            <Link
+              to="/medical/appointments"
+              className="text-sm font-semibold text-[#005a40] hover:underline"
+            >
+              View all
+            </Link>
+          }
+        >
           {appointments.length === 0 ? (
             <p className="text-sm text-[#6b7280]">No appointments linked to this record.</p>
           ) : (
@@ -303,7 +488,8 @@ export default function MedicalRecordDetails() {
                   <div>
                     <p className="text-sm font-semibold text-[#111827]">{item.type}</p>
                     <p className="mt-1 text-[12px] text-[#6b7280]">
-                      {formatMedicalDate(item.date)} · {item.time} · {item.professional || 'Elena Costa'}
+                      {formatMedicalDate(item.date)} · {item.time}
+                      {item.professional ? ` · ${item.professional}` : ''}
                     </p>
                   </div>
                   <StatusBadge status={item.status} />

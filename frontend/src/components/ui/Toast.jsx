@@ -1,21 +1,52 @@
 import { CheckCircle2, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
-export default function Toast({ open, message, onClose }) {
+export default function Toast({
+  open,
+  message,
+  onClose,
+  actionLabel,
+  actionTo,
+  onAction,
+}) {
   if (!open || !message) return null
 
   return (
     <div
       role="status"
-      className="fixed right-4 bottom-4 z-[90] flex max-w-sm items-start gap-3 rounded-2xl border border-[#d7eee6] bg-white px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+      className="fixed right-4 bottom-4 z-[90] flex max-w-sm items-start gap-3 rounded-2xl border border-[var(--bf-border)] bg-[var(--bf-surface-raised)] px-4 py-3 shadow-[var(--bf-shadow-out)]"
     >
-      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e6f5f0] text-[#005a40]">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e6f5f0] text-[#005a40] shadow-[var(--bf-shadow-out)]">
         <CheckCircle2 className="h-4 w-4" strokeWidth={2.2} />
       </span>
-      <p className="flex-1 pt-1 text-sm font-medium text-[#111827]">{message}</p>
+      <div className="min-w-0 flex-1 pt-1">
+        <p className="text-sm font-medium text-[var(--bf-ink)]">{message}</p>
+        {actionLabel && actionTo ? (
+          <Link
+            to={actionTo}
+            className="mt-2 inline-flex text-sm font-semibold text-[#005a40] hover:underline"
+            onClick={onClose}
+          >
+            {actionLabel}
+          </Link>
+        ) : null}
+        {actionLabel && !actionTo && onAction ? (
+          <button
+            type="button"
+            className="mt-2 inline-flex text-sm font-semibold text-[#005a40] hover:underline"
+            onClick={() => {
+              onAction()
+              onClose?.()
+            }}
+          >
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
       <button
         type="button"
         onClick={onClose}
-        className="rounded-lg p-1 text-[#9ca3af] hover:bg-[#f4f6fb] hover:text-[#4b5563]"
+        className="rounded-xl border border-[var(--bf-border)] bg-[var(--bf-surface)] p-1 text-[var(--bf-muted)] shadow-[var(--bf-shadow-out)] hover:text-[var(--bf-ink)]"
         aria-label="Dismiss"
       >
         <X className="h-4 w-4" />

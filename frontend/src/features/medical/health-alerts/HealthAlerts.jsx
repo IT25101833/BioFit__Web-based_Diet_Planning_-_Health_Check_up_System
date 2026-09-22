@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, ShieldAlert } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
@@ -15,7 +15,8 @@ import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { clientOptions, formatMedicalDate } from '../health-records/data/healthRecordData'
+import { readClientUserIdParam } from '../shared/medicalNav'
+import { fetchClientOptions, formatMedicalDate } from '../health-records/data/healthRecordData'
 import { deactivateHealthAlert, fetchHealthAlerts } from './data/healthAlertData'
 
 const tabs = [
@@ -32,9 +33,11 @@ export default function HealthAlerts() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [items, setItems] = useState([])
+  const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('all')
+  const clientUserIdFilter = readClientUserIdParam(searchParams)
   const [search, setSearch] = useState(searchParams.get('client') || '')
   const [priority, setPriority] = useState('')
   const [programme, setProgramme] = useState('')
@@ -47,7 +50,12 @@ export default function HealthAlerts() {
     setLoading(true)
     setError('')
     try {
-      setItems(await fetchHealthAlerts())
+      const [alerts, clientList] = await Promise.all([
+        fetchHealthAlerts(),
+        fetchClientOptions(),
+      ])
+      setItems(Array.isArray(alerts) ? alerts : [])
+      setClients(Array.isArray(clientList) ? clientList : [])
     } catch {
       setError('We couldn’t load health risk alerts.')
     } finally {
@@ -61,10 +69,19 @@ export default function HealthAlerts() {
 
   const programmeByClient = useMemo(() => {
     const map = {}
-    clientOptions.forEach((c) => {
-      map[c.value] = c.programme
+    clients.forEach((c) => {
+      if (c.value) map[c.value] = c.programme
+      if (c.clientName) map[c.clientName] = c.programme
+    })
+    items.forEach((item) => {
+      if (item.clientId && item.programme) map[item.clientId] = item.programme
     })
     return map
+  }, [clients, items])
+
+  const monthPrefix = useMemo(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   }, [])
 
   const summary = useMemo(
@@ -73,22 +90,43 @@ export default function HealthAlerts() {
       underReview: items.filter((i) => i.status === 'Under Review').length,
       followUps: items.filter((i) => i.status === 'Follow-up Required').length,
       resolvedMonth: items.filter(
-        (i) => i.status === 'Resolved' && String(i.resolvedDate || '').startsWith('2026-09'),
+        (i) =>
+          i.status === 'Resolved' &&
+          String(i.resolvedDate || '').startsWith(monthPrefix),
       ).length,
     }),
-    [items],
+    [items, monthPrefix],
   )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let list = items.filter((item) => {
       if (tab !== 'all' && item.status !== tab) return false
+      if (clientUserIdFilter) {
+        const key = String(clientUserIdFilter)
+        const matches =
+          String(item.userId ?? '') === key ||
+          String(item.clientId || '').replace(/\D+/g, '') === key ||
+          String(item.clientId || '') === `BF-C${key}`
+        if (!matches) return false
+      }
       if (
         q &&
-        !item.clientName.toLowerCase().includes(q) &&
-        !item.clientId.toLowerCase().includes(q) &&
-        !item.id.toLowerCase().includes(q) &&
-        !item.title.toLowerCase().includes(q)
+        !String(item.clientName || '')
+          .toLowerCase()
+          .includes(q) &&
+        !String(item.clientId || '')
+          .toLowerCase()
+          .includes(q) &&
+        !String(item.userId ?? '')
+          .toLowerCase()
+          .includes(q) &&
+        !String(item.id || '')
+          .toLowerCase()
+          .includes(q) &&
+        !String(item.title || '')
+          .toLowerCase()
+          .includes(q)
       ) {
         return false
       }
@@ -103,17 +141,30 @@ export default function HealthAlerts() {
       if (sort === 'priority') {
         return (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0)
       }
-      if (sort === 'client') return a.clientName.localeCompare(b.clientName)
+      if (sort === 'client') {
+        return String(a.clientName || '').localeCompare(String(b.clientName || ''))
+      }
       return String(b.dateRaised).localeCompare(String(a.dateRaised))
     })
 
     return list
-  }, [items, tab, search, priority, programme, followUpStatus, sort, programmeByClient])
+  }, [
+    items,
+    tab,
+    search,
+    priority,
+    programme,
+    followUpStatus,
+    sort,
+    programmeByClient,
+    clientUserIdFilter,
+  ])
 
-  const programmes = useMemo(
-    () => [...new Set(clientOptions.map((c) => c.programme))].filter(Boolean),
-    [],
-  )
+  const programmes = useMemo(() => {
+    const fromClients = clients.map((c) => c.programme).filter(Boolean)
+    const fromItems = items.map((i) => i.programme || programmeByClient[i.clientId]).filter(Boolean)
+    return [...new Set([...fromClients, ...fromItems])]
+  }, [clients, items, programmeByClient])
 
   async function handleDeactivate() {
     if (!deactivateTarget) return
@@ -130,12 +181,23 @@ export default function HealthAlerts() {
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/dashboard" className="hover:text-[#005a40] hover:underline">
+          Medical Advisor
+        </Link>
+        {' › Health Risk Alerts'}
+      </p>
+
       <PageHeader
         title="Health Risk Alert Management"
         description="Review, monitor and manage client health risk alerts and follow-up actions."
         actions={
           <Button
-            to="/medical/health-alerts/create"
+            to={
+              clientUserIdFilter
+                ? `/medical/health-alerts/create?clientUserId=${encodeURIComponent(clientUserIdFilter)}`
+                : '/medical/health-alerts/create'
+            }
             className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
           >
             <Plus className="h-4 w-4" />
@@ -232,7 +294,11 @@ export default function HealthAlerts() {
               </thead>
               <tbody>
                 {filtered.map((item) => (
-                  <tr key={item.id} className="border-t border-[#eef2f0]">
+                  <tr
+                    key={item.id}
+                    className="cursor-pointer border-t border-[#eef2f0] hover:bg-[#f8faf9]"
+                    onClick={() => navigate(`/medical/health-alerts/${item.id}`)}
+                  >
                     <td className="px-4 py-3.5">
                       <p className="font-semibold text-[#111827]">{item.clientName}</p>
                       <p className="text-[12px] text-[#8b93a1]">{item.clientId}</p>
@@ -257,7 +323,7 @@ export default function HealthAlerts() {
                     <td className="px-4 py-3.5 text-[#4b5563]">
                       {formatMedicalDate(item.guidance?.lastUpdated || item.dateRaised)}
                     </td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <ActionMenu
                         items={[
                           {

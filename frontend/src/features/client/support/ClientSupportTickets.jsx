@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { HelpCircle, Plus } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -7,6 +8,7 @@ import FilterTabs from '../../../components/ui/FilterTabs'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import Toast from '../../../components/ui/Toast'
 import { fetchClientSupportTickets } from './data/supportData'
 
 const tabs = [
@@ -17,10 +19,13 @@ const tabs = [
 ]
 
 export default function ClientSupportTickets() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('Open')
+  const [toast, setToast] = useState('')
 
   async function load() {
     setLoading(true)
@@ -37,6 +42,13 @@ export default function ClientSupportTickets() {
   useEffect(() => {
     load()
   }, [])
+
+  useEffect(() => {
+    const message = location.state?.toast
+    if (!message) return
+    setToast(message)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, navigate])
 
   const filtered = useMemo(
     () => tickets.filter((ticket) => ticket.status === tab),
@@ -88,7 +100,7 @@ export default function ClientSupportTickets() {
               key={ticket.id}
               to={`/client/support/${ticket.id}`}
               variant="ghost"
-              className="!block !h-auto !w-full !rounded-[1.25rem] !border !border-[#e8ecf1] !bg-white !p-5 !text-left !shadow-[0_8px_24px_rgba(15,23,42,0.04)] hover:!bg-[#f8faf9]"
+              className="!block !h-auto !w-full !rounded-[1.25rem] !border !border-[var(--bf-border)] !bg-[var(--bf-surface-raised)] !p-5 !text-left !shadow-[var(--bf-shadow-out)] hover:!bg-[var(--bf-surface)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -104,6 +116,8 @@ export default function ClientSupportTickets() {
           ))}
         </div>
       )}
+
+      <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 package com.biofit.backend.domain;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -85,8 +86,14 @@ public class DomainMapper {
         m.put("notes", a.getNotes());
         m.put("location", a.getLocation());
         m.put("clientId", a.getClientId());
+        m.put("clientUserId", a.getClientUserId());
         m.put("client", a.getClientName());
         m.put("clientName", a.getClientName());
+        m.put("attendance", a.getAttendance());
+        m.put("attendanceNote", a.getAttendanceNote());
+        m.put(
+                "attendanceMarkedAt",
+                a.getAttendanceMarkedAt() == null ? null : a.getAttendanceMarkedAt().toString());
         return m;
     }
 
@@ -116,6 +123,11 @@ public class DomainMapper {
         m.put("clientName", t.getClientName());
         m.put("createdAt", t.getCreatedAt() != null ? t.getCreatedAt().toString() : null);
         m.put("updatedAt", t.getUpdatedAt() != null ? t.getUpdatedAt().toString() : null);
+        Instant activityBase = t.getUpdatedAt() != null ? t.getUpdatedAt() : t.getCreatedAt();
+        if (activityBase != null) {
+            m.put("lastActivityAt", activityBase.toString());
+            m.put("waitingTimeMinutes", Math.max(0, Duration.between(activityBase, Instant.now()).toMinutes()));
+        }
         @SuppressWarnings("unchecked")
         List<Object> messages = (List<Object>) parseJson(t.getMessagesJson(), new ArrayList<>());
         m.put("messages", messages);
@@ -126,8 +138,10 @@ public class DomainMapper {
         Map<String, Object> related = new LinkedHashMap<>();
         related.put("name", t.getRelatedService());
         m.put("relatedService", related);
-        m.put("activityTimeline", List.of());
-        m.put("waitingOn", null);
+        m.put("activityTimeline", parseJson(t.getActivityJson(), List.of()));
+        m.put("waitingOn", t.getWaitingOn());
+        m.put("resolution", parseJson(t.getResolutionJson(), null));
+        m.put("escalation", parseJson(t.getEscalationJson(), null));
         return m;
     }
 

@@ -76,7 +76,22 @@ export async function markNotificationRead(id) {
 export async function markAllNotificationsRead() {
   if (USE_MOCK) {
     await delay(350)
+    notifications.forEach((n) => {
+      n.read = true
+    })
     return { success: true }
   }
   return apiRequest('/api/client/notifications/read-all', { method: 'PATCH' })
+}
+
+export function pushClientNotification({ type = 'support', title, body, link }) {
+  notifications.unshift({
+    id: `n-${Date.now()}`,
+    type,
+    title,
+    body,
+    createdAt: new Date().toISOString(),
+    read: false,
+    link: link || null,
+  })
 }

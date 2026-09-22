@@ -2,6 +2,8 @@ package com.biofit.backend.domain;
 
 import com.biofit.backend.common.ApiResponse;
 import com.biofit.backend.security.UserPrincipal;
+import com.biofit.backend.user.User;
+import com.biofit.backend.user.UserRepository;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ public class SupportDomainController {
 
     private final DomainService domainService;
     private final CompletionService completionService;
+    private final UserRepository userRepository;
 
     @GetMapping("/dashboard")
     public ApiResponse<Map<String, Object>> dashboard(@AuthenticationPrincipal UserPrincipal principal) {
@@ -74,9 +77,7 @@ public class SupportDomainController {
 
     @GetMapping("/tickets")
     public ApiResponse<List<Map<String, Object>>> tickets() {
-        return ApiResponse.ok(domainService.allTickets().stream()
-                .map(t -> completionService.fullTicket(String.valueOf(t.get("id"))))
-                .toList());
+        return ApiResponse.ok(completionService.allFullTickets());
     }
 
     @GetMapping("/tickets/{id}")
@@ -86,14 +87,28 @@ public class SupportDomainController {
 
     @PatchMapping("/tickets/{id}")
     public ApiResponse<Map<String, Object>> updateTicket(
-            @PathVariable String id, @RequestBody Map<String, Object> body) {
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        body.putIfAbsent("author", resolveAuthorName(principal));
         return ApiResponse.ok(completionService.patchTicket(id, body));
     }
 
     @PostMapping("/tickets/{id}/replies")
-    public ApiResponse<Map<String, Object>> reply(@PathVariable String id, @RequestBody Map<String, Object> body) {
-        body.putIfAbsent("author", "Support");
+    public ApiResponse<Map<String, Object>> reply(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        body.putIfAbsent("author", resolveAuthorName(principal));
         return ApiResponse.ok(completionService.patchTicket(id, body));
+    }
+
+    private String resolveAuthorName(UserPrincipal principal) {
+        if (principal == null) return "Support";
+        return userRepository
+                .findById(principal.getId())
+                .map(User::getFullName)
+                .orElse(principal.getUsername());
     }
 
     @GetMapping("/tickets/client/{clientId}")

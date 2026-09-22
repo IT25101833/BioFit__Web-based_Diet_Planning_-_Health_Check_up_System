@@ -114,7 +114,7 @@ public class BookingAvailabilityService {
         for (Appointment apt : appointmentRepository.findAll()) {
             if (excludeAppointmentId != null && excludeAppointmentId.equals(apt.getId())) continue;
             if (apt.getAppointmentDate() == null || !apt.getAppointmentDate().equals(date)) continue;
-            if ("Cancelled".equalsIgnoreCase(apt.getStatus())) continue;
+            if (isCancelledStatus(apt.getStatus())) continue;
             boolean matches =
                     professionalId.equals(apt.getProfessional())
                             || (apt.getProfessionalUserId() != null
@@ -398,6 +398,12 @@ public class BookingAvailabilityService {
 
     private static RoleName primaryRole(User user) {
         return user.getRoles().stream().findFirst().map(r -> r.getName()).orElse(null);
+    }
+
+    private static boolean isCancelledStatus(String status) {
+        if (status == null || status.isBlank()) return false;
+        String normalized = status.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.equals("cancelled") || normalized.startsWith("cancelled ");
     }
 
     private static String displayRole(RoleName role) {

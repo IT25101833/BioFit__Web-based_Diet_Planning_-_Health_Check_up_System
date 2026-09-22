@@ -83,6 +83,8 @@ export function formatDurationLabel(duration) {
 export function isPastAppointment(appointment, todayIso = new Date().toISOString().slice(0, 10)) {
   if (!appointment) return false
   if (String(appointment.status).toLowerCase() === 'completed') return true
+  if (String(appointment.attendance || '').toUpperCase() === 'ATTENDED') return true
+  if (isAdvisorUnavailableAppointment(appointment)) return false
   if (String(appointment.status).toLowerCase() === 'cancelled') return false
   if (!appointment.date) return false
   return String(appointment.date) < todayIso
@@ -90,11 +92,26 @@ export function isPastAppointment(appointment, todayIso = new Date().toISOString
 
 export function isUpcomingAppointment(appointment, todayIso = new Date().toISOString().slice(0, 10)) {
   if (!appointment) return false
-  if (String(appointment.status).toLowerCase() === 'cancelled') return false
+  if (isAdvisorUnavailableAppointment(appointment)) return false
+  if (String(appointment.status).toLowerCase().startsWith('cancelled')) return false
   if (String(appointment.status).toLowerCase() === 'completed') return false
-  if (String(appointment.status).toLowerCase() !== 'upcoming') return false
+  if (String(appointment.attendance || '').toUpperCase() === 'ATTENDED') return false
+  const status = String(appointment.status || '').toLowerCase()
+  if (status !== 'upcoming' && status !== 'confirmed') return false
   if (!appointment.date) return true
   return String(appointment.date) >= todayIso
+}
+
+export function isAdvisorUnavailableAppointment(appointment) {
+  if (!appointment) return false
+  if (String(appointment.attendance || '').toUpperCase() === 'ADVISOR_UNAVAILABLE') return true
+  return String(appointment.status || '').toLowerCase() === 'cancelled by advisor'
+}
+
+export function isCancelledAppointment(appointment) {
+  if (!appointment) return false
+  if (isAdvisorUnavailableAppointment(appointment)) return true
+  return String(appointment.status || '').toLowerCase() === 'cancelled'
 }
 
 export function getBookingDateOptions() {

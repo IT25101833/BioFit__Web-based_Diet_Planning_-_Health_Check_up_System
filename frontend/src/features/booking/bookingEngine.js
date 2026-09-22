@@ -234,14 +234,30 @@ export function isDateBeforeToday(iso, todayIso = localTodayIso()) {
   return String(iso).slice(0, 10) < String(todayIso).slice(0, 10)
 }
 
+export function isDateAfterToday(iso, todayIso = localTodayIso()) {
+  if (!iso) return false
+  return String(iso).slice(0, 10) > String(todayIso).slice(0, 10)
+}
+
 export function isDateTodayOrFuture(iso, todayIso = localTodayIso()) {
   if (!iso) return false
   return String(iso).slice(0, 10) >= String(todayIso).slice(0, 10)
 }
 
+export function isValidIsoDate(iso) {
+  const raw = String(iso || '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false
+  const parsed = parseLocalIsoDate(raw)
+  if (!parsed) return false
+  return toLocalIsoDate(parsed) === raw
+}
+
 export const PAST_DATE_MESSAGE =
   'Please select today or a future date. Past dates are not allowed.'
 
+export const FUTURE_DATE_MESSAGE = 'Future dates are not allowed.'
+
+export const REQUIRED_DATE_MESSAGE = 'Please select a date.'
 /** Drop already-passed start times when the selected day is today. */
 export function filterAvailableSlotsForDate(slots, dateIso, now = new Date()) {
   const list = Array.isArray(slots) ? slots : []

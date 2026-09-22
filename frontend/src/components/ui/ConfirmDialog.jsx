@@ -10,29 +10,36 @@ export default function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   tone = 'default',
+  confirming = false,
   children,
 }) {
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={confirming ? undefined : onClose}
       title={title}
       description={description}
       size="sm"
       footer={
         <>
-          <Button variant="outline" onClick={onClose} className="!border-[#e8ecf1] !text-[#4b5563]">
+          <Button
+            variant="outline"
+            disabled={confirming}
+            onClick={onClose}
+            className="!border-[var(--bf-border)] !bg-[var(--bf-surface)] !text-[var(--bf-muted)] !shadow-[var(--bf-shadow-out)]"
+          >
             {cancelLabel}
           </Button>
           <Button
+            disabled={confirming}
             onClick={onConfirm}
             className={
               tone === 'danger'
-                ? '!bg-[#b45309] !text-white hover:!bg-[#92400e]'
-                : '!bg-[#005a40] !text-white hover:!bg-[#004833]'
+                ? '!border-[#f0d0d0] !bg-[#fde8e8] !text-[#c45c5c] !shadow-[var(--bf-shadow-out)] hover:!bg-[#fadada]'
+                : '!bg-[#005a40] !text-white !shadow-[var(--bf-shadow-out)] hover:!bg-[#004833]'
             }
           >
-            {confirmLabel}
+            {confirming ? 'Please wait…' : confirmLabel}
           </Button>
         </>
       }

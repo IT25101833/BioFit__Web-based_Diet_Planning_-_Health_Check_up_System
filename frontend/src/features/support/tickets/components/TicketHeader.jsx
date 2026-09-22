@@ -1,7 +1,11 @@
 import { Link } from 'react-router-dom'
-import { ArrowLeft, ArrowUpRight, CheckCircle, MessageSquare, Play, UserCheck } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, CheckCircle, Lock, MessageSquare, Play, UserCheck } from 'lucide-react'
 import Button from '../../../../components/ui/Button'
 import StatusBadge from '../../../../components/ui/StatusBadge'
+
+function isTicketUnassigned(assignedTo) {
+  return !assignedTo || assignedTo === 'Support Desk' || assignedTo === 'Unassigned'
+}
 
 export default function TicketHeader({
   ticket,
@@ -9,15 +13,17 @@ export default function TicketHeader({
   onStartProgress,
   onOpenEscalate,
   onOpenResolve,
+  onCloseTicket,
   onScrollToReply,
 }) {
-  const isUnassigned = !ticket.assignedTo
+  const isUnassigned = isTicketUnassigned(ticket.assignedTo)
   const canStartProgress = ticket.status === 'Open' || ticket.status === 'Assigned'
-  const isResolved = ticket.status === 'Resolved' || ticket.status === 'Closed'
+  const isResolved = ticket.status === 'Resolved'
+  const isClosed = ticket.status === 'Closed'
+  const isFinished = isResolved || isClosed
 
   return (
     <div className="mb-6 space-y-4">
-      {/* Back button */}
       <div className="flex items-center justify-between">
         <Link
           to="/support/ticket-queue"
@@ -27,11 +33,14 @@ export default function TicketHeader({
           <span>Back to Ticket Queue</span>
         </Link>
         <span className="text-xs text-[#6b7280]">
-          Last activity: {new Date(ticket.lastActivityAt || ticket.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          Last activity:{' '}
+          {new Date(ticket.lastActivityAt || ticket.updatedAt).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
         </span>
       </div>
 
-      {/* Main Header Card */}
       <div className="flex flex-col gap-4 rounded-3xl border border-[#e8ecf1] bg-white p-5 shadow-xs lg:flex-row lg:items-center lg:justify-between sm:p-6">
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -56,13 +65,13 @@ export default function TicketHeader({
             {ticket.subject}
           </h1>
           <p className="text-xs text-[#6b7280]">
-            Opened by <strong className="text-[#111827]">{ticket.client?.name}</strong> ({ticket.client?.id}) · {ticket.client?.programme}
+            Opened by <strong className="text-[#111827]">{ticket.client?.name}</strong> (
+            {ticket.client?.id}) · {ticket.client?.programme}
           </p>
         </div>
 
-        {/* Header Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {isUnassigned ? (
+          {isUnassigned && !isFinished ? (
             <Button
               variant="outline"
               size="sm"
@@ -86,7 +95,7 @@ export default function TicketHeader({
             </Button>
           ) : null}
 
-          {!isResolved ? (
+          {!isFinished ? (
             <>
               <Button
                 variant="outline"
@@ -117,10 +126,28 @@ export default function TicketHeader({
                 Respond
               </Button>
             </>
+          ) : isResolved ? (
+            <>
+              <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#e6f5f0] px-3.5 py-1.5 text-xs font-semibold text-[#005a40]">
+                <CheckCircle className="h-4 w-4" />
+                <span>Resolved</span>
+              </div>
+              {onCloseTicket ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onCloseTicket}
+                  className="!border-[#e8ecf1] !text-[#4b5563]"
+                >
+                  <Lock className="h-3.5 w-3.5 mr-1.5" />
+                  Close Ticket
+                </Button>
+              ) : null}
+            </>
           ) : (
-            <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#e6f5f0] px-3.5 py-1.5 text-xs font-semibold text-[#005a40]">
-              <CheckCircle className="h-4 w-4" />
-              <span>Resolved</span>
+            <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#f4f6fb] px-3.5 py-1.5 text-xs font-semibold text-[#6b7280]">
+              <Lock className="h-4 w-4" />
+              <span>Closed</span>
             </div>
           )}
         </div>

@@ -1,15 +1,29 @@
 package com.biofit.backend.domain;
 
+import com.biofit.backend.audit.AuditLog;
+import com.biofit.backend.audit.AuditLogRepository;
 import com.biofit.backend.common.ApiException;
+import com.biofit.backend.health.HealthAssessment;
+import com.biofit.backend.health.HealthAssessmentRepository;
+import com.biofit.backend.health.HealthRiskAlert;
+import com.biofit.backend.health.HealthRiskAlertRepository;
+import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.WeekFields;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -34,6 +48,9 @@ public class DomainService {
     private final UserRepository userRepository;
     private final DomainMapper mapper;
     private final BookingAvailabilityService bookingAvailabilityService;
+    private final HealthAssessmentRepository healthAssessmentRepository;
+    private final HealthRiskAlertRepository healthRiskAlertRepository;
+    private final AuditLogRepository auditLogRepository;
 
     /* ---------- Client ---------- */
 
@@ -137,18 +154,37 @@ public class DomainService {
         a.setAudience(nullTo(str(payload.get("audience")), "CLIENT"));
         appointmentRepository.save(a);
 
-        bookingAvailabilityService.notifyProfessional(
-                professionalUserId,
-                "New appointment booked",
-                a.getClientName()
-                        + " booked "
-                        + a.getServiceType()
-                        + " on "
-                        + a.getAppointmentDate()
-                        + " at "
-                        + a.getAppointmentTime()
-                        + ".",
-                "/notifications");
+        if (isMedicalAdvisorUser(professionalUserId)) {
+            String clientLabel = firstNonBlank(a.getClientName(), "A client");
+            String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
+            createNotification(
+                    professionalUserId,
+                    "MEDICAL",
+                    "APPOINTMENT_BOOKED",
+                    "New appointment booked",
+                    clientLabel
+                            + " booked a "
+                            + typeLabel
+                            + " on "
+                            + a.getAppointmentDate()
+                            + " at "
+                            + a.getAppointmentTime()
+                            + ".",
+                    "/medical/appointments");
+        } else {
+            bookingAvailabilityService.notifyProfessional(
+                    professionalUserId,
+                    "New appointment booked",
+                    a.getClientName()
+                            + " booked "
+                            + a.getServiceType()
+                            + " on "
+                            + a.getAppointmentDate()
+                            + " at "
+                            + a.getAppointmentTime()
+                            + ".",
+                    "/notifications");
+        }
 
         return mapper.appointmentMap(a);
     }
@@ -165,6 +201,26 @@ public class DomainService {
         a.setStatus("Cancelled");
         a.setUpdatedAt(Instant.now());
         appointmentRepository.save(a);
+
+        if (isMedicalAdvisorUser(a.getProfessionalUserId())) {
+            String clientLabel = firstNonBlank(a.getClientName(), "A client");
+            String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
+            createNotification(
+                    a.getProfessionalUserId(),
+                    "MEDICAL",
+                    "APPOINTMENT_CANCELLED",
+                    "Appointment cancelled",
+                    clientLabel
+                            + " cancelled their "
+                            + typeLabel
+                            + " on "
+                            + a.getAppointmentDate()
+                            + " at "
+                            + a.getAppointmentTime()
+                            + ".",
+                    "/medical/appointments");
+        }
+
         return Map.of("id", id, "status", "Cancelled");
     }
 
@@ -174,11 +230,15 @@ public class DomainService {
                 appointmentRepository
                         .findByIdAndClientUserId(id, userId)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
-        if ("Cancelled".equalsIgnoreCase(a.getStatus())) {
+        boolean advisorUnavailable =
+                "ADVISOR_UNAVAILABLE".equalsIgnoreCase(a.getAttendance())
+                        || "Cancelled by Advisor".equalsIgnoreCase(a.getStatus());
+        if (isCancelledAppointmentStatus(a.getStatus()) && !advisorUnavailable) {
             throw new ApiException(
                     "VALIDATION_ERROR", "Cancelled appointments cannot be rescheduled", HttpStatus.BAD_REQUEST);
         }
-        if ("Completed".equalsIgnoreCase(a.getStatus())) {
+        if ("Completed".equalsIgnoreCase(a.getStatus())
+                || "ATTENDED".equalsIgnoreCase(a.getAttendance())) {
             throw new ApiException(
                     "VALIDATION_ERROR", "Completed appointments cannot be rescheduled", HttpStatus.BAD_REQUEST);
         }
@@ -220,25 +280,54 @@ public class DomainService {
 
         bookingAvailabilityService.assertSlotAvailable(professionalId, date, time, duration, a.getId());
 
+        LocalDate oldDate = a.getAppointmentDate();
+        String oldTime = a.getAppointmentTime();
+
         a.setAppointmentDate(date);
         a.setAppointmentTime(time);
         a.setDuration(duration);
         a.setStatus("Upcoming");
+        a.setAttendance(null);
+        a.setAttendanceNote(null);
+        a.setAttendanceMarkedAt(null);
         a.setUpdatedAt(Instant.now());
         appointmentRepository.save(a);
 
-        bookingAvailabilityService.notifyProfessional(
-                a.getProfessionalUserId(),
-                "Appointment rescheduled",
-                (a.getClientName() == null ? "A client" : a.getClientName())
-                        + " rescheduled "
-                        + a.getServiceType()
-                        + " to "
-                        + a.getAppointmentDate()
-                        + " at "
-                        + a.getAppointmentTime()
-                        + ".",
-                "/notifications");
+        if (isMedicalAdvisorUser(a.getProfessionalUserId())) {
+            String clientLabel = firstNonBlank(a.getClientName(), "A client");
+            String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
+            createNotification(
+                    a.getProfessionalUserId(),
+                    "MEDICAL",
+                    "APPOINTMENT_RESCHEDULED",
+                    "Appointment rescheduled",
+                    clientLabel
+                            + " rescheduled their "
+                            + typeLabel
+                            + " from "
+                            + oldDate
+                            + " at "
+                            + oldTime
+                            + " to "
+                            + a.getAppointmentDate()
+                            + " at "
+                            + a.getAppointmentTime()
+                            + ".",
+                    "/medical/appointments");
+        } else {
+            bookingAvailabilityService.notifyProfessional(
+                    a.getProfessionalUserId(),
+                    "Appointment rescheduled",
+                    (a.getClientName() == null ? "A client" : a.getClientName())
+                            + " rescheduled "
+                            + a.getServiceType()
+                            + " to "
+                            + a.getAppointmentDate()
+                            + " at "
+                            + a.getAppointmentTime()
+                            + ".",
+                    "/notifications");
+        }
 
         return mapper.appointmentMap(a);
     }
@@ -392,9 +481,12 @@ public class DomainService {
         t.setClientName(user.getFirstName() + " " + user.getLastName());
         t.setSubject(str(payload.get("subject")));
         t.setCategory(nullTo(str(payload.get("category")), "General"));
-        t.setPriority(nullTo(str(payload.get("priority")), "Medium"));
+        String priority = nullTo(str(payload.get("priority")), "Medium");
+        if ("Normal".equalsIgnoreCase(priority)) priority = "Medium";
+        t.setPriority(priority);
         t.setStatus("Open");
-        t.setAssignedTo("Support Desk");
+        t.setAssignedTo(null);
+        t.setWaitingOn("Support");
         t.setRelatedService(nullTo(str(payload.get("relatedService")), "General"));
         String messageBody = firstNonBlank(
                 str(payload.get("description")),
@@ -407,10 +499,33 @@ public class DomainService {
         firstMessage.put("author", "You");
         firstMessage.put("body", messageBody == null ? "" : messageBody);
         firstMessage.put("at", Instant.now().toString());
+        String attachmentName = str(payload.get("attachmentName"));
+        if (attachmentName != null && !attachmentName.isBlank()) {
+            firstMessage.put("attachments", List.of(Map.of("name", attachmentName)));
+        } else {
+            firstMessage.put("attachments", List.of());
+        }
         t.setMessagesJson(mapper.toJson(List.of(firstMessage)));
+        t.setActivityJson(
+                mapper.toJson(
+                        List.of(
+                                Map.of(
+                                        "id",
+                                        "act-1",
+                                        "text",
+                                        "Ticket created by client",
+                                        "at",
+                                        Instant.now().toString()))));
         t.setCreatedAt(Instant.now());
         t.setUpdatedAt(Instant.now());
         supportTicketRepository.save(t);
+        createNotification(
+                null,
+                "SUPPORT",
+                "tickets",
+                "New support ticket " + t.getId(),
+                t.getClientName() + " opened \"" + t.getSubject() + "\" (" + t.getPriority() + ").",
+                "/support/tickets/" + t.getId());
         return mapper.ticketSummary(t);
     }
 
@@ -420,24 +535,153 @@ public class DomainService {
                 supportTicketRepository
                         .findByIdAndClientUserId(id, userId)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        if ("Closed".equalsIgnoreCase(t.getStatus())) {
+            throw new ApiException("CONFLICT", "Closed tickets cannot accept replies", HttpStatus.CONFLICT);
+        }
         @SuppressWarnings("unchecked")
         List<Object> messages = new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
+        String body = str(payload.getOrDefault("message", payload.get("body")));
         messages.add(
                 Map.of(
                         "id",
                         "msg-" + (messages.size() + 1),
                         "from",
                         "client",
+                        "role",
+                        "client",
                         "author",
-                        t.getClientName(),
+                        t.getClientName() == null ? "You" : t.getClientName(),
                         "body",
-                        str(payload.getOrDefault("message", payload.get("body"))),
+                        body == null ? "" : body,
                         "at",
                         Instant.now().toString()));
         t.setMessagesJson(mapper.toJson(messages));
+        String status = t.getStatus() == null ? "" : t.getStatus();
+        if ("Pending Client Reply".equalsIgnoreCase(status)
+                || "Pending Reply".equalsIgnoreCase(status)
+                || "Resolved".equalsIgnoreCase(status)
+                || "Open".equalsIgnoreCase(status)) {
+            t.setStatus("In Progress");
+        }
+        t.setWaitingOn("Support");
+        if ("Resolved".equalsIgnoreCase(status)) {
+            t.setResolutionJson(null);
+            appendTicketActivity(t, "Resolution withdrawn — client replied");
+        } else {
+            appendTicketActivity(t, "Client replied");
+        }
         t.setUpdatedAt(Instant.now());
         supportTicketRepository.save(t);
+        createNotification(
+                null,
+                "SUPPORT",
+                "tickets",
+                "Client replied on " + t.getId(),
+                t.getClientName() + " sent a follow-up on \"" + t.getSubject() + "\".",
+                "/support/tickets/" + t.getId());
         return mapper.ticketSummary(t);
+    }
+
+    @Transactional
+    public Map<String, Object> reopenClientTicket(Long userId, String id, Map<String, Object> payload) {
+        SupportTicketEntity t =
+                supportTicketRepository
+                        .findByIdAndClientUserId(id, userId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        String status = t.getStatus() == null ? "" : t.getStatus();
+        if (!"Resolved".equalsIgnoreCase(status) && !"Closed".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    "CONFLICT", "Only resolved or closed tickets can be kept open", HttpStatus.CONFLICT);
+        }
+        String note = firstNonBlank(str(payload.get("message")), str(payload.get("body")), str(payload.get("reason")));
+        if (note != null && !note.isBlank()) {
+            @SuppressWarnings("unchecked")
+            List<Object> messages =
+                    new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
+            messages.add(
+                    Map.of(
+                            "id",
+                            "msg-" + (messages.size() + 1),
+                            "from",
+                            "client",
+                            "role",
+                            "client",
+                            "author",
+                            t.getClientName() == null ? "You" : t.getClientName(),
+                            "body",
+                            note,
+                            "at",
+                            Instant.now().toString()));
+            t.setMessagesJson(mapper.toJson(messages));
+        }
+        t.setStatus("In Progress");
+        t.setWaitingOn("Support");
+        t.setResolutionJson(null);
+        appendTicketActivity(t, "Client requested ticket remain open");
+        t.setUpdatedAt(Instant.now());
+        supportTicketRepository.save(t);
+        createNotification(
+                null,
+                "SUPPORT",
+                "tickets",
+                "Ticket reopened " + t.getId(),
+                t.getClientName() + " asked to keep \"" + t.getSubject() + "\" open.",
+                "/support/tickets/" + t.getId());
+        return mapper.ticketSummary(t);
+    }
+
+    @Transactional
+    public Map<String, Object> deleteClientTicket(Long userId, String id) {
+        SupportTicketEntity t =
+                supportTicketRepository
+                        .findByIdAndClientUserId(id, userId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
+        String status = t.getStatus() == null ? "" : t.getStatus();
+        if ("Resolved".equalsIgnoreCase(status) || "Closed".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    "CONFLICT", "Resolved or closed tickets cannot be deleted", HttpStatus.CONFLICT);
+        }
+        if (!"Open".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "Only open tickets that were sent by mistake can be deleted. Once support is handling the ticket it must stay on record.",
+                    HttpStatus.CONFLICT);
+        }
+        if (ticketHasSupportReply(t.getMessagesJson())) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "This ticket already has a support response and cannot be deleted",
+                    HttpStatus.CONFLICT);
+        }
+        String ticketId = t.getId();
+        supportTicketRepository.delete(t);
+        supportTicketRepository.flush();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", ticketId);
+        result.put("deleted", Boolean.TRUE);
+        return result;
+    }
+
+    private boolean ticketHasSupportReply(String messagesJson) {
+        Object parsed = mapper.parseJson(messagesJson, List.of());
+        if (!(parsed instanceof List<?> messages)) {
+            return false;
+        }
+        for (Object raw : messages) {
+            if (!(raw instanceof Map<?, ?> map)) {
+                continue;
+            }
+            String roleText = map.get("role") == null ? "" : String.valueOf(map.get("role"));
+            String fromText = map.get("from") == null ? "" : String.valueOf(map.get("from"));
+            if ("support".equalsIgnoreCase(roleText)
+                    || "internal".equalsIgnoreCase(roleText)
+                    || "internal_note".equalsIgnoreCase(roleText)
+                    || "specialist".equalsIgnoreCase(roleText)
+                    || "support".equalsIgnoreCase(fromText)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Map<String, Object> clientProfile(Long userId) {
@@ -758,6 +1002,14 @@ public class DomainService {
                 .toList();
     }
 
+    public List<Map<String, Object>> medicalNotificationsForAdvisor(Long advisorUserId) {
+        return notificationRepository
+                .findForAudienceUserOrBroadcast("MEDICAL", advisorUserId)
+                .stream()
+                .map(mapper::notificationMap)
+                .toList();
+    }
+
     @Transactional
     public Map<String, Object> markAudienceNotificationsRead(String audience) {
         List<NotificationEntity> list =
@@ -765,6 +1017,36 @@ public class DomainService {
         list.forEach(n -> n.setReadFlag(true));
         notificationRepository.saveAll(list);
         return Map.of("updated", list.size());
+    }
+
+    @Transactional
+    public Map<String, Object> markMedicalNotificationsRead(Long advisorUserId) {
+        List<NotificationEntity> list =
+                notificationRepository.findByUserIdAndAudienceIgnoreCaseOrderByCreatedAtDesc(
+                        advisorUserId, "MEDICAL");
+        list.forEach(n -> n.setReadFlag(true));
+        notificationRepository.saveAll(list);
+        return Map.of("updated", list.size());
+    }
+
+    @Transactional
+    public Map<String, Object> markMedicalNotificationRead(Long advisorUserId, String id) {
+        NotificationEntity n =
+                notificationRepository
+                        .findByIdAndAudienceIgnoreCase(id, "MEDICAL")
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "NOT_FOUND", "Notification not found", HttpStatus.NOT_FOUND));
+        boolean owned = advisorUserId != null && advisorUserId.equals(n.getUserId());
+        boolean general = n.getUserId() == null;
+        if (!owned && !general) {
+            throw new ApiException(
+                    "FORBIDDEN", "You cannot update this notification", HttpStatus.FORBIDDEN);
+        }
+        n.setReadFlag(true);
+        notificationRepository.save(n);
+        return mapper.notificationMap(n);
     }
 
     /* ---------- Coach / Nutrition / Medical / Support shared lists ---------- */
@@ -963,48 +1245,16 @@ public class DomainService {
                 .toList();
     }
 
+    public List<Map<String, Object>> appointmentsForProfessional(Long professionalUserId) {
+        return appointmentRepository
+                .findByProfessionalUserIdOrderByAppointmentDateDesc(professionalUserId)
+                .stream()
+                .map(mapper::appointmentMap)
+                .toList();
+    }
+
     public List<Map<String, Object>> allTickets() {
         return supportTicketRepository.findAll().stream().map(mapper::ticketSummary).toList();
-    }
-
-    public Map<String, Object> ticket(String id) {
-        return mapper.ticketSummary(
-                supportTicketRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND)));
-    }
-
-    @Transactional
-    public Map<String, Object> updateTicket(String id, Map<String, Object> payload) {
-        SupportTicketEntity t =
-                supportTicketRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
-        if (payload.get("status") != null) t.setStatus(str(payload.get("status")));
-        if (payload.get("priority") != null) t.setPriority(str(payload.get("priority")));
-        if (payload.get("category") != null) t.setCategory(str(payload.get("category")));
-        if (payload.get("assignedTo") != null) t.setAssignedTo(str(payload.get("assignedTo")));
-        if (payload.get("message") != null || payload.get("body") != null) {
-            @SuppressWarnings("unchecked")
-            List<Object> messages =
-                    new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
-            messages.add(
-                    Map.of(
-                            "id",
-                            "msg-" + (messages.size() + 1),
-                            "from",
-                            "support",
-                            "author",
-                            str(payload.getOrDefault("author", "Support")),
-                            "body",
-                            str(payload.getOrDefault("message", payload.get("body"))),
-                            "at",
-                            Instant.now().toString()));
-            t.setMessagesJson(mapper.toJson(messages));
-        }
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-        return mapper.ticketSummary(t);
     }
 
     public Map<String, Object> coachDashboard(Long userId) {
@@ -1238,84 +1488,76 @@ public class DomainService {
 
     public Map<String, Object> medicalDashboard(Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
-        long clients = enrolmentRepository.count();
-        List<Map<String, Object>> appointments =
-                appointmentsForRole("Medical").stream()
-                        .limit(5)
+        LocalDate today = LocalDate.now(ZoneId.systemDefault());
+
+        List<Appointment> advisorAppointments =
+                appointmentRepository.findByProfessionalUserIdOrderByAppointmentDateDesc(userId).stream()
+                        .filter(a -> !isCancelledAppointmentStatus(a.getStatus()))
+                        .toList();
+
+        Set<Long> clientIds =
+                advisorAppointments.stream()
+                        .map(Appointment::getClientUserId)
+                        .filter(id -> id != null)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<Map<String, Object>> todaysAppointments =
+                advisorAppointments.stream()
+                        .filter(a -> today.equals(a.getAppointmentDate()))
+                        .filter(DomainService::isEligibleForTodayReminder)
+                        .sorted(Comparator.comparing(Appointment::getAppointmentTime, Comparator.nullsLast(String::compareTo)))
                         .map(
                                 a -> {
-                                    Map<String, Object> row = new LinkedHashMap<>(a);
-                                    row.putIfAbsent("type", a.getOrDefault("serviceType", a.get("service")));
+                                    Map<String, Object> row = new LinkedHashMap<>(mapper.appointmentMap(a));
+                                    row.putIfAbsent("type", a.getServiceType());
                                     if (row.get("duration") == null) row.put("duration", "30 min");
                                     return row;
                                 })
                         .toList();
 
-        List<Map<String, Object>> clientsRequiringReview =
-                List.of(
-                        Map.of(
-                                "id",
-                                "crr-1",
-                                "clientId",
-                                "BF-C1024",
-                                "client",
-                                "Alex Morgan",
-                                "reason",
-                                "Assessment pending review",
-                                "detail",
-                                "Routine wellness review needs sign-off",
-                                "actionTo",
-                                "assessment",
-                                "actionId",
-                                "ha-1"),
-                        Map.of(
-                                "id",
-                                "crr-2",
-                                "clientId",
-                                "BF-C1102",
-                                "client",
-                                "Taylor Kim",
-                                "reason",
-                                "Active health alert",
-                                "detail",
-                                "Follow resting metrics guidance",
-                                "actionTo",
-                                "alert",
-                                "actionId",
-                                "alert-1"));
+        List<HealthAssessment> clientAssessments =
+                clientIds.isEmpty()
+                        ? List.of()
+                        : healthAssessmentRepository.findByUserIdInOrderByAssessedAtDesc(clientIds);
+
+        List<HealthAssessment> pendingAssessments =
+                clientAssessments.stream().filter(this::isPendingMedicalAssessment).toList();
+
+        List<HealthRiskAlert> activeAlertEntities =
+                clientIds.isEmpty()
+                        ? List.of()
+                        : healthRiskAlertRepository.findByUserIdInAndActiveTrueOrderByDateRaisedDesc(clientIds).stream()
+                                .filter(a -> !isResolvedAlertStatus(a.getStatus()))
+                                .toList();
 
         List<Map<String, Object>> alertOverview =
-                List.of(
-                        Map.of(
-                                "id",
-                                "alert-1",
-                                "client",
-                                "Alex Morgan",
-                                "clientId",
-                                "BF-C1024",
-                                "title",
-                                "Follow resting metrics",
-                                "priority",
-                                "Moderate",
-                                "status",
-                                "Open",
-                                "dateRaised",
-                                "2026-09-05"),
-                        Map.of(
-                                "id",
-                                "alert-2",
-                                "client",
-                                "Taylor Kim",
-                                "clientId",
-                                "BF-C1102",
-                                "title",
-                                "Joint comfort during activity",
-                                "priority",
-                                "Low",
-                                "status",
-                                "Under Review",
-                                "dateRaised",
-                                "2026-09-02"));
+                activeAlertEntities.stream().map(this::mapMedicalDashboardAlert).toList();
+
+        List<Map<String, Object>> clientsRequiringReview = new ArrayList<>();
+        for (HealthAssessment assessment : pendingAssessments) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", "crr-assess-" + assessment.getId());
+            row.put("clientId", firstNonBlank(assessment.getClientCode(), "BF-C" + assessment.getUserId()));
+            row.put("client", clientDisplayName(assessment.getUserId()));
+            row.put("reason", "Assessment pending review");
+            row.put(
+                    "detail",
+                    firstNonBlank(assessment.getTitle(), assessment.getAssessmentType(), "Health assessment"));
+            row.put("actionTo", "assessment");
+            row.put("actionId", String.valueOf(assessment.getId()));
+            clientsRequiringReview.add(row);
+        }
+        for (HealthRiskAlert alert : activeAlertEntities) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", "crr-alert-" + alert.getId());
+            row.put("clientId", firstNonBlank(alert.getClientCode(), "BF-C" + alert.getUserId()));
+            row.put("client", firstNonBlank(alert.getClientName(), clientDisplayName(alert.getUserId())));
+            row.put("reason", "Active health alert");
+            row.put("detail", firstNonBlank(alert.getTitle(), alert.getReason(), "Health alert"));
+            row.put("actionTo", "alert");
+            row.put("actionId", String.valueOf(alert.getId()));
+            clientsRequiringReview.add(row);
+        }
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("greetingName", user.getFirstName());
@@ -1323,50 +1565,154 @@ public class DomainService {
                 "stats",
                 Map.of(
                         "clientsUnderReview",
-                        Map.of("value", Math.max(clients, clientsRequiringReview.size()), "hint", "Needs attention"),
+                        Map.of("value", clientIds.size()),
                         "assessmentsPending",
-                        Map.of("value", 2, "hint", "Pending review"),
+                        Map.of("value", pendingAssessments.size()),
                         "activeAlerts",
-                        Map.of("value", alertOverview.size(), "hint", "Open alerts"),
+                        Map.of("value", activeAlertEntities.size()),
                         "todaysAppointments",
-                        Map.of("value", appointments.size(), "hint", "Scheduled today")));
-        m.put("todaysAppointments", appointments);
+                        Map.of("value", todaysAppointments.size())));
+        m.put("todaysAppointments", todaysAppointments);
         m.put("clientsRequiringReview", clientsRequiringReview);
         m.put("alertOverview", alertOverview);
-        m.put(
-                "assessmentTrend",
-                List.of(
-                        Map.of("label", "Wk 31", "completed", 4, "pending", 2, "followUp", 1),
-                        Map.of("label", "Wk 32", "completed", 5, "pending", 3, "followUp", 1),
-                        Map.of("label", "Wk 33", "completed", 6, "pending", 2, "followUp", 2),
-                        Map.of("label", "Wk 34", "completed", 4, "pending", 4, "followUp", 1),
-                        Map.of("label", "Wk 35", "completed", 7, "pending", 3, "followUp", 2),
-                        Map.of("label", "Wk 36", "completed", 5, "pending", Math.max(1, (int) appointments.size()), "followUp", 2)));
-        m.put(
-                "recentActivity",
-                List.of(
-                        Map.of(
-                                "id",
-                                "ra1",
-                                "text",
-                                "Routine wellness assessment logged",
-                                "at",
-                                "Today"),
-                        Map.of(
-                                "id",
-                                "ra2",
-                                "text",
-                                alertOverview.size() + " health alert(s) currently open",
-                                "at",
-                                "Just now"),
-                        Map.of(
-                                "id",
-                                "ra3",
-                                "text",
-                                appointments.size() + " medical appointment(s) on the schedule",
-                                "at",
-                                "Today")));
+        m.put("assessmentTrend", buildMedicalAssessmentTrend(clientAssessments));
+        m.put("recentActivity", buildMedicalRecentActivity(userId));
         return m;
+    }
+
+    private List<Map<String, Object>> buildMedicalAssessmentTrend(List<HealthAssessment> assessments) {
+        if (assessments == null || assessments.isEmpty()) {
+            return List.of();
+        }
+        WeekFields weekFields = WeekFields.of(Locale.getDefault());
+        LocalDate today = LocalDate.now(ZoneId.systemDefault());
+        LinkedHashMap<Integer, int[]> byWeek = new LinkedHashMap<>();
+        for (int i = 5; i >= 0; i--) {
+            LocalDate weekDate = today.minusWeeks(i);
+            int weekNumber = weekDate.get(weekFields.weekOfWeekBasedYear());
+            byWeek.putIfAbsent(weekNumber, new int[] {0, 0, 0});
+        }
+        for (HealthAssessment assessment : assessments) {
+            if (assessment.getAssessedAt() == null) continue;
+            LocalDate assessedOn = assessment.getAssessedAt().atZone(ZoneId.systemDefault()).toLocalDate();
+            int weekNumber = assessedOn.get(weekFields.weekOfWeekBasedYear());
+            if (!byWeek.containsKey(weekNumber)) continue;
+            int[] counts = byWeek.get(weekNumber);
+            if (isPendingMedicalAssessment(assessment)) {
+                counts[1] += 1;
+            } else {
+                counts[0] += 1;
+            }
+            if (Boolean.TRUE.equals(assessment.getFollowUpRequired())
+                    || containsIgnoreCase(assessment.getStatus(), "follow")) {
+                counts[2] += 1;
+            }
+        }
+        List<Map<String, Object>> trend = new ArrayList<>();
+        for (Map.Entry<Integer, int[]> entry : byWeek.entrySet()) {
+            int[] counts = entry.getValue();
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("label", "Wk " + entry.getKey());
+            point.put("completed", counts[0]);
+            point.put("pending", counts[1]);
+            point.put("followUp", counts[2]);
+            trend.add(point);
+        }
+        boolean anyData = trend.stream().anyMatch(p ->
+                ((Number) p.get("completed")).intValue()
+                                + ((Number) p.get("pending")).intValue()
+                                + ((Number) p.get("followUp")).intValue()
+                        > 0);
+        return anyData ? trend : List.of();
+    }
+
+    private List<Map<String, Object>> buildMedicalRecentActivity(Long advisorUserId) {
+        List<AuditLog> logs = auditLogRepository.findByUserIdOrderByCreatedAtDesc(advisorUserId);
+        if (logs == null || logs.isEmpty()) {
+            return List.of();
+        }
+        return logs.stream()
+                .filter(this::isMedicalAuditAction)
+                .limit(8)
+                .map(
+                        log -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("id", "audit-" + log.getId());
+                            row.put(
+                                    "text",
+                                    firstNonBlank(
+                                            log.getDetails(),
+                                            log.getAction()
+                                                    + (log.getEntityType() == null
+                                                            ? ""
+                                                            : " · " + log.getEntityType())));
+                            row.put(
+                                    "at",
+                                    log.getCreatedAt() == null ? Instant.now().toString() : log.getCreatedAt().toString());
+                            return row;
+                        })
+                .toList();
+    }
+
+    private boolean isMedicalAuditAction(AuditLog log) {
+        if (log == null || log.getAction() == null) return false;
+        String action = log.getAction().toUpperCase(Locale.ROOT);
+        return action.startsWith("MEDICAL_")
+                || action.startsWith("RISK_ALERT_")
+                || action.startsWith("HEALTH_")
+                || action.startsWith("SAFETY_");
+    }
+
+    private Map<String, Object> mapMedicalDashboardAlert(HealthRiskAlert alert) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", String.valueOf(alert.getId()));
+        m.put("client", firstNonBlank(alert.getClientName(), clientDisplayName(alert.getUserId())));
+        m.put("clientId", firstNonBlank(alert.getClientCode(), "BF-C" + alert.getUserId()));
+        m.put("title", alert.getTitle());
+        m.put("priority", alert.getPriority());
+        m.put("status", alert.getStatus());
+        m.put(
+                "dateRaised",
+                alert.getDateRaised() == null
+                        ? null
+                        : alert.getDateRaised().atZone(ZoneId.systemDefault()).toLocalDate().toString());
+        return m;
+    }
+
+    private boolean isPendingMedicalAssessment(HealthAssessment assessment) {
+        if (assessment == null) return false;
+        if (Boolean.TRUE.equals(assessment.getFollowUpRequired())) return true;
+        String status = assessment.getStatus();
+        if (isBlank(status)) return true;
+        if (containsIgnoreCase(status, "pending") || containsIgnoreCase(status, "follow")) return true;
+        return !(equalsIgnoreCase(status, "Completed") || equalsIgnoreCase(status, "COMPLETED"));
+    }
+
+    private static boolean isResolvedAlertStatus(String status) {
+        return equalsIgnoreCase(status, "Resolved") || equalsIgnoreCase(status, "Closed");
+    }
+
+    private static boolean isCancelledAppointmentStatus(String status) {
+        if (status == null || status.isBlank()) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("cancelled") || normalized.startsWith("cancelled ");
+    }
+
+    private String clientDisplayName(Long clientUserId) {
+        if (clientUserId == null) return "Client";
+        return userRepository
+                .findById(clientUserId)
+                .map(u -> (u.getFirstName() + " " + u.getLastName()).trim())
+                .filter(n -> !n.isBlank())
+                .orElse("Client");
+    }
+
+    private static boolean containsIgnoreCase(String value, String fragment) {
+        return value != null && fragment != null && value.toLowerCase(Locale.ROOT).contains(fragment.toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean equalsIgnoreCase(String a, String b) {
+        return a != null && b != null && a.equalsIgnoreCase(b);
     }
 
     public Map<String, Object> supportDashboard(Long userId) {
@@ -1773,6 +2119,33 @@ public class DomainService {
         }
     }
 
+    private void createNotification(
+            Long userId, String audience, String type, String title, String body, String link) {
+        NotificationEntity n = new NotificationEntity();
+        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        n.setUserId(userId);
+        n.setAudience(audience);
+        n.setType(type);
+        n.setTitle(title);
+        n.setBody(body);
+        n.setLink(link);
+        n.setReadFlag(false);
+        n.setCreatedAt(Instant.now());
+        notificationRepository.save(n);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void appendTicketActivity(SupportTicketEntity t, String text) {
+        List<Object> activity =
+                new ArrayList<>((List<Object>) mapper.parseJson(t.getActivityJson(), new ArrayList<>()));
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("id", "act-" + (activity.size() + 1));
+        entry.put("text", text);
+        entry.put("at", Instant.now().toString());
+        activity.add(entry);
+        t.setActivityJson(mapper.toJson(activity));
+    }
+
     private static String str(Object o) {
         return o == null ? null : String.valueOf(o);
     }
@@ -1791,6 +2164,87 @@ public class DomainService {
             if (value != null && !value.isBlank()) return value;
         }
         return null;
+    }
+
+    private boolean isMedicalAdvisorUser(Long userId) {
+        if (userId == null) return false;
+        return userRepository
+                .findById(userId)
+                .map(
+                        u ->
+                                u.getRoles() != null
+                                        && u.getRoles().stream()
+                                                .anyMatch(r -> r.getName() == RoleName.MEDICAL_ADVISOR))
+                .orElse(false);
+    }
+
+    /**
+     * Creates at most one TODAY_APPOINTMENTS notification per medical advisor for the given day
+     * (Asia/Colombo). Skips advisors with no eligible appointments and skips if already notified today.
+     */
+    @Transactional
+    public int sendTodayMedicalAppointmentReminders() {
+        ZoneId zone = ZoneId.of("Asia/Colombo");
+        LocalDate today = LocalDate.now(zone);
+        Instant dayStart = today.atStartOfDay(zone).toInstant();
+        Instant dayEnd = today.plusDays(1).atStartOfDay(zone).toInstant();
+
+        List<Appointment> todays =
+                appointmentRepository.findByAppointmentDateAndProfessionalUserIdIsNotNull(today);
+        Map<Long, List<Appointment>> byAdvisor = new LinkedHashMap<>();
+        for (Appointment a : todays) {
+            if (!isEligibleForTodayReminder(a)) continue;
+            Long advisorId = a.getProfessionalUserId();
+            if (!isMedicalAdvisorUser(advisorId)) continue;
+            byAdvisor.computeIfAbsent(advisorId, k -> new ArrayList<>()).add(a);
+        }
+
+        int created = 0;
+        for (Map.Entry<Long, List<Appointment>> entry : byAdvisor.entrySet()) {
+            Long advisorId = entry.getKey();
+            if (notificationRepository
+                    .existsByUserIdAndTypeIgnoreCaseAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                            advisorId, "TODAY_APPOINTMENTS", dayStart, dayEnd)) {
+                continue;
+            }
+            List<Appointment> list = new ArrayList<>(entry.getValue());
+            list.sort(
+                    Comparator.comparing(
+                            (Appointment a) ->
+                                    BookingAvailabilityService.parseMinutes(a.getAppointmentTime()),
+                            Comparator.nullsLast(Integer::compareTo)));
+
+            int n = list.size();
+            String title = "You have " + n + " appointment" + (n == 1 ? "" : "s") + " today";
+            String body =
+                    list.stream()
+                            .map(
+                                    a ->
+                                            firstNonBlank(a.getAppointmentTime(), "—")
+                                                    + " – "
+                                                    + firstNonBlank(a.getClientName(), "Client")
+                                                    + " ("
+                                                    + firstNonBlank(a.getServiceType(), "Appointment")
+                                                    + ")")
+                            .collect(Collectors.joining("\n"));
+            createNotification(
+                    advisorId, "MEDICAL", "TODAY_APPOINTMENTS", title, body, "/medical/appointments");
+            created++;
+        }
+        return created;
+    }
+
+    private static boolean isEligibleForTodayReminder(Appointment a) {
+        if (a == null) return false;
+        if ("ADVISOR_UNAVAILABLE".equalsIgnoreCase(a.getAttendance())) return false;
+        if ("ATTENDED".equalsIgnoreCase(a.getAttendance())) return false;
+        String status = a.getStatus() == null ? "" : a.getStatus().trim();
+        if (status.equalsIgnoreCase("Completed")) return false;
+        if (status.equalsIgnoreCase("Cancelled")
+                || status.toLowerCase(Locale.ROOT).startsWith("cancelled ")) {
+            return false;
+        }
+        return status.equalsIgnoreCase("Upcoming") || status.equalsIgnoreCase("Confirmed");
     }
 
     private static int asInt(Object o, int fallback) {

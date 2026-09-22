@@ -4,7 +4,13 @@ import Input from '../../../../components/ui/Input'
 import Modal from '../../../../components/ui/Modal'
 import Select from '../../../../components/ui/Select'
 import TextArea from '../../../../components/ui/TextArea'
-import { isDateBeforeToday, localTodayIso } from '../../../booking/bookingEngine'
+import {
+  FUTURE_DATE_MESSAGE,
+  REQUIRED_DATE_MESSAGE,
+  isDateAfterToday,
+  isValidIsoDate,
+  localTodayIso,
+} from '../../../booking/bookingEngine'
 
 const recordTypes = [
   { value: 'Condition', label: 'Condition' },
@@ -21,9 +27,6 @@ const severities = [
   { value: 'Severe', label: 'Severe' },
 ]
 
-const PAST_RECORDED_DATE_TITLE = 'Past Date Not Allowed'
-const PAST_RECORDED_DATE_MESSAGE = 'Please select today or a future date.'
-
 export default function MedicalHistoryFormModal({
   open,
   onClose,
@@ -32,6 +35,7 @@ export default function MedicalHistoryFormModal({
   initial = null,
 }) {
   const editing = Boolean(initial?.id)
+  const today = localTodayIso()
   const [form, setForm] = useState({
     clientId: '',
     clientName: '',
@@ -45,7 +49,6 @@ export default function MedicalHistoryFormModal({
   })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
-  const [pastDateAlertOpen, setPastDateAlertOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -59,7 +62,7 @@ export default function MedicalHistoryFormModal({
         allergyInfo: initial.allergyInfo || '',
         description: initial.description || '',
         severity: initial.severity || '',
-        recordedDate: initial.recordedDate || '',
+        recordedDate: initial.recordedDate ? String(initial.recordedDate).slice(0, 10) : '',
       })
     } else {
       setForm({
@@ -71,25 +74,26 @@ export default function MedicalHistoryFormModal({
         allergyInfo: '',
         description: '',
         severity: '',
-        recordedDate: localTodayIso(),
+        recordedDate: today,
       })
     }
     setErrors({})
-    setPastDateAlertOpen(false)
-  }, [open, initial])
+  }, [open, initial, today])
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
-  }
-
-  function showPastDateAlert() {
-    setPastDateAlertOpen(true)
+    if (errors[field]) {
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next[field]
+        return next
+      })
+    }
   }
 
   function handleRecordedDateChange(value) {
-    if (value && isDateBeforeToday(value)) {
-      showPastDateAlert()
-      // Keep previous valid date in form state (controlled input restores it).
+    if (value && isDateAfterToday(value, today)) {
+      setErrors((prev) => ({ ...prev, recordedDate: FUTURE_DATE_MESSAGE }))
       return
     }
     update('recordedDate', value)
@@ -108,9 +112,12 @@ export default function MedicalHistoryFormModal({
     if (!form.description.trim() && !form.conditionName.trim() && !form.allergyInfo.trim()) {
       next.description = 'Please add a description or details.'
     }
-    if (form.recordedDate && isDateBeforeToday(form.recordedDate)) {
-      showPastDateAlert()
-      return false
+    if (!form.recordedDate) {
+      next.recordedDate = REQUIRED_DATE_MESSAGE
+    } else if (!isValidIsoDate(form.recordedDate)) {
+      next.recordedDate = 'Please enter a valid date.'
+    } else if (isDateAfterToday(form.recordedDate, today)) {
+      next.recordedDate = FUTURE_DATE_MESSAGE
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -126,6 +133,7 @@ export default function MedicalHistoryFormModal({
         clientId: form.clientId,
         clientName: form.clientName,
         userId: form.userId || undefined,
+        recordedDate: form.recordedDate,
       })
       onClose()
     } finally {
@@ -134,34 +142,39 @@ export default function MedicalHistoryFormModal({
   }
 
   return (
-    <>
-      <Modal
-        open={open}
-        onClose={onClose}
-        title={editing ? 'Update Medical History' : 'Add Medical History'}
-        description={
-          editing
-            ? 'Update condition or allergy details. Patient ownership and created fields stay protected.'
-            : 'Create a medical history entry for the selected client.'
-        }
-        size="lg"
-        footer={
-          <>
-            <Button variant="outline" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
-            >
-              {submitting ? 'Saving…' : editing ? 'Save Changes' : 'Create Entry'}
-            </Button>
-          </>
-        }
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!editing ? (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={editing ? 'Update Medical History' : 'Add Medical History'}
+      description={
+        editing
+          ? 'Update condition or allergy details. Patient ownership and created fields stay protected.'
+          : 'Create a medical history entry for the selected client.'
+      }
+      size="lg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
+          >
+            {submitting ? 'Saving…' : editing ? 'Save Changes' : 'Create Entry'}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        {!editing ? (
+          !clients.length ? (
+            <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
+              No attended clients available. Attend a patient from Appointments first to select a
+              client.
+            </p>
+          ) : (
             <Select
               label="Client"
               required
@@ -180,85 +193,72 @@ export default function MedicalHistoryFormModal({
               placeholder="Select client"
               error={errors.clientId}
             />
-          ) : (
-            <div className="rounded-xl border border-[#e8ecf1] bg-[#f8faf9] px-4 py-3 text-sm">
-              <p className="text-[12px] text-[#6b7280]">Client</p>
-              <p className="font-semibold text-[#111827]">
-                {form.clientName} · {form.clientId}
-              </p>
-            </div>
-          )}
-
-          <Select
-            label="Record type"
-            required
-            value={form.recordType}
-            onChange={(e) => update('recordType', e.target.value)}
-            options={recordTypes}
-            error={errors.recordType}
-          />
-
-          {form.recordType === 'Allergy' ? (
-            <Input
-              label="Allergy information"
-              required
-              value={form.allergyInfo}
-              onChange={(e) => update('allergyInfo', e.target.value)}
-              error={errors.allergyInfo}
-              placeholder="e.g. Peanuts"
-            />
-          ) : (
-            <Input
-              label="Condition name"
-              required={form.recordType === 'Condition'}
-              value={form.conditionName}
-              onChange={(e) => update('conditionName', e.target.value)}
-              error={errors.conditionName}
-              placeholder="e.g. Hypertension"
-            />
-          )}
-
-          <TextArea
-            label="Description / notes"
-            required
-            value={form.description}
-            onChange={(e) => update('description', e.target.value)}
-            error={errors.description}
-            placeholder="Clinical notes relevant to this entry"
-          />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Select
-              label="Severity"
-              value={form.severity}
-              onChange={(e) => update('severity', e.target.value)}
-              options={severities}
-            />
-            <Input
-              label="Recorded date"
-              type="date"
-              value={form.recordedDate}
-              onChange={(e) => handleRecordedDateChange(e.target.value)}
-            />
+          )
+        ) : (
+          <div className="rounded-xl border border-[#e8ecf1] bg-[#f8faf9] px-4 py-3 text-sm">
+            <p className="text-[12px] text-[#6b7280]">Client</p>
+            <p className="font-semibold text-[#111827]">
+              {form.clientName} · {form.clientId}
+            </p>
           </div>
-        </form>
-      </Modal>
+        )}
 
-      <Modal
-        open={pastDateAlertOpen}
-        onClose={() => setPastDateAlertOpen(false)}
-        title={PAST_RECORDED_DATE_TITLE}
-        description={PAST_RECORDED_DATE_MESSAGE}
-        size="sm"
-        footer={
-          <Button
-            onClick={() => setPastDateAlertOpen(false)}
-            className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
-          >
-            OK
-          </Button>
-        }
-      />
-    </>
+        <Select
+          label="Record type"
+          required
+          value={form.recordType}
+          onChange={(e) => update('recordType', e.target.value)}
+          options={recordTypes}
+          error={errors.recordType}
+        />
+
+        {form.recordType === 'Allergy' ? (
+          <Input
+            label="Allergy information"
+            required
+            value={form.allergyInfo}
+            onChange={(e) => update('allergyInfo', e.target.value)}
+            error={errors.allergyInfo}
+            placeholder="e.g. Peanuts"
+          />
+        ) : (
+          <Input
+            label="Condition name"
+            required={form.recordType === 'Condition'}
+            value={form.conditionName}
+            onChange={(e) => update('conditionName', e.target.value)}
+            error={errors.conditionName}
+            placeholder="e.g. Hypertension"
+          />
+        )}
+
+        <TextArea
+          label="Description / notes"
+          required
+          value={form.description}
+          onChange={(e) => update('description', e.target.value)}
+          error={errors.description}
+          placeholder="Clinical notes relevant to this entry"
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select
+            label="Severity"
+            value={form.severity}
+            onChange={(e) => update('severity', e.target.value)}
+            options={severities}
+          />
+          <Input
+            label="Recorded date"
+            type="date"
+            required
+            value={form.recordedDate}
+            max={today}
+            onChange={(e) => handleRecordedDateChange(e.target.value)}
+            error={errors.recordedDate}
+          />
+        </div>
+      </form>
+    </Modal>
   )
 }

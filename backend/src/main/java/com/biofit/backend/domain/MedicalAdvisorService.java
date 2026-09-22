@@ -20,9 +20,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,10 +46,15 @@ public class MedicalAdvisorService {
     private final UserRepository userRepository;
     private final DomainMapper mapper;
     private final AuditService auditService;
+    private final NotificationRepository notificationRepository;
 
     /* ---------- Medical History ---------- */
 
-    public List<Map<String, Object>> listMedicalHistory(String status, Long clientUserId) {
+    public List<Map<String, Object>> listMedicalHistory(
+            String status, Long clientUserId, UserPrincipal principal) {
+        if (clientUserId != null) {
+            assertAdvisorCanAccessClient(principal, clientUserId);
+        }
         List<MedicalHistoryEntry> entries;
         if (clientUserId != null && status != null && !status.isBlank()) {
             entries =
@@ -57,11 +67,17 @@ public class MedicalAdvisorService {
         } else {
             entries = medicalHistoryEntryRepository.findAllByOrderByUpdatedAtDesc();
         }
-        return entries.stream().map(this::mapHistory).toList();
+        Set<Long> allowed = accessibleClientUserIds(principal);
+        return entries.stream()
+                .filter(e -> allowed == null || allowed.contains(e.getUserId()))
+                .map(this::mapHistory)
+                .toList();
     }
 
-    public Map<String, Object> getMedicalHistory(Long id) {
-        return mapHistory(requireHistory(id));
+    public Map<String, Object> getMedicalHistory(Long id, UserPrincipal principal) {
+        MedicalHistoryEntry entry = requireHistory(id);
+        assertAdvisorCanAccessClient(principal, entry.getUserId());
+        return mapHistory(entry);
     }
 
     @Transactional
@@ -118,6 +134,7 @@ public class MedicalAdvisorService {
                 healthRiskAlertRepository
                         .findById(id)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Alert not found", HttpStatus.NOT_FOUND));
+        assertAdvisorCanAccessClient(principal, alert.getUserId());
         if (!alert.isActive()) {
             throw new ApiException("CONFLICT", "Inactive alerts cannot be updated", HttpStatus.CONFLICT);
         }
@@ -186,16 +203,25 @@ public class MedicalAdvisorService {
 
     /* ---------- Safety validation ---------- */
 
-    public List<Map<String, Object>> listSafetyValidations(Long clientUserId) {
+    public List<Map<String, Object>> listSafetyValidations(Long clientUserId, UserPrincipal principal) {
+        if (clientUserId != null) {
+            assertAdvisorCanAccessClient(principal, clientUserId);
+        }
         List<SafetyValidation> list =
                 clientUserId == null
                         ? safetyValidationRepository.findAllByOrderByValidatedAtDesc()
                         : safetyValidationRepository.findByUserIdOrderByValidatedAtDesc(clientUserId);
-        return list.stream().map(this::mapValidation).toList();
+        Set<Long> allowed = accessibleClientUserIds(principal);
+        return list.stream()
+                .filter(v -> allowed == null || allowed.contains(v.getUserId()))
+                .map(this::mapValidation)
+                .toList();
     }
 
-    public Map<String, Object> getSafetyValidation(Long id) {
-        return mapValidation(requireValidation(id));
+    public Map<String, Object> getSafetyValidation(Long id, UserPrincipal principal) {
+        SafetyValidation validation = requireValidation(id);
+        assertAdvisorCanAccessClient(principal, validation.getUserId());
+        return mapValidation(validation);
     }
 
     @Transactional
@@ -300,20 +326,24 @@ public class MedicalAdvisorService {
     /* ---------- Clients for medical forms (from appointments) ---------- */
 
     /**
-     * Clients who have a non-cancelled appointment with the authenticated Medical Advisor.
-     * Deduplicated by client user id.
+     * Clients the Medical Advisor may pick in Select Client forms.
+     * Source of truth: appointments where attendance is ATTENDED (set by Attend).
+     * Deduplicated by client user id. Does not return all registered patients.
      */
     public List<Map<String, Object>> medicalClientsForAdvisor(UserPrincipal principal) {
         if (principal == null) {
             throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
         }
         List<Appointment> appointments =
-                appointmentRepository.findByProfessionalUserIdOrderByAppointmentDateDesc(principal.getId());
+                principal.hasRole(RoleName.ADMIN)
+                        ? appointmentRepository.findByProfessionalRoleContainingIgnoreCaseOrderByAppointmentDateAsc(
+                                "Medical")
+                        : appointmentRepository.findByProfessionalUserIdOrderByAppointmentDateDesc(principal.getId());
 
         LinkedHashMap<Long, Map<String, Object>> byClient = new LinkedHashMap<>();
         for (Appointment appointment : appointments) {
             if (appointment.getClientUserId() == null) continue;
-            if (isCancelledStatus(appointment.getStatus())) continue;
+            if (!"ATTENDED".equalsIgnoreCase(appointment.getAttendance())) continue;
             Long clientUserId = appointment.getClientUserId();
             if (byClient.containsKey(clientUserId)) continue;
 
@@ -323,7 +353,9 @@ public class MedicalAdvisorService {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", clientUserId);
             row.put("userId", clientUserId);
-            row.put("clientId", "BF-C" + clientUserId);
+            row.put(
+                    "clientId",
+                    firstNonBlank(appointment.getClientId(), "BF-C" + clientUserId));
             row.put(
                     "name",
                     firstNonBlank(
@@ -332,9 +364,39 @@ public class MedicalAdvisorService {
             row.put("clientName", row.get("name"));
             row.put("email", client.getEmail());
             row.put("programme", appointment.getProgramme());
+            row.put("appointmentId", appointment.getId());
+            row.put("attendance", appointment.getAttendance());
             byClient.put(clientUserId, row);
         }
         return new ArrayList<>(byClient.values());
+    }
+
+    /**
+     * Client user ids this advisor may access clinically. {@code null} means unrestricted (ADMIN).
+     * Same source of truth as Select Client: attendance ATTENDED.
+     */
+    public Set<Long> accessibleClientUserIds(UserPrincipal principal) {
+        if (principal == null) {
+            throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
+        }
+        if (principal.hasRole(RoleName.ADMIN)) {
+            return null;
+        }
+        return medicalClientsForAdvisor(principal).stream()
+                .map(row -> asLong(row.get("userId")))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    public List<Map<String, Object>> filterRowsByAccessibleClients(
+            UserPrincipal principal, List<Map<String, Object>> rows) {
+        Set<Long> allowed = accessibleClientUserIds(principal);
+        if (allowed == null) {
+            return rows;
+        }
+        return rows.stream()
+                .filter(row -> allowed.contains(asLong(row.get("userId"))))
+                .toList();
     }
 
     public void assertAdvisorCanAccessClient(UserPrincipal principal, Long clientUserId) {
@@ -344,22 +406,24 @@ public class MedicalAdvisorService {
         if (principal.hasRole(RoleName.ADMIN)) {
             return;
         }
-        boolean allowed =
-                appointmentRepository.existsByProfessionalUserIdAndClientUserIdAndStatusNotIgnoreCase(
-                        principal.getId(), clientUserId, "Cancelled");
-        if (!allowed) {
-            // Also allow if any non-cancelled appointment exists when status casing varies
-            boolean hasActive =
-                    appointmentRepository.findByProfessionalUserIdOrderByAppointmentDateDesc(principal.getId())
+        boolean attended =
+                appointmentRepository.existsByProfessionalUserIdAndClientUserIdAndAttendanceIgnoreCase(
+                        principal.getId(), clientUserId, "ATTENDED");
+        if (!attended) {
+            // Fallback for any legacy casing / stream check
+            boolean hasAttended =
+                    appointmentRepository
+                            .findByProfessionalUserIdOrderByAppointmentDateDesc(principal.getId())
                             .stream()
                             .anyMatch(
                                     a ->
                                             clientUserId.equals(a.getClientUserId())
-                                                    && !isCancelledStatus(a.getStatus()));
-            if (!hasActive) {
+                                                    && a.getAttendance() != null
+                                                    && "ATTENDED".equalsIgnoreCase(a.getAttendance().trim()));
+            if (!hasAttended) {
                 throw new ApiException(
                         "FORBIDDEN",
-                        "This client has no active appointment with you",
+                        "Attend this client from Appointments before accessing their medical information.",
                         HttpStatus.FORBIDDEN);
             }
         }
@@ -436,12 +500,18 @@ public class MedicalAdvisorService {
             throw new ApiException("VALIDATION_ERROR", "Description or condition/allergy details are required", HttpStatus.BAD_REQUEST);
         }
         if (body.containsKey("recordedDate") && !isBlank(body.get("recordedDate"))) {
-            LocalDate recordedDate = LocalDate.parse(str(body.get("recordedDate")));
+            LocalDate recordedDate;
+            try {
+                recordedDate = LocalDate.parse(str(body.get("recordedDate")).trim());
+            } catch (Exception ex) {
+                throw new ApiException(
+                        "VALIDATION_ERROR", "Please enter a valid date.", HttpStatus.BAD_REQUEST);
+            }
             LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
-            if (recordedDate.isBefore(today)) {
+            if (recordedDate.isAfter(today)) {
                 throw new ApiException(
                         "VALIDATION_ERROR",
-                        "Recorded date cannot be in the past. Please select today or a future date.",
+                        "Future dates are not allowed.",
                         HttpStatus.BAD_REQUEST);
             }
         }
@@ -463,12 +533,18 @@ public class MedicalAdvisorService {
             if (isBlank(d)) {
                 entry.setRecordedDate(null);
             } else {
-                LocalDate recordedDate = LocalDate.parse(d);
+                LocalDate recordedDate;
+                try {
+                    recordedDate = LocalDate.parse(d.trim());
+                } catch (Exception ex) {
+                    throw new ApiException(
+                            "VALIDATION_ERROR", "Please enter a valid date.", HttpStatus.BAD_REQUEST);
+                }
                 LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
-                if (recordedDate.isBefore(today)) {
+                if (recordedDate.isAfter(today)) {
                     throw new ApiException(
                             "VALIDATION_ERROR",
-                            "Recorded date cannot be in the past. Please select today or a future date.",
+                            "Future dates are not allowed.",
                             HttpStatus.BAD_REQUEST);
                 }
                 entry.setRecordedDate(recordedDate);
@@ -542,6 +618,124 @@ public class MedicalAdvisorService {
         return s;
     }
 
+    @Transactional
+    public Map<String, Object> markAppointmentAttendance(
+            UserPrincipal principal, String appointmentId, Map<String, Object> body) {
+        Appointment appointment =
+                appointmentRepository
+                        .findById(appointmentId)
+                        .orElseThrow(
+                                () -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
+
+        boolean admin = principal != null && principal.hasRole(RoleName.ADMIN);
+        boolean owner =
+                principal != null
+                        && appointment.getProfessionalUserId() != null
+                        && Objects.equals(appointment.getProfessionalUserId(), principal.getId());
+        if (!admin && !owner) {
+            throw new ApiException(
+                    "FORBIDDEN", "You can only mark attendance for your own appointments", HttpStatus.FORBIDDEN);
+        }
+
+        String status = appointment.getStatus() == null ? "" : appointment.getStatus().trim();
+        if (status.equalsIgnoreCase("Cancelled")
+                || status.toLowerCase(Locale.ROOT).startsWith("cancelled ")
+                || status.equalsIgnoreCase("Completed")) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "This appointment is already cancelled or completed.",
+                    HttpStatus.CONFLICT);
+        }
+        if (appointment.getAttendance() != null && !appointment.getAttendance().isBlank()) {
+            throw new ApiException(
+                    "CONFLICT", "Attendance has already been marked for this appointment.", HttpStatus.CONFLICT);
+        }
+
+        String attendance = str(body.get("attendance"));
+        if (attendance == null) {
+            throw new ApiException("VALIDATION_ERROR", "attendance is required", HttpStatus.BAD_REQUEST);
+        }
+        String attendanceNorm = attendance.trim().toUpperCase(Locale.ROOT);
+        String note = str(body.get("note"));
+        Instant now = Instant.now();
+
+        if ("ATTENDED".equals(attendanceNorm)) {
+            appointment.setAttendance("ATTENDED");
+            appointment.setAttendanceNote(isBlank(note) ? null : note.trim());
+            appointment.setAttendanceMarkedAt(now);
+            appointment.setStatus("Completed");
+            appointment.setUpdatedAt(now);
+            appointmentRepository.save(appointment);
+            audit(
+                    principal,
+                    "MEDICAL_APPOINTMENT_ATTENDED",
+                    "Appointment",
+                    appointment.getId(),
+                    "Marked attended for " + firstNonBlank(appointment.getClientName(), "client"));
+            return mapper.appointmentMap(appointment);
+        }
+
+        if ("ADVISOR_UNAVAILABLE".equals(attendanceNorm)) {
+            if (isBlank(note)) {
+                throw new ApiException(
+                        "VALIDATION_ERROR",
+                        "A reason is required when marking advisor unavailable.",
+                        HttpStatus.BAD_REQUEST);
+            }
+            String reason = note.trim();
+            if (reason.length() > 500) {
+                reason = reason.substring(0, 500);
+            }
+            appointment.setAttendance("ADVISOR_UNAVAILABLE");
+            appointment.setAttendanceNote(reason);
+            appointment.setAttendanceMarkedAt(now);
+            appointment.setStatus("Cancelled by Advisor");
+            appointment.setUpdatedAt(now);
+            appointmentRepository.save(appointment);
+
+            String dateLabel =
+                    appointment.getAppointmentDate() == null
+                            ? "the scheduled date"
+                            : appointment.getAppointmentDate().toString();
+            String timeLabel =
+                    isBlank(appointment.getAppointmentTime()) ? "the scheduled time" : appointment.getAppointmentTime();
+            String bodyText =
+                    "Your medical review on "
+                            + dateLabel
+                            + " at "
+                            + timeLabel
+                            + " could not go ahead because the advisor was unavailable. Please reschedule. Reason: "
+                            + reason;
+
+            if (appointment.getClientUserId() != null) {
+                NotificationEntity n = new NotificationEntity();
+                n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+                n.setUserId(appointment.getClientUserId());
+                n.setAudience("CLIENT");
+                n.setType("appointments");
+                n.setTitle("Medical appointment unavailable");
+                n.setBody(bodyText);
+                n.setLink("/client/appointments/" + appointment.getId() + "/reschedule");
+                n.setReadFlag(false);
+                n.setCreatedAt(now);
+                notificationRepository.save(n);
+            }
+
+            audit(
+                    principal,
+                    "MEDICAL_APPOINTMENT_ADVISOR_UNAVAILABLE",
+                    "Appointment",
+                    appointment.getId(),
+                    "Advisor unavailable: " + reason);
+            return mapper.appointmentMap(appointment);
+        }
+
+        throw new ApiException(
+                "VALIDATION_ERROR",
+                "attendance must be ATTENDED or ADVISOR_UNAVAILABLE",
+                HttpStatus.BAD_REQUEST);
+    }
+
     public Long resolveClientUserId(Map<String, Object> body) {
         return resolveUserId(body);
     }
@@ -554,15 +748,7 @@ public class MedicalAdvisorService {
 
         String clientId = str(body.get("clientId"));
         if (!isBlank(clientId)) {
-            String mappedEmail = DEMO_CLIENT_EMAILS.get(clientId.toUpperCase());
-            if (mappedEmail != null) {
-                Long fromEmail =
-                        userRepository
-                                .findByEmailIgnoreCaseAndDeletedAtIsNull(mappedEmail)
-                                .map(User::getId)
-                                .orElse(null);
-                if (fromEmail != null) return fromEmail;
-            }
+            // Real codes are "BF-C" + database user id (no demo email lookup).
             Long fromDigits = asLong(clientId.replaceAll("\\D+", ""));
             if (fromDigits != null && userRepository.existsById(fromDigits)) return fromDigits;
         }
@@ -580,16 +766,6 @@ public class MedicalAdvisorService {
         }
         return null;
     }
-
-    private static final Map<String, String> DEMO_CLIENT_EMAILS =
-            Map.of(
-                    "BF-C1024", "alex.perera@biofit.demo",
-                    "BF-C1095", "nimali.silva@biofit.demo",
-                    "BF-C1088", "sahan.desilva@biofit.demo",
-                    "BF-C1110", "dilani.fernando@biofit.demo",
-                    "BF-C1102", "taylor.kim@biofit.demo",
-                    "BF-C1201", "kasuni.abeysekara@biofit.demo",
-                    "BF-C1", "client@biofit.demo");
 
     private String clientName(Long userId) {
         return userRepository

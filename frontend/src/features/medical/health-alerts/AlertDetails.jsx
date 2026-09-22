@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -12,7 +12,11 @@ import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { formatMedicalDate } from '../health-records/data/healthRecordData'
+import { fetchHealthRecords, formatMedicalDate } from '../health-records/data/healthRecordData'
+import {
+  healthRecordHref,
+  indexHealthRecordsByClient,
+} from '../shared/medicalNav'
 import {
   addFollowUp,
   completeFollowUp,
@@ -27,8 +31,8 @@ import {
 
 export default function AlertDetails() {
   const { id } = useParams()
-  const navigate = useNavigate()
   const [alert, setAlert] = useState(null)
+  const [recordIndex, setRecordIndex] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
@@ -55,8 +59,12 @@ export default function AlertDetails() {
     setLoading(true)
     setError('')
     try {
-      const data = await fetchHealthAlertById(id)
+      const [data, records] = await Promise.all([
+        fetchHealthAlertById(id),
+        fetchHealthRecords().catch(() => []),
+      ])
       setAlert(data)
+      setRecordIndex(indexHealthRecordsByClient(records))
       setReviewNotes(data.reviewNotes || '')
       setGuidanceForm({
         fitness: data.guidance?.fitness || '',
@@ -87,11 +95,22 @@ export default function AlertDetails() {
   const followUp = alert.followUp || {}
   const guidance = alert.guidance || {}
   const impact = alert.wellnessImpact || {}
+  const clientUserId =
+    alert.userId != null
+      ? String(alert.userId)
+      : String(alert.clientId || '').replace(/\D+/g, '')
+  const recordHref = healthRecordHref(recordIndex, {
+    userId: clientUserId || undefined,
+    clientId: alert.clientId,
+  })
 
   return (
     <div>
       <p className="mb-3 text-[12px] text-[#8b93a1]">
-        Medical Advisor / Health Risk Alerts / {alert.id}
+        <Link to="/medical/health-alerts" className="hover:text-[#005a40] hover:underline">
+          Health Risk Alerts
+        </Link>
+        {` › ${alert.id}`}
       </p>
 
       <PageHeader
@@ -150,13 +169,32 @@ export default function AlertDetails() {
       <PrivacyBanner />
 
       <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Meta label="Client" value={`${alert.clientName} (${alert.clientId})`} />
+        <div className="rounded-[1.25rem] border border-[#e8ecf1] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <p className="text-[12px] text-[#8b93a1]">Client</p>
+          <p className="mt-1 text-sm font-semibold text-[#111827]">
+            <Link to={recordHref} className="text-[#005a40] hover:underline">
+              {alert.clientName}
+            </Link>
+            {alert.clientId ? ` (${alert.clientId})` : ''}
+          </p>
+        </div>
         <Meta label="Assigned Advisor" value={alert.assignedAdvisor} />
         <Meta label="Follow-up status" value={followUp.status || '—'} />
-        <Meta
-          label="Related assessment"
-          value={alert.relatedAssessmentId || 'None linked'}
-        />
+        <div className="rounded-[1.25rem] border border-[#e8ecf1] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <p className="text-[12px] text-[#8b93a1]">Related assessment</p>
+          <p className="mt-1 text-sm font-semibold text-[#111827]">
+            {alert.relatedAssessmentId ? (
+              <Link
+                to={`/medical/assessments/${alert.relatedAssessmentId}`}
+                className="text-[#005a40] hover:underline"
+              >
+                {alert.relatedAssessmentId}
+              </Link>
+            ) : (
+              'None linked'
+            )}
+          </p>
+        </div>
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
@@ -254,13 +292,8 @@ export default function AlertDetails() {
           <p className="text-sm text-[#4b5563]">
             Review the authorized health record for programme context and shared safety guidance.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-3 !text-[#005a40]"
-            onClick={() => navigate(`/medical/health-records?client=${alert.clientId}`)}
-          >
-            Open Health Records
+          <Button size="sm" variant="outline" className="mt-3 !text-[#005a40]" to={recordHref}>
+            Open Health Record
           </Button>
         </SectionCard>
 

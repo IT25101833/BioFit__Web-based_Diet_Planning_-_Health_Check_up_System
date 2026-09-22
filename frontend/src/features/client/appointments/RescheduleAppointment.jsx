@@ -22,6 +22,7 @@ import {
   formatAppointmentDateLong,
   formatAppointmentTimeRange,
   getBookingDateOptions,
+  isAdvisorUnavailableAppointment,
   rescheduleClientAppointment,
 } from './data/appointmentData'
 
@@ -48,7 +49,12 @@ export default function RescheduleAppointment() {
     setError('')
     try {
       const data = await fetchClientAppointmentById(id)
-      if (String(data.status).toLowerCase() !== 'upcoming') {
+      const status = String(data.status || '').toLowerCase()
+      const canReschedule =
+        status === 'upcoming' ||
+        status === 'confirmed' ||
+        isAdvisorUnavailableAppointment(data)
+      if (!canReschedule) {
         setError('Only upcoming appointments can be rescheduled.')
         setAppointment(data)
         return

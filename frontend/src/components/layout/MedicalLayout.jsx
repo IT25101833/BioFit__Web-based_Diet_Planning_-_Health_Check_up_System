@@ -1,10 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import MedicalSidebar from './MedicalSidebar'
 import PortalTopbar from './PortalTopbar'
+import { fetchMedicalNotifications } from '../../features/medical/notifications/data/medicalNotificationData'
 
 export default function MedicalLayout({ children, title = 'Dashboard', breadcrumb }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function refreshUnread() {
+      try {
+        const items = await fetchMedicalNotifications()
+        if (cancelled) return
+        const list = Array.isArray(items) ? items : []
+        setUnreadCount(list.filter((n) => !n.read).length)
+      } catch {
+        if (!cancelled) setUnreadCount(0)
+      }
+    }
+
+    refreshUnread()
+    const id = window.setInterval(refreshUnread, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [])
 
   return (
     <div className="bf-shell min-h-svh">
@@ -18,6 +42,7 @@ export default function MedicalLayout({ children, title = 'Dashboard', breadcrum
           fallbackName="Elena Costa"
           fallbackRole="Medical Advisor"
           onOpenMenu={() => setMobileOpen(true)}
+          unreadCount={unreadCount}
         />
         {mobileOpen ? (
           <button type="button" className="fixed inset-0 z-40 bg-[#111827]/35 lg:hidden" aria-label="Close menu" onClick={() => setMobileOpen(false)} />
