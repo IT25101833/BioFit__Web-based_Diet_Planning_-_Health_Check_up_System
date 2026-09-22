@@ -6,6 +6,15 @@ import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import Toast from '../../../components/ui/Toast'
 import {
+  PAST_DATE_MESSAGE,
+  filterAvailableSlotsForDate,
+  formatMinutesToLabel,
+  isDateBeforeToday,
+  parseDurationMinutes,
+  parseTimeToMinutes,
+} from '../../booking/bookingEngine'
+import YourBookingsSection from './components/YourBookingsSection'
+import {
   createClientAppointment,
   fetchBookingCatalog,
   fetchProfessionalAvailability,
@@ -28,6 +37,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
+  const [bookingsRefreshKey, setBookingsRefreshKey] = useState(0)
   const dateOptions = useMemo(() => getBookingDateOptions(), [])
 
   useEffect(() => {
@@ -67,7 +77,12 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
       audience,
     })
       .then((data) => {
-        if (!cancelled) setAvailability(data)
+        if (!cancelled) {
+          setAvailability({
+            ...data,
+            availableSlots: filterAvailableSlotsForDate(data?.availableSlots || [], date),
+          })
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -91,11 +106,33 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     return true
   }
 
+  function timeRangeLabel(startTime, duration) {
+    const start = parseTimeToMinutes(startTime)
+    if (start == null) return startTime
+    const end = formatMinutesToLabel(start + parseDurationMinutes(duration))
+    return `${startTime} – ${end}`
+  }
+
+  function resetWizard() {
+    setStep(0)
+    setServiceId('')
+    setProfessionalId('')
+    setDate('')
+    setTime('')
+    setAvailability(null)
+    setError('')
+  }
+
   async function handleConfirm() {
+    if (isDateBeforeToday(date)) {
+      setError(PAST_DATE_MESSAGE)
+      setStep(2)
+      return
+    }
     setSubmitting(true)
     setError('')
     try {
-      const created = await createClientAppointment({
+      await createClientAppointment({
         service: service?.name,
         serviceId: service?.id,
         professionalId: professional?.id,
@@ -110,14 +147,8 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
         location: 'VitalLife Wellness Centre',
       })
       setToast('Appointment booked successfully. The professional has been notified.')
-      window.setTimeout(() => {
-        navigate(
-          successPath ||
-            (audience === 'STAFF'
-              ? '/coach/dashboard'
-              : `/client/appointments/${created.id}`),
-        )
-      }, 700)
+      resetWizard()
+      setBookingsRefreshKey((key) => key + 1)
     } catch (err) {
       setError(err?.message || 'This slot is no longer available. Please try another time.')
       setStep(3)
@@ -348,7 +379,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                   : ''
               }
             />
-            <ReviewRow label="Time" value={time} />
+            <ReviewRow label="Time" value={timeRangeLabel(time, service?.duration)} />
             <ReviewRow label="Duration" value={service?.duration} />
             {step === 5 ? (
               <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-[var(--bf-ink)]">
@@ -392,6 +423,12 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
           )}
         </div>
       </SectionCard>
+
+      <YourBookingsSection
+        audience={audience}
+        refreshKey={bookingsRefreshKey}
+        onToast={setToast}
+      />
 
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>

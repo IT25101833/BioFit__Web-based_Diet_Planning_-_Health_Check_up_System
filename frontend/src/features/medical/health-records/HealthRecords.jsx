@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FileHeart, Plus } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog'
 import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
@@ -11,8 +12,9 @@ import SearchBar from '../../../components/ui/SearchBar'
 import Select from '../../../components/ui/Select'
 import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
+import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { fetchHealthRecords, formatMedicalDate } from './data/healthRecordData'
+import { deactivateHealthRecord, fetchHealthRecords, formatMedicalDate } from './data/healthRecordData'
 
 export default function HealthRecords() {
   const navigate = useNavigate()
@@ -25,6 +27,8 @@ export default function HealthRecords() {
   const [reviewStatus, setReviewStatus] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
   const [followUpFilter, setFollowUpFilter] = useState('')
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [toast, setToast] = useState('')
 
   async function load() {
     setLoading(true)
@@ -83,6 +87,20 @@ export default function HealthRecords() {
     [records],
   )
 
+  function assessmentHref(record) {
+    if (record.latestAssessmentId) {
+      return `/medical/assessments/${record.latestAssessmentId}`
+    }
+    const clientUserId =
+      record.userId != null
+        ? String(record.userId)
+        : String(record.clientId || '').replace(/\D+/g, '')
+    if (clientUserId) {
+      return `/medical/assessments?clientUserId=${encodeURIComponent(clientUserId)}`
+    }
+    return '/medical/assessments'
+  }
+
   if (loading) return <LoadingSkeleton rows={5} />
   if (error) {
     return <ErrorState title="We couldn’t load client health records." onRetry={load} />
@@ -90,6 +108,13 @@ export default function HealthRecords() {
 
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/dashboard" className="hover:text-[#005a40] hover:underline">
+          Medical Advisor
+        </Link>
+        {' › Health Records'}
+      </p>
+
       <PageHeader
         title="Client Health Records"
         description="Review authorized client health information, assessments and follow-up requirements."
@@ -99,7 +124,7 @@ export default function HealthRecords() {
             className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
           >
             <Plus className="h-4 w-4" />
-            Add Medical Record
+            Create record
           </Button>
         }
       />
@@ -170,7 +195,7 @@ export default function HealthRecords() {
           icon={FileHeart}
           title="No client health records found."
           description="Try adjusting filters or create a new medical record."
-          actionLabel="Add Medical Record"
+          actionLabel="Create record"
           actionTo="/medical/health-records/create"
         />
       ) : (
@@ -192,9 +217,19 @@ export default function HealthRecords() {
               </thead>
               <tbody>
                 {filtered.map((record) => (
-                  <tr key={record.id} className="border-t border-[#eef2f0]">
+                  <tr
+                    key={record.id}
+                    className="cursor-pointer border-t border-[#eef2f0] hover:bg-[#f8faf9]"
+                    onClick={() => navigate(`/medical/health-records/${record.id}`)}
+                  >
                     <td className="px-4 py-3.5 font-semibold text-[#111827]">
-                      {record.clientName}
+                      <Link
+                        to={`/medical/health-records/${record.id}`}
+                        className="text-[#005a40] hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {record.clientName}
+                      </Link>
                     </td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{record.clientId}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{record.programme}</td>
@@ -211,7 +246,7 @@ export default function HealthRecords() {
                     <td className="px-4 py-3.5">
                       <StatusBadge status={record.reviewStatus} />
                     </td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <ActionMenu
                         items={[
                           {
@@ -220,17 +255,25 @@ export default function HealthRecords() {
                           },
                           {
                             label: 'View Assessment',
-                            onClick: () =>
-                              navigate(
-                                record.latestAssessmentId
-                                  ? `/medical/assessments/${record.latestAssessmentId}`
-                                  : `/medical/assessments?client=${record.clientId}`,
-                              ),
+                            onClick: () => navigate(assessmentHref(record)),
                           },
                           {
                             label: 'View Alerts',
-                            onClick: () =>
-                              navigate(`/medical/health-alerts?client=${record.clientId}`),
+                            onClick: () => {
+                              const clientUserId =
+                                record.userId != null
+                                  ? String(record.userId)
+                                  : String(record.clientId || '').replace(/\D+/g, '')
+                              navigate(
+                                clientUserId
+                                  ? `/medical/health-alerts?clientUserId=${encodeURIComponent(clientUserId)}`
+                                  : '/medical/health-alerts',
+                              )
+                            },
+                          },
+                          {
+                            label: 'Mark Inactive',
+                            onClick: () => setDeactivateTarget(record),
                           },
                         ]}
                       />
@@ -242,6 +285,23 @@ export default function HealthRecords() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deactivateTarget)}
+        onClose={() => setDeactivateTarget(null)}
+        title="Mark health record inactive?"
+        description="This soft-deletes the client health record. Data remains in the database and is hidden from the active list."
+        confirmLabel="Mark Inactive"
+        tone="danger"
+        onConfirm={async () => {
+          await deactivateHealthRecord(deactivateTarget.id)
+          setDeactivateTarget(null)
+          setToast('Health record marked inactive.')
+          await load()
+        }}
+      />
+
+      <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
 }

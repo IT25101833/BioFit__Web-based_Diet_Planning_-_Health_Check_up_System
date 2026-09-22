@@ -80,13 +80,20 @@ public class DomainMapper {
         m.put("date", str(a.getAppointmentDate()));
         m.put("time", a.getAppointmentTime());
         m.put("duration", a.getDuration());
+        m.put("endTime", endTimeLabel(a.getAppointmentTime(), a.getDuration()));
         m.put("status", a.getStatus());
         m.put("bookingReference", a.getBookingReference());
         m.put("notes", a.getNotes());
         m.put("location", a.getLocation());
         m.put("clientId", a.getClientId());
+        m.put("clientUserId", a.getClientUserId());
         m.put("client", a.getClientName());
         m.put("clientName", a.getClientName());
+        m.put("attendance", a.getAttendance());
+        m.put("attendanceNote", a.getAttendanceNote());
+        m.put(
+                "attendanceMarkedAt",
+                a.getAttendanceMarkedAt() == null ? null : a.getAttendanceMarkedAt().toString());
         return m;
     }
 
@@ -247,5 +254,54 @@ public class DomainMapper {
 
     private String str(LocalDate d) {
         return d == null ? null : ISO_DATE.format(d);
+    }
+
+    private static String endTimeLabel(String startLabel, String durationLabel) {
+        Integer start = parseTimeMinutes(startLabel);
+        if (start == null) return null;
+        int duration = 45;
+        if (durationLabel != null) {
+            String digits = durationLabel.replaceAll("\\D+", "");
+            if (!digits.isEmpty()) {
+                try {
+                    duration = Integer.parseInt(digits);
+                } catch (NumberFormatException ignored) {
+                    duration = 45;
+                }
+            }
+        }
+        return formatTimeLabel(start + duration);
+    }
+
+    private static Integer parseTimeMinutes(String label) {
+        if (label == null || label.isBlank()) return null;
+        String t = label.trim().toUpperCase();
+        try {
+            if (t.endsWith("AM") || t.endsWith("PM")) {
+                boolean pm = t.endsWith("PM");
+                String core = t.replace("AM", "").replace("PM", "").trim();
+                String[] parts = core.split(":");
+                int h = Integer.parseInt(parts[0].trim());
+                int m = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 0;
+                if (h == 12) h = 0;
+                if (pm) h += 12;
+                return h * 60 + m;
+            }
+            String[] parts = t.split(":");
+            return Integer.parseInt(parts[0].trim()) * 60
+                    + (parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 0);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static String formatTimeLabel(int totalMinutes) {
+        int mins = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+        int h = mins / 60;
+        int m = mins % 60;
+        String period = h >= 12 ? "PM" : "AM";
+        int display = h % 12;
+        if (display == 0) display = 12;
+        return display + ":" + String.format("%02d", m) + " " + period;
     }
 }

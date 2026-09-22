@@ -1,18 +1,26 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Checkbox from '../../../components/ui/Checkbox'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
+import ErrorState from '../../../components/ui/ErrorState'
 import Input from '../../../components/ui/Input'
+import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import Select from '../../../components/ui/Select'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { clientOptions } from '../health-records/data/healthRecordData'
+import {
+  findClientOption,
+  readClientUserIdParam,
+} from '../shared/medicalNav'
+import { fetchAssessments } from '../assessments/data/healthAssessmentData'
+import { fetchMedicalClients } from '../medical-history/data/medicalHistoryData'
 import {
   createHealthAlert,
+  fetchHealthAlerts,
   findSimilarActiveAlert,
 } from './data/healthAlertData'
 
@@ -28,17 +36,113 @@ const emptyForm = {
   status: 'Open',
 }
 
+function toSelectOptions(clients) {
+  return (Array.isArray(clients) ? clients : [])
+    .map((c) => ({
+      value: String(c.id ?? c.userId ?? ''),
+      label: c.name || c.clientName || 'Client',
+      programme: c.programme || '',
+      userId: c.id ?? c.userId,
+      clientCode: c.clientId || (c.id || c.userId ? `BF-C${c.id ?? c.userId}` : ''),
+    }))
+    .filter((c) => c.value)
+}
+
+function formatAssessmentLabel(item) {
+  const title = item.title || item.type || 'Health assessment'
+  const date = item.date
+    ? new Date(`${item.date}T00:00:00`).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : null
+  return date ? `${title} — ${date}` : title
+}
+
 export default function CreateHealthAlert() {
   const navigate = useNavigate()
-  const [form, setForm] = useState(emptyForm)
+  const [searchParams] = useSearchParams()
+  const preselectedClientUserId = readClientUserIdParam(searchParams)
+  const relatedAssessmentIdParam = (searchParams.get('relatedAssessmentId') || '').trim()
+  const [form, setForm] = useState({
+    ...emptyForm,
+    relatedAssessmentId: relatedAssessmentIdParam,
+  })
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
   const [duplicate, setDuplicate] = useState(null)
   const [pendingPayload, setPendingPayload] = useState(null)
+  const [clients, setClients] = useState([])
+  const [clientsLoading, setClientsLoading] = useState(true)
+  const [clientsError, setClientsError] = useState('')
+  const [clientWarning, setClientWarning] = useState('')
+  const [assessments, setAssessments] = useState([])
+  const [assessmentsLoading, setAssessmentsLoading] = useState(false)
 
-  const clients = useMemo(() => clientOptions, [])
+  async function loadClients() {
+    setClientsLoading(true)
+    setClientsError('')
+    try {
+      const data = await fetchMedicalClients()
+      const options = toSelectOptions(data)
+      setClients(options)
+      if (preselectedClientUserId) {
+        const match = findClientOption(options, preselectedClientUserId)
+        if (match) {
+          setForm((prev) => ({
+            ...prev,
+            clientId: match.value,
+            relatedAssessmentId: relatedAssessmentIdParam || prev.relatedAssessmentId,
+          }))
+          setClientWarning('')
+        } else {
+          setClientWarning(
+            `Client user ID ${preselectedClientUserId} is not in your assigned clients list. Select a client manually.`,
+          )
+        }
+      }
+    } catch {
+      setClients([])
+      setClientsError('Unable to load clients. Please try again.')
+    } finally {
+      setClientsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadClients()
+  }, [preselectedClientUserId, relatedAssessmentIdParam])
+
+  useEffect(() => {
+    async function loadAssessmentsForClient() {
+      if (!form.clientId) {
+        setAssessments([])
+        return
+      }
+      setAssessmentsLoading(true)
+      try {
+        const data = await fetchAssessments({ clientUserId: form.clientId })
+        setAssessments(Array.isArray(data) ? data : [])
+      } catch {
+        setAssessments([])
+      } finally {
+        setAssessmentsLoading(false)
+      }
+    }
+    loadAssessmentsForClient()
+  }, [form.clientId])
+
+  const assessmentOptions = useMemo(
+    () =>
+      assessments.map((item) => ({
+        value: String(item.id),
+        label: formatAssessmentLabel(item),
+      })),
+    [assessments],
+  )
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -58,8 +162,10 @@ export default function CreateHealthAlert() {
 
   function buildPayload() {
     const selected = clients.find((c) => c.value === form.clientId)
+    const userId = Number(selected?.userId || form.clientId)
     return {
-      clientId: form.clientId,
+      userId: Number.isFinite(userId) ? userId : undefined,
+      clientId: selected?.clientCode || (Number.isFinite(userId) ? `BF-C${userId}` : form.clientId),
       clientName: selected?.label?.split(' (')[0] || selected?.label || '',
       title: form.title.trim(),
       priority: form.priority,
@@ -82,8 +188,12 @@ export default function CreateHealthAlert() {
       const created = await createHealthAlert(payload)
       setToast('Health risk alert created.')
       window.setTimeout(() => navigate(`/medical/health-alerts/${created.id}`), 650)
-    } catch {
-      setFormError('We couldn’t create this alert. Your entries are still on the form.')
+    } catch (err) {
+      setFormError(
+        err?.message
+          ? `We couldn’t create this alert: ${err.message}`
+          : 'We couldn’t create this alert. Your entries are still on the form.',
+      )
     } finally {
       setSaving(false)
     }
@@ -93,22 +203,45 @@ export default function CreateHealthAlert() {
     event.preventDefault()
     if (!validate()) return
     const payload = buildPayload()
-    const similar = findSimilarActiveAlert(payload.clientId, payload.title)
-    if (similar) {
-      setPendingPayload(payload)
-      setDuplicate(similar)
-      return
+    try {
+      const alerts = await fetchHealthAlerts()
+      const similar = findSimilarActiveAlert(alerts, payload.clientId, payload.title)
+      if (similar) {
+        setPendingPayload(payload)
+        setDuplicate(similar)
+        return
+      }
+    } catch {
+      // If duplicate check fails, continue with create.
     }
     await save(payload)
   }
 
+  if (clientsLoading) return <LoadingSkeleton rows={5} />
+  if (clientsError) return <ErrorState title={clientsError} onRetry={loadClients} />
+
   return (
     <div>
+      <p className="mb-3 text-[12px] text-[#8b93a1]">
+        <Link to="/medical/health-alerts" className="hover:text-[#005a40] hover:underline">
+          Health Risk Alerts
+        </Link>
+        {' › Create'}
+      </p>
+
       <PageHeader
         title="Create Health Risk Alert"
         description="Raise a tracked wellness safety alert for care-team awareness and follow-up."
       />
       <PrivacyBanner />
+      {clientWarning ? (
+        <p
+          className="mb-4 rounded-2xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]"
+          role="status"
+        >
+          {clientWarning}
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {formError ? (
@@ -122,14 +255,26 @@ export default function CreateHealthAlert() {
 
         <SectionCard title="Alert details">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Select
-              label="Client"
-              required
-              value={form.clientId}
-              onChange={(e) => update('clientId', e.target.value)}
-              options={clients.map(({ value, label }) => ({ value, label }))}
-              error={errors.clientId}
-            />
+            {clients.length === 0 ? (
+              <p className="sm:col-span-2 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
+                No clients with appointments are currently available.
+              </p>
+            ) : (
+              <Select
+                label="Client"
+                required
+                value={form.clientId}
+                onChange={(e) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    clientId: e.target.value,
+                    relatedAssessmentId: '',
+                  }))
+                }}
+                options={clients.map(({ value, label }) => ({ value, label }))}
+                error={errors.clientId}
+              />
+            )}
             <Select
               label="Priority"
               value={form.priority}
@@ -148,11 +293,21 @@ export default function CreateHealthAlert() {
               onChange={(e) => update('title', e.target.value)}
               error={errors.title}
             />
-            <Input
-              label="Related assessment ID"
+            <Select
+              label="Related assessment"
               value={form.relatedAssessmentId}
               onChange={(e) => update('relatedAssessmentId', e.target.value)}
-              footNote="Optional — e.g. ha-1"
+              options={assessmentOptions}
+              placeholder={
+                !form.clientId
+                  ? 'Select a client first'
+                  : assessmentsLoading
+                    ? 'Loading assessments…'
+                    : assessmentOptions.length
+                      ? 'Select assessment (optional)'
+                      : 'No assessments for this client'
+              }
+              footNote="Optional — only assessments for the selected client"
             />
             <Select
               label="Status"
@@ -209,7 +364,7 @@ export default function CreateHealthAlert() {
           </Button>
           <Button
             type="submit"
-            disabled={saving}
+            disabled={saving || clients.length === 0}
             className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
           >
             {saving ? 'Creating…' : 'Create Alert'}

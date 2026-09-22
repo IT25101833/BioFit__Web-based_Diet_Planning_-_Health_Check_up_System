@@ -38,8 +38,11 @@ public class ClientDomainController {
     public ApiResponse<Map<String, Object>> bookingAvailability(
             @RequestParam String professionalId,
             @RequestParam String date,
-            @RequestParam(defaultValue = "45 min") String duration) {
-        return ApiResponse.ok(bookingAvailabilityService.dayAvailability(professionalId, date, duration));
+            @RequestParam(defaultValue = "45 min") String duration,
+            @RequestParam(required = false) String excludeAppointmentId) {
+        return ApiResponse.ok(
+                bookingAvailabilityService.dayAvailability(
+                        professionalId, date, duration, excludeAppointmentId));
     }
 
     @GetMapping("/programmes")
@@ -74,6 +77,14 @@ public class ClientDomainController {
     public ApiResponse<Map<String, Object>> cancelAppointment(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
         return ApiResponse.ok(domainService.cancelClientAppointment(principal.getId(), id));
+    }
+
+    @PatchMapping("/appointments/{id}/reschedule")
+    public ApiResponse<Map<String, Object>> rescheduleAppointment(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        return ApiResponse.ok(domainService.rescheduleClientAppointment(principal.getId(), id, body));
     }
 
     @GetMapping("/workout-plan")

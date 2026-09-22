@@ -11,16 +11,25 @@ import PageHeader from '../../components/ui/PageHeader'
 import ErrorState from '../../components/ui/ErrorState'
 import {
   adminStats as fallbackStats,
+  approveErasureRequest,
   auditLogs as fallbackAudit,
   backups,
+  createErasureRequest,
+  executeErasureRequest,
   fetchAdminAuditLogs,
   fetchAdminDashboard,
   fetchAdminUsers,
+  fetchErasureRequests,
   notifications,
+  rejectErasureRequest,
   roles,
   services,
   users as fallbackUsers,
 } from './data/adminData'
+import Toast from '../../components/ui/Toast'
+import Input from '../../components/ui/Input'
+import Select from '../../components/ui/Select'
+import TextArea from '../../components/ui/TextArea'
 
 const icons = { Users, UserCheck, TriangleAlert: AlertTriangle, DatabaseBackup }
 const tone = (value) => /operational|connected|available|active|successful|healthy|verified/i.test(value) ? 'text-[#15803d]' : /attention|locked|suspended|failed/i.test(value) ? 'text-[#b45309]' : 'text-[#6b7280]'
@@ -419,3 +428,258 @@ export function BackupManagement() { const [running, setRunning] = useState(fals
 export function AdminNotifications() { const [items, setItems] = useState(notifications); return <div className="space-y-6"><PageHeader title="Notifications" description="Account, security, backup and system updates." actions={<Button variant="outline" onClick={() => setItems((x) => x.map((i) => ({ ...i, read: true })))}>Mark All as Read</Button>} /><div className="flex gap-2 overflow-x-auto border-b border-[#e8ecf1]">{['All','Unread','Security','Accounts','System','Backups'].map((x) => <button key={x} className="border-b-2 border-transparent px-3 py-3 text-sm font-semibold text-[#6b7280] hover:border-[#005a40] hover:text-[#005a40]">{x}</button>)}</div><SectionCard>{items.map((n, i) => <div key={n.title} className="flex items-start justify-between gap-4 border-b border-[#eef2f0] py-4 last:border-0"><span className={['mt-1.5 h-2.5 w-2.5 rounded-full', n.read ? 'bg-transparent' : 'bg-[#0d9488]'].join(' ')} /><div className="min-w-0 flex-1"><p className="font-semibold">{n.title}</p><p className="mt-1 text-sm text-[#6b7280]">{n.category} · {n.time}</p></div>{!n.read && <button onClick={() => setItems((x) => x.map((item, index) => index === i ? { ...item, read: true } : item))} className="text-sm font-semibold text-[#005a40]">Mark as read</button>}</div>)}</SectionCard></div> }
 
 export function AdminProfile({ settings = false }) { return <div className="space-y-6"><PageHeader title={settings ? 'Settings' : 'My Profile'} description={settings ? 'Manage your display and notification preferences.' : 'Manage your Digital Operations profile.'} /><SectionCard title={settings ? 'Notification Preferences' : 'Profile Information'}>{settings ? <div className="space-y-4 text-sm">{['System alerts','Security events','Backup completion updates','Account activity'].map((x, i) => <label key={x} className="flex items-center justify-between rounded-xl bg-[#f8faf9] p-4"><span>{x}</span><input type="checkbox" defaultChecked={i < 3} className="bf-checkbox" /></label>)}</div> : <form className="grid gap-4 sm:grid-cols-2">{[['Full name','Jordan Lee'],['Email','nadeesha.perera@biofit.lk'],['Contact number','+94 77 555 0200'],['Department','Digital Operations']].map(([a,b]) => <label key={a} className="text-sm font-semibold">{a}<input defaultValue={b} className="bf-input mt-1 !px-3" /></label>)}<div className="sm:col-span-2"><Button type="button">Save Profile</Button></div></form>}</SectionCard>{settings && <SectionCard title="Display Preferences"><label className="flex items-center justify-between text-sm">Compact dashboard cards<input type="checkbox" className="bf-checkbox" /></label></SectionCard>}</div> }
+
+export function ErasureRequests() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+  const [form, setForm] = useState({
+    recordType: 'MEDICAL_HISTORY',
+    recordId: '',
+    clientUserId: '',
+    legalBasis: 'GDPR Article 17 request',
+    reason: '',
+  })
+  const [reviewNotes, setReviewNotes] = useState('')
+  const [executeTarget, setExecuteTarget] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    try {
+      setItems(await fetchErasureRequests())
+    } catch {
+      setError('We couldn’t load erasure requests.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function handleCreate(e) {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      await createErasureRequest({
+        recordType: form.recordType,
+        recordId: form.recordId,
+        clientUserId: form.clientUserId || undefined,
+        legalBasis: form.legalBasis,
+        reason: form.reason,
+      })
+      setForm((prev) => ({ ...prev, recordId: '', reason: '' }))
+      setToast('Erasure request created (PENDING).')
+      await load()
+    } catch (err) {
+      setToast(err?.message || 'Unable to create erasure request.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleApprove(id) {
+    setBusy(true)
+    try {
+      await approveErasureRequest(id, { reviewNotes })
+      setToast('Erasure request approved.')
+      await load()
+    } catch (err) {
+      setToast(err?.message || 'Unable to approve request.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleReject(id) {
+    setBusy(true)
+    try {
+      await rejectErasureRequest(id, { reviewNotes })
+      setToast('Erasure request rejected.')
+      await load()
+    } catch (err) {
+      setToast(err?.message || 'Unable to reject request.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleExecute() {
+    if (!executeTarget) return
+    setBusy(true)
+    try {
+      await executeErasureRequest(executeTarget.id)
+      setExecuteTarget(null)
+      setToast('Hard delete executed. Record permanently removed.')
+      await load()
+    } catch (err) {
+      setToast(err?.message || 'Unable to execute erasure.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Erasure Requests"
+        description="Formal admin right-to-erasure workflow. Soft-deleted medical records only. Hard delete is permanent."
+      />
+
+      <SectionCard
+        className="!border-[#fecaca] !bg-[#fef2f2]"
+        title="Legal safeguard"
+        icon={LockKeyhole}
+      >
+        <p className="text-sm text-[#7f1d1d]">
+          Medical advisors can only soft-delete (mark inactive). Permanent erasure requires an approved
+          admin request and cannot be undone.
+        </p>
+      </SectionCard>
+
+      <SectionCard title="Create erasure request">
+        <form onSubmit={handleCreate} className="grid gap-3 sm:grid-cols-2">
+          <Select
+            label="Record type"
+            required
+            value={form.recordType}
+            onChange={(e) => setForm((p) => ({ ...p, recordType: e.target.value }))}
+            options={[
+              { value: 'MEDICAL_HISTORY', label: 'Medical History' },
+              { value: 'HEALTH_RECORD', label: 'Health Record' },
+              { value: 'HEALTH_ALERT', label: 'Health Alert' },
+            ]}
+          />
+          <Input
+            label="Record ID"
+            required
+            value={form.recordId}
+            onChange={(e) => setForm((p) => ({ ...p, recordId: e.target.value }))}
+            placeholder="Numeric DB id (e.g. 12)"
+          />
+          <Input
+            label="Client user ID (optional)"
+            value={form.clientUserId}
+            onChange={(e) => setForm((p) => ({ ...p, clientUserId: e.target.value }))}
+            placeholder="Resolved from the inactive record"
+          />
+          <Input
+            label="Legal basis"
+            required
+            value={form.legalBasis}
+            onChange={(e) => setForm((p) => ({ ...p, legalBasis: e.target.value }))}
+          />
+          <TextArea
+            className="sm:col-span-2"
+            label="Reason"
+            required
+            value={form.reason}
+            onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))}
+            placeholder="Document the formal erasure justification"
+          />
+          <div className="sm:col-span-2">
+            <Button type="submit" disabled={busy} className="!bg-[#005a40] !text-white">
+              {busy ? 'Submitting…' : 'Submit Request'}
+            </Button>
+          </div>
+        </form>
+      </SectionCard>
+
+      <SectionCard title="Review notes (approve / reject)">
+        <TextArea
+          label="Review notes"
+          value={reviewNotes}
+          onChange={(e) => setReviewNotes(e.target.value)}
+          placeholder="Optional notes for approve/reject actions"
+        />
+      </SectionCard>
+
+      <SectionCard title="Requests">
+        {loading ? (
+          <p className="text-sm text-[#6b7280]">Loading…</p>
+        ) : error ? (
+          <ErrorState title={error} onRetry={load} />
+        ) : items.length === 0 ? (
+          <p className="text-sm text-[#6b7280]">No erasure requests yet.</p>
+        ) : (
+          <Table
+            heads={[
+              'ID',
+              'Type',
+              'Record',
+              'Client',
+              'Status',
+              'Requested',
+              'Actions',
+            ]}
+          >
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td className="py-3 font-medium">{item.id}</td>
+                <td>{item.recordType}</td>
+                <td>{item.recordId}</td>
+                <td>{item.clientUserId}</td>
+                <td>
+                  <StatusBadge status={item.status} />
+                </td>
+                <td className="text-xs text-[#6b7280]">
+                  {item.requestedAt ? String(item.requestedAt).slice(0, 19).replace('T', ' ') : '—'}
+                </td>
+                <td>
+                  <div className="flex flex-wrap gap-2">
+                    {item.status === 'PENDING' ? (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => handleApprove(item.id)}
+                          className="!bg-[#005a40] !text-white"
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => handleReject(item.id)}
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    ) : null}
+                    {item.status === 'APPROVED' ? (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => setExecuteTarget(item)}
+                        className="!bg-[#b45309] !text-white hover:!bg-[#92400e]"
+                      >
+                        Execute
+                      </Button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={Boolean(executeTarget)}
+        onClose={() => !busy && setExecuteTarget(null)}
+        onConfirm={handleExecute}
+        title="Permanently erase this record?"
+        description="This hard delete is permanent and cannot be undone. The inactive medical record will be removed from the database."
+        confirmLabel="Execute Permanent Erasure"
+        tone="danger"
+      />
+
+      <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
+    </div>
+  )
+}

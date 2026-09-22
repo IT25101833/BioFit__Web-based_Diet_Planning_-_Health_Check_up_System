@@ -8,6 +8,7 @@ import {
   LogOut,
   MonitorCog,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   UserRound,
   UsersRound,
@@ -22,6 +23,7 @@ const navItems = [
   { label: 'System Monitoring', to: '/admin/system-monitoring', icon: MonitorCog },
   { label: 'Audit Logs', to: '/admin/audit-logs', icon: ClipboardList },
   { label: 'Backup Management', to: '/admin/backups', icon: DatabaseBackup },
+  { label: 'Erasure Requests', to: '/admin/erasure-requests', icon: ShieldAlert },
   { label: 'Notifications', to: '/admin/notifications', icon: Bell },
 ]
 

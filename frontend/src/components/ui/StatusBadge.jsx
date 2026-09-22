@@ -5,6 +5,7 @@ const statusMap = {
   completed: { label: 'Completed', tone: 'teal' },
   upcoming: { label: 'Upcoming', tone: 'teal' },
   cancelled: { label: 'Cancelled', tone: 'gray' },
+  'cancelled by advisor': { label: 'Cancelled by Advisor', tone: 'amber' },
   confirmed: { label: 'Confirmed', tone: 'green' },
   open: { label: 'Open', tone: 'amber' },
   'in progress': { label: 'In Progress', tone: 'teal' },

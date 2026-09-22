@@ -22,10 +22,13 @@ export default function PortalTopbar({
   fallbackName,
   fallbackRole,
   onOpenMenu,
+  unreadCount,
 }) {
   const { user, role } = useAuth()
   const name = user?.fullName || fallbackName || 'BioFit User'
   const roleLabel = ROLE_LABELS[role] || fallbackRole || 'Team member'
+  const showNumericBadge = typeof unreadCount === 'number'
+  const unread = showNumericBadge ? Math.max(0, unreadCount) : 0
 
   return (
     <header className="bf-topbar sticky top-0 z-30">
@@ -53,10 +56,22 @@ export default function PortalTopbar({
           <Link
             to={notificationsTo}
             className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--bf-border)] bg-[var(--bf-surface-raised)] text-[var(--bf-muted)] shadow-[var(--bf-shadow-out)] hover:text-[var(--bf-ink)]"
-            aria-label="Notifications"
+            aria-label={
+              showNumericBadge
+                ? `Notifications${unread > 0 ? `, ${unread} unread` : ''}`
+                : 'Notifications'
+            }
           >
             <Bell className="h-4.5 w-4.5" strokeWidth={2.1} />
-            <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[var(--bf-primary)]" />
+            {showNumericBadge ? (
+              unread > 0 ? (
+                <span className="absolute -top-1 -right-1 inline-flex min-h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-full bg-[var(--bf-primary)] px-1 text-[10px] font-bold text-white">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              ) : null
+            ) : (
+              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[var(--bf-primary)]" />
+            )}
           </Link>
           <Link
             to={profileTo}

@@ -10,6 +10,7 @@ import {
   LogOut,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   UserRound,
 } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
@@ -19,8 +20,10 @@ import Avatar from '../ui/Avatar'
 const navItems = [
   { label: 'Dashboard', to: '/medical/dashboard', icon: LayoutDashboard },
   { label: 'Client Health Records', to: '/medical/health-records', icon: FileHeart },
+  { label: 'Medical History', to: '/medical/medical-history', icon: FileHeart },
   { label: 'Health Assessments', to: '/medical/assessments', icon: ClipboardPlus },
   { label: 'Health Risk Alerts', to: '/medical/health-alerts', icon: ShieldAlert },
+  { label: 'Safety Validation', to: '/medical/safety-validation', icon: ShieldCheck },
   { label: 'Appointments', to: '/medical/appointments', icon: CalendarDays },
   { label: 'My Availability', to: '/medical/availability', icon: CalendarClock },
   { label: 'Book Manager', to: '/medical/book-appointment', icon: CalendarPlus },
@@ -68,8 +71,10 @@ export default function MedicalSidebar({ mobileOpen, onClose }) {
             end={
               to === '/medical/dashboard' ||
               to === '/medical/health-records' ||
+              to === '/medical/medical-history' ||
               to === '/medical/assessments' ||
               to === '/medical/health-alerts' ||
+              to === '/medical/safety-validation' ||
               to === '/medical/appointments'
             }
             onClick={onClose}

@@ -5,7 +5,11 @@ import Input from '../../../../components/ui/Input'
 import SectionCard from '../../../../components/ui/SectionCard'
 import Select from '../../../../components/ui/Select'
 import TextArea from '../../../../components/ui/TextArea'
-import { clientOptions } from '../data/healthRecordData'
+import {
+  isDateBeforeToday,
+  isValidIsoDate,
+  localTodayIso,
+} from '../../../booking/bookingEngine'
 
 const emptyForm = {
   clientId: '',
@@ -40,19 +44,22 @@ export default function MedicalRecordForm({
   mode = 'create',
   initialValues,
   clients,
+  clientsEmptyMessage,
   onSubmit,
   onCancel,
   saving = false,
   formError = '',
 }) {
+  const today = localTodayIso()
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState({})
-  const options = useMemo(() => clients || clientOptions || [], [clients])
+  const options = useMemo(() => (Array.isArray(clients) ? clients : []), [clients])
 
   useEffect(() => {
     if (!initialValues) return
     const history = initialValues.medicalHistory || {}
     const guidance = initialValues.wellnessGuidance || {}
+    const nextReviewRaw = initialValues.nextReviewDate || initialValues.nextCheckup || ''
     setForm({
       ...emptyForm,
       clientId: initialValues.clientId || '',
@@ -67,17 +74,36 @@ export default function MedicalRecordForm({
       previousHistory: initialValues.previousHistory || history.summary || '',
       professionalNotes: initialValues.professionalNotes || '',
       followUpRequired: Boolean(initialValues.followUpRequired),
-      nextReviewDate: initialValues.nextReviewDate || initialValues.nextCheckup || '',
+      nextReviewDate: nextReviewRaw ? String(nextReviewRaw).slice(0, 10) : '',
       guidanceRequired: Boolean(initialValues.guidanceRequired),
       fitnessGuidance: guidance.fitness || initialValues.fitnessGuidance || '',
       nutritionGuidance: guidance.nutrition || initialValues.nutritionGuidance || '',
     })
+    setErrors({})
   }, [initialValues])
 
   const selectedClient = options.find((c) => c.value === form.clientId)
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
+    if (errors[field]) {
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next[field]
+        return next
+      })
+    }
+  }
+
+  function handleNextReviewChange(value) {
+    if (value && isDateBeforeToday(value, today)) {
+      setErrors((prev) => ({
+        ...prev,
+        nextReviewDate: 'Next review date cannot be in the past.',
+      }))
+      return
+    }
+    update('nextReviewDate', value)
   }
 
   function validate() {
@@ -87,7 +113,13 @@ export default function MedicalRecordForm({
       next.health = 'Add at least one health information field.'
     }
     if (form.followUpRequired && !form.nextReviewDate) {
-      next.nextReviewDate = 'Next review date is required when follow-up is marked.'
+      next.nextReviewDate = 'Please select a date.'
+    } else if (form.nextReviewDate) {
+      if (!isValidIsoDate(form.nextReviewDate)) {
+        next.nextReviewDate = 'Please enter a valid date.'
+      } else if (isDateBeforeToday(form.nextReviewDate, today)) {
+        next.nextReviewDate = 'Next review date cannot be in the past.'
+      }
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -96,10 +128,15 @@ export default function MedicalRecordForm({
   async function handleSubmit(event) {
     event.preventDefault()
     if (!validate()) return
+    const userId = Number(selectedClient?.userId ?? form.clientId)
     const payload = {
-      clientId: form.clientId,
+      userId: Number.isFinite(userId) ? userId : undefined,
+      clientId: selectedClient?.clientCode || form.clientId,
       clientName:
-        selectedClient?.label?.replace(/\s*\(.*\)$/, '') || form.clientName || selectedClient?.label || '',
+        selectedClient?.label?.replace(/\s*\(.*\)$/, '') ||
+        form.clientName ||
+        selectedClient?.label ||
+        '',
       programme: selectedClient?.programme || form.programme,
       medicalHistory: {
         conditions: textToList(form.conditions),
@@ -128,29 +165,39 @@ export default function MedicalRecordForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       {formError ? (
-        <p className="rounded-2xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]" role="alert">
+        <p
+          className="rounded-2xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]"
+          role="alert"
+        >
           {formError}
         </p>
       ) : null}
 
       <SectionCard title="Client">
         {mode === 'create' ? (
-          <Select
-            label="Select client"
-            required
-            value={form.clientId}
-            onChange={(e) => {
-              const next = options.find((c) => c.value === e.target.value)
-              setForm((prev) => ({
-                ...prev,
-                clientId: e.target.value,
-                clientName: next?.label || '',
-                programme: next?.programme || '',
-              }))
-            }}
-            options={options.map(({ value, label }) => ({ value, label }))}
-            error={errors.clientId}
-          />
+          options.length === 0 ? (
+            <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
+              {clientsEmptyMessage ||
+                'No attended clients available. Attend a patient first to select a client.'}
+            </p>
+          ) : (
+            <Select
+              label="Select client"
+              required
+              value={form.clientId}
+              onChange={(e) => {
+                const next = options.find((c) => c.value === e.target.value)
+                setForm((prev) => ({
+                  ...prev,
+                  clientId: e.target.value,
+                  clientName: next?.label || '',
+                  programme: next?.programme || '',
+                }))
+              }}
+              options={options.map(({ value, label }) => ({ value, label }))}
+              error={errors.clientId}
+            />
+          )
         ) : (
           <div className="grid gap-3 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] p-4 sm:grid-cols-3">
             <Info label="Name" value={form.clientName || '—'} />
@@ -235,7 +282,8 @@ export default function MedicalRecordForm({
             type="date"
             label="Next review date"
             value={form.nextReviewDate}
-            onChange={(e) => update('nextReviewDate', e.target.value)}
+            min={today}
+            onChange={(e) => handleNextReviewChange(e.target.value)}
             error={errors.nextReviewDate}
           />
         </div>
@@ -265,7 +313,7 @@ export default function MedicalRecordForm({
         </Button>
         <Button
           type="submit"
-          disabled={saving}
+          disabled={saving || (mode === 'create' && options.length === 0)}
           className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
         >
           {saving ? 'Saving…' : mode === 'edit' ? 'Save Changes' : 'Save Medical Record'}

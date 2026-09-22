@@ -5,12 +5,19 @@ import Input from '../../../../components/ui/Input'
 import SectionCard from '../../../../components/ui/SectionCard'
 import Select from '../../../../components/ui/Select'
 import TextArea from '../../../../components/ui/TextArea'
-import { clientOptions } from '../../health-records/data/healthRecordData'
+import {
+  FUTURE_DATE_MESSAGE,
+  REQUIRED_DATE_MESSAGE,
+  isDateAfterToday,
+  isDateBeforeToday,
+  isValidIsoDate,
+  localTodayIso,
+} from '../../../booking/bookingEngine'
 
 const emptyForm = {
   clientId: '',
   clientName: '',
-  date: '2026-09-09',
+  date: '',
   type: '',
   general: '',
   concerns: '',
@@ -33,18 +40,23 @@ export default function HealthAssessmentForm({
   saving = false,
   formError = '',
 }) {
-  const [form, setForm] = useState(emptyForm)
+  const today = localTodayIso()
+  const [form, setForm] = useState(() => ({ ...emptyForm, date: today }))
   const [errors, setErrors] = useState({})
-  const options = useMemo(() => clients || clientOptions || [], [clients])
+  const options = useMemo(() => (Array.isArray(clients) ? clients : []), [clients])
 
   useEffect(() => {
-    if (!initialValues) return
+    if (!initialValues) {
+      setForm({ ...emptyForm, date: localTodayIso() })
+      setErrors({})
+      return
+    }
     const obs = initialValues.observations || {}
     setForm({
       ...emptyForm,
       clientId: initialValues.clientId || '',
       clientName: initialValues.clientName || '',
-      date: initialValues.date || emptyForm.date,
+      date: initialValues.date ? String(initialValues.date).slice(0, 10) : localTodayIso(),
       type: initialValues.type || '',
       general: obs.general || '',
       concerns: obs.concerns || '',
@@ -53,23 +65,59 @@ export default function HealthAssessmentForm({
       safety: obs.safety || '',
       professionalNotes: initialValues.professionalNotes || '',
       followUpRequired: Boolean(initialValues.followUpRequired),
-      nextReview: initialValues.nextReview || '',
+      nextReview: initialValues.nextReview
+        ? String(initialValues.nextReview).slice(0, 10)
+        : '',
       alertRequired: Boolean(initialValues.alertRequired),
       guidanceRequired: Boolean(initialValues.guidanceRequired),
     })
+    setErrors({})
   }, [initialValues])
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
+    if (errors[field]) {
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next[field]
+        return next
+      })
+    }
+  }
+
+  function handleAssessmentDateChange(value) {
+    if (value && isDateAfterToday(value, today)) {
+      setErrors((prev) => ({ ...prev, date: FUTURE_DATE_MESSAGE }))
+      return
+    }
+    update('date', value)
+  }
+
+  function handleNextReviewChange(value) {
+    if (value && isDateBeforeToday(value, today)) {
+      setErrors((prev) => ({
+        ...prev,
+        nextReview: 'Follow-up date cannot be in the past.',
+      }))
+      return
+    }
+    update('nextReview', value)
   }
 
   function validate() {
     const next = {}
     if (!form.clientId) next.clientId = 'Select a client.'
-    if (!form.date) next.date = 'Assessment date is required.'
+    if (!form.date) next.date = REQUIRED_DATE_MESSAGE
+    else if (!isValidIsoDate(form.date)) next.date = 'Please enter a valid date.'
+    else if (isDateAfterToday(form.date, today)) next.date = FUTURE_DATE_MESSAGE
     if (!form.type) next.type = 'Assessment type is required.'
     if (form.followUpRequired && !form.nextReview) {
       next.nextReview = 'Follow-up date is required when follow-up is marked.'
+    } else if (form.nextReview) {
+      if (!isValidIsoDate(form.nextReview)) next.nextReview = 'Please enter a valid date.'
+      else if (isDateBeforeToday(form.nextReview, today)) {
+        next.nextReview = 'Follow-up date cannot be in the past.'
+      }
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -82,7 +130,12 @@ export default function HealthAssessmentForm({
     const payload = {
       clientId: form.clientId,
       clientName:
-        selected?.label?.split(' (')[0] || form.clientName || selected?.label || '',
+        selected?.clientName ||
+        selected?.label?.split(' (')[0] ||
+        form.clientName ||
+        selected?.label ||
+        '',
+      userId: selected?.userId,
       date: form.date,
       type: form.type,
       professionalNotes: form.professionalNotes || '',
@@ -90,7 +143,6 @@ export default function HealthAssessmentForm({
       alertRequired: form.alertRequired,
       guidanceRequired: form.guidanceRequired,
       status: form.followUpRequired ? 'Follow-up Required' : 'Completed',
-      advisor: 'Elena Costa',
       observations: {
         general: form.general || '',
         concerns: form.concerns || '',
@@ -119,21 +171,28 @@ export default function HealthAssessmentForm({
       <SectionCard title="Assessment details">
         <div className="grid gap-4 sm:grid-cols-3">
           {mode === 'create' ? (
-            <Select
-              label="Client"
-              required
-              value={form.clientId}
-              onChange={(e) => {
-                const next = options.find((c) => c.value === e.target.value)
-                setForm((prev) => ({
-                  ...prev,
-                  clientId: e.target.value,
-                  clientName: next?.label?.split(' (')[0] || '',
-                }))
-              }}
-              options={options.map(({ value, label }) => ({ value, label }))}
-              error={errors.clientId}
-            />
+            options.length === 0 ? (
+              <p className="sm:col-span-3 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
+                No attended clients available. Attend a patient from Appointments first to select a
+                client.
+              </p>
+            ) : (
+              <Select
+                label="Client"
+                required
+                value={form.clientId}
+                onChange={(e) => {
+                  const next = options.find((c) => c.value === e.target.value)
+                  setForm((prev) => ({
+                    ...prev,
+                    clientId: e.target.value,
+                    clientName: next?.label?.split(' (')[0] || '',
+                  }))
+                }}
+                options={options.map(({ value, label }) => ({ value, label }))}
+                error={errors.clientId}
+              />
+            )
           ) : (
             <Input label="Client" value={form.clientName || form.clientId} disabled />
           )}
@@ -142,7 +201,8 @@ export default function HealthAssessmentForm({
             label="Assessment date"
             required
             value={form.date}
-            onChange={(e) => update('date', e.target.value)}
+            max={today}
+            onChange={(e) => handleAssessmentDateChange(e.target.value)}
             error={errors.date}
           />
           <Select
@@ -225,7 +285,8 @@ export default function HealthAssessmentForm({
             type="date"
             label="Follow-up date"
             value={form.nextReview}
-            onChange={(e) => update('nextReview', e.target.value)}
+            min={today}
+            onChange={(e) => handleNextReviewChange(e.target.value)}
             error={errors.nextReview}
           />
         </div>

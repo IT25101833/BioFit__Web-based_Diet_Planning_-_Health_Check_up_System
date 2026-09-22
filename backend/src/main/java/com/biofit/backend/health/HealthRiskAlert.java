@@ -63,6 +63,12 @@ public class HealthRiskAlert {
     @Column(name = "details_json")
     private String detailsJson;
 
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

@@ -50,7 +50,15 @@ public class CompletionService {
     /* ---------- Medical assessments ---------- */
 
     public List<Map<String, Object>> medicalAssessments() {
-        return healthAssessmentRepository.findAll().stream().map(this::mapMedicalAssessment).toList();
+        return medicalAssessments(null);
+    }
+
+    public List<Map<String, Object>> medicalAssessments(Long clientUserId) {
+        List<HealthAssessment> assessments =
+                clientUserId == null
+                        ? healthAssessmentRepository.findAll()
+                        : healthAssessmentRepository.findByUserIdOrderByAssessedAtDesc(clientUserId);
+        return assessments.stream().map(this::mapMedicalAssessment).toList();
     }
 
     public Map<String, Object> medicalAssessment(Long id) {
@@ -72,7 +80,10 @@ public class CompletionService {
         a.setClientCode(str(body.getOrDefault("clientId", "BF-C" + userId)));
         a.setTitle(str(body.getOrDefault("type", body.getOrDefault("title", "Health assessment"))));
         a.setAssessmentType(str(body.getOrDefault("type", "General")));
-        a.setAdvisorName(str(body.getOrDefault("advisor", "Medical Advisor")));
+        a.setAdvisorName(str(body.getOrDefault("advisor", body.get("advisorName"))));
+        if (isBlank(a.getAdvisorName())) {
+            a.setAdvisorName(null);
+        }
         a.setFollowUpRequired(Boolean.TRUE.equals(body.get("followUpRequired")));
         String status = str(body.get("status"));
         if (isBlank(status)) {
@@ -83,12 +94,37 @@ public class CompletionService {
         a.setProfessionalNotes(str(body.get("professionalNotes")));
         a.setSummary(str(body.getOrDefault("summary", a.getProfessionalNotes())));
         a.setObservationsJson(mapper.toJson(body.getOrDefault("observations", Map.of())));
-        Instant assessedAt = parseOptionalDate(body.get("date"));
-        if (assessedAt != null) {
-            a.setAssessedAt(assessedAt);
+        if (!isBlank(body.get("date"))) {
+            LocalDate assessmentDate;
+            try {
+                assessmentDate = LocalDate.parse(str(body.get("date")).trim());
+            } catch (Exception ex) {
+                throw new ApiException(
+                        "VALIDATION_ERROR", "Please enter a valid date.", HttpStatus.BAD_REQUEST);
+            }
+            LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
+            if (assessmentDate.isAfter(today)) {
+                throw new ApiException(
+                        "VALIDATION_ERROR",
+                        "Future dates are not allowed.",
+                        HttpStatus.BAD_REQUEST);
+            }
+            a.setAssessedAt(assessmentDate.atStartOfDay().toInstant(ZoneOffset.UTC));
         }
         if (body.containsKey("nextReview")) {
-            a.setNextReviewAt(parseOptionalDate(body.get("nextReview")));
+            Instant nextReview = parseOptionalDate(body.get("nextReview"));
+            if (nextReview != null) {
+                LocalDate nextReviewDate =
+                        nextReview.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
+                if (nextReviewDate.isBefore(today)) {
+                    throw new ApiException(
+                            "VALIDATION_ERROR",
+                            "Follow-up date cannot be in the past.",
+                            HttpStatus.BAD_REQUEST);
+                }
+            }
+            a.setNextReviewAt(nextReview);
         }
         if (isBlank(a.getTitle())) {
             a.setTitle(isBlank(a.getAssessmentType()) ? "Health assessment" : a.getAssessmentType());
@@ -100,7 +136,10 @@ public class CompletionService {
     /* ---------- Health alerts ---------- */
 
     public List<Map<String, Object>> healthAlerts() {
-        return healthRiskAlertRepository.findAll().stream().map(this::mapAlert).toList();
+        return healthRiskAlertRepository.findAll().stream()
+                .filter(HealthRiskAlert::isActive)
+                .map(this::mapAlert)
+                .toList();
     }
 
     public Map<String, Object> healthAlert(Long id) {
@@ -123,7 +162,10 @@ public class CompletionService {
         alert.setPriority(str(body.getOrDefault("priority", "Medium")));
         alert.setReason(str(body.get("reason")));
         alert.setGuidance(str(body.getOrDefault("guidance", body.get("reason"))));
-        alert.setAssignedAdvisor(str(body.getOrDefault("assignedAdvisor", "Elena Costa")));
+        alert.setAssignedAdvisor(str(body.getOrDefault("assignedAdvisor", body.get("advisor"))));
+        if (isBlank(alert.getAssignedAdvisor())) {
+            alert.setAssignedAdvisor(null);
+        }
         alert.setRelatedAssessmentId(str(body.get("relatedAssessmentId")));
         if (alert.getDateRaised() == null) alert.setDateRaised(Instant.now());
         Instant followUpAt = parseOptionalDate(body.get("followUpDate"));
@@ -134,7 +176,11 @@ public class CompletionService {
         if (body.get("followUp") != null) details.put("followUp", body.get("followUp"));
         if (body.get("wellnessImpact") != null) details.put("wellnessImpact", body.get("wellnessImpact"));
         if (body.get("guidance") instanceof Map<?, ?> g) details.put("guidance", g);
-        else details.put("guidance", Map.of("summary", str(body.get("guidance"))));
+        else {
+            Map<String, Object> guidance = new LinkedHashMap<>();
+            guidance.put("summary", str(body.getOrDefault("guidance", body.get("reason"))));
+            details.put("guidance", guidance);
+        }
         if (body.get("activity") != null) details.put("activity", body.get("activity"));
         alert.setDetailsJson(mapper.toJson(details));
         healthRiskAlertRepository.save(alert);
@@ -172,7 +218,10 @@ public class CompletionService {
     /* ---------- Health records ---------- */
 
     public List<Map<String, Object>> healthRecords() {
-        return healthProfileRepository.findAll().stream().map(this::mapRecordListItem).toList();
+        return healthProfileRepository.findAll().stream()
+                .filter(HealthProfile::isActive)
+                .map(this::mapRecordListItem)
+                .toList();
     }
 
     public Map<String, Object> healthRecord(Long id) {
@@ -234,6 +283,16 @@ public class CompletionService {
                             body.containsKey("nextCheckup") && !isBlank(body.get("nextCheckup"))
                                     ? body.get("nextCheckup")
                                     : body.get("nextReviewDate"));
+            if (next != null) {
+                LocalDate nextDate = next.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                LocalDate today = LocalDate.now(java.time.ZoneId.systemDefault());
+                if (nextDate.isBefore(today)) {
+                    throw new ApiException(
+                            "VALIDATION_ERROR",
+                            "Next review date cannot be in the past.",
+                            HttpStatus.BAD_REQUEST);
+                }
+            }
             profile.setNextCheckupAt(next);
         }
         healthProfileRepository.save(profile);
@@ -851,7 +910,11 @@ public class CompletionService {
             inq.setClientUserId(clientUserId);
             inq.setClientId(clientCode);
             inq.setClientName(clientName);
-            inq.setEmail("client@biofit.demo");
+            inq.setEmail(
+                    userRepository
+                            .findById(clientUserId)
+                            .map(User::getEmail)
+                            .orElse("client@biofit.local"));
             inq.setPhone("+94 77 000 0000");
             inq.setSubject("Programme schedule question");
             inq.setCategory("Scheduling");
@@ -880,7 +943,7 @@ public class CompletionService {
         healthAssessmentRepository.findByUserIdOrderByAssessedAtDesc(clientUserId).forEach(a -> {
             if (a.getClientCode() == null) {
                 a.setClientCode(clientCode);
-                a.setAdvisorName("Elena Costa");
+                a.setAdvisorName(null);
                 a.setFollowUpRequired(false);
                 a.setObservationsJson(
                         mapper.toJson(
@@ -905,7 +968,7 @@ public class CompletionService {
                 alert.setClientName(clientName);
                 alert.setPriority("Medium");
                 alert.setReason(alert.getTitle());
-                alert.setAssignedAdvisor("Elena Costa");
+                alert.setAssignedAdvisor(null);
                 alert.setDetailsJson(
                         mapper.toJson(
                                 Map.of(
@@ -937,8 +1000,10 @@ public class CompletionService {
     private Map<String, Object> mapMedicalAssessment(HealthAssessment a) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", String.valueOf(a.getId()));
+        m.put("userId", a.getUserId());
         m.put("clientId", a.getClientCode() != null ? a.getClientCode() : "BF-C" + a.getUserId());
         m.put("clientName", clientName(a.getUserId()));
+        m.put("title", a.getTitle());
         m.put("date", a.getAssessedAt() == null ? null : DAY.format(a.getAssessedAt().atZone(ZoneOffset.UTC)));
         m.put("type", a.getAssessmentType());
         m.put("advisor", a.getAdvisorName());
@@ -956,19 +1021,34 @@ public class CompletionService {
     private Map<String, Object> mapAlert(HealthRiskAlert a) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", String.valueOf(a.getId()));
+        m.put("userId", a.getUserId());
         m.put("clientId", a.getClientCode() != null ? a.getClientCode() : "BF-C" + a.getUserId());
         m.put("clientName", a.getClientName() != null ? a.getClientName() : clientName(a.getUserId()));
         m.put("title", a.getTitle());
         m.put("dateRaised", a.getDateRaised() == null ? null : DAY.format(a.getDateRaised().atZone(ZoneOffset.UTC)));
         m.put("priority", a.getPriority());
         m.put("status", a.getStatus());
+        m.put("active", a.isActive());
         m.put("reason", a.getReason());
         m.put("assignedAdvisor", a.getAssignedAdvisor());
         m.put("relatedAssessmentId", a.getRelatedAssessmentId());
         Map<String, Object> details = detailsMap(a);
-        m.put("followUp", details.getOrDefault("followUp", Map.of("date", a.getFollowUpAt() == null ? null : DAY.format(a.getFollowUpAt().atZone(ZoneOffset.UTC)), "status", "Scheduled")));
+        if (!details.containsKey("followUp")) {
+            Map<String, Object> followUp = new LinkedHashMap<>();
+            followUp.put(
+                    "date",
+                    a.getFollowUpAt() == null
+                            ? null
+                            : DAY.format(a.getFollowUpAt().atZone(ZoneOffset.UTC)));
+            followUp.put("status", "Scheduled");
+            details.put("followUp", followUp);
+        }
+        m.put("followUp", details.get("followUp"));
         m.put("wellnessImpact", details.getOrDefault("wellnessImpact", Map.of()));
-        m.put("guidance", details.getOrDefault("guidance", Map.of("summary", a.getGuidance() == null ? "" : a.getGuidance())));
+        Object guidanceDefault = a.getGuidance() == null ? "" : a.getGuidance();
+        m.put(
+                "guidance",
+                details.getOrDefault("guidance", Map.of("summary", guidanceDefault)));
         m.put("activity", details.getOrDefault("activity", List.of()));
         return m;
     }
@@ -977,6 +1057,7 @@ public class CompletionService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", "hr-" + p.getId());
         m.put("recordId", p.getId());
+        m.put("userId", p.getUserId());
         m.put("clientId", p.getClientCode() != null ? p.getClientCode() : "BF-C" + p.getUserId());
         m.put("clientName", clientName(p.getUserId()));
         m.put("programme", p.getProgrammeLabel());
@@ -999,6 +1080,8 @@ public class CompletionService {
         m.put("assignedCoach", p.getAssignedCoach());
         m.put("assignedNutrition", p.getAssignedNutrition());
         m.put("lastUpdated", p.getUpdatedAt() == null ? null : p.getUpdatedAt().toString());
+        m.put("active", p.isActive());
+        m.put("status", p.isActive() ? "Active" : "Inactive");
         return m;
     }
 
@@ -1128,22 +1211,12 @@ public class CompletionService {
                             .orElse(null);
             if (fromProfile != null) return fromProfile;
 
-            String mappedEmail = DEMO_CLIENT_EMAILS.get(clientId.toUpperCase());
-            if (mappedEmail != null) {
-                Long fromEmail =
-                        userRepository
-                                .findByEmailIgnoreCaseAndDeletedAtIsNull(mappedEmail)
-                                .map(User::getId)
-                                .orElse(null);
-                if (fromEmail != null) return fromEmail;
-            }
-
             if (clientId.regionMatches(true, 0, "BF-C", 0, 4)) {
                 try {
                     Long parsed = Long.parseLong(clientId.substring(4).trim());
                     if (userRepository.existsById(parsed)) return parsed;
                 } catch (Exception ignored) {
-                    // Demo UI codes like BF-C1024 are not database user ids.
+                    // Non-numeric client codes are not database user ids.
                 }
             }
         }
@@ -1161,20 +1234,8 @@ public class CompletionService {
             if (fromName != null) return fromName;
         }
 
-        return userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull("client@biofit.demo")
-                .map(User::getId)
-                .orElseThrow(() -> new ApiException("NOT_FOUND", "Client not found", HttpStatus.NOT_FOUND));
+        throw new ApiException("VALIDATION_ERROR", "Client is required", HttpStatus.BAD_REQUEST);
     }
-
-    private static final Map<String, String> DEMO_CLIENT_EMAILS =
-            Map.of(
-                    "BF-C1024", "alex.perera@biofit.demo",
-                    "BF-C1095", "nimali.silva@biofit.demo",
-                    "BF-C1088", "sahan.desilva@biofit.demo",
-                    "BF-C1110", "dilani.fernando@biofit.demo",
-                    "BF-C1102", "taylor.kim@biofit.demo",
-                    "BF-C1201", "kasuni.abeysekara@biofit.demo");
 
     private Long asExistingUserId(Object value) {
         if (value instanceof Number n) {

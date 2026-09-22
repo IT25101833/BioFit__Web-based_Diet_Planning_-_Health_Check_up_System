@@ -64,6 +64,15 @@ public class HealthProfile {
     @Column(name = "record_json")
     private String recordJson;
 
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "deleted_by_user_id")
+    private Long deletedByUserId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

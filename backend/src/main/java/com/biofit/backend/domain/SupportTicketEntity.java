@@ -1,12 +1,13 @@
 package com.biofit.backend.domain;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "support_tickets")
@@ -24,15 +25,15 @@ public class SupportTicketEntity {
     private String status;
     private String assignedTo;
     private String relatedService;
-    /** Stored as VARCHAR(MAX) — do not use @Lob (breaks SQL Server deletes). */
-    @Column(columnDefinition = "varchar(max)")
+    /** Large text — avoid @Lob (breaks SQL Server deletes). Matches VARCHAR(MAX) / H2 VARCHAR. */
+    @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
     private String messagesJson;
-    @Column(columnDefinition = "varchar(max)")
+    @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
     private String activityJson;
     private String waitingOn;
-    @Column(columnDefinition = "varchar(max)")
+    @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
     private String escalationJson;
-    @Column(columnDefinition = "varchar(max)")
+    @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
     private String resolutionJson;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
