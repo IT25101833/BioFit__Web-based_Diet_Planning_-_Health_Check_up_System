@@ -10,6 +10,11 @@ Part B | Re-runnable (skips if constraint name already exists)
 USE biofit;
 GO
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+GO
+
 /* -------------------------------------------------------------------------- */
 /* Pre-clean orphan logical FKs (nullable columns only) so ADD CONSTRAINT     */
 /* succeeds on databases that already contain app/demo rows.                  */

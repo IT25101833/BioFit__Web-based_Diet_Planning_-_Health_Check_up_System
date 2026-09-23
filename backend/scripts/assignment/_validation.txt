@@ -1,0 +1,70 @@
+﻿table_name	row_count
+----------	---------
+appointments	10
+audit_logs	39
+client_feedback	6
+client_inquiries	6
+dietary_restrictions	6
+erasure_requests	5
+exercises	6
+fitness_assessments	6
+health_assessments	5
+health_goals	5
+health_metrics	13
+health_profiles	11
+health_risk_alerts	5
+meal_plans	6
+medical_history_entries	5
+notifications	35
+payments	8
+programme_enrolments	8
+refresh_tokens	30
+roles	8
+safety_validations	5
+staff_availability	5
+staff_schedules	6
+subscriptions	6
+support_tickets	9
+user_roles	25
+users	25
+wellness_programmes	8
+workout_plan_exercises	8
+workout_plans	6
+kind	name
+----	----
+objects	fn_CalculateBMI
+objects	sp_CreateAppointment
+objects	trg_health_metrics_audit
+objects	vw_ActiveSubscriptions
+objects	vw_AppointmentDetails
+objects	vw_PaymentSummary
+objects	vw_UserHealthSummary
+objects	workout_plan_exercises
+metric	value
+------	-----
+fk_count	34
+metric	value
+------	-----
+check_count	19
+bmi_test
+--------
+23.53
+
+=== Test failure messages ===
+  SELECT dbo.fn_CalculateBMI(170, 68);  -- expected ~23.53
+===== T01 Valid procedure call (expect SUCCESS) =====
+===== T02 Duplicate slot (expect FAILURE 50007) =====
+T02 EXPECTED FAILURE: Professional already booked for this date and time.
+===== T03 Invalid client (expect FAILURE 50005) =====
+T03 EXPECTED FAILURE: Client user not found or inactive.
+===== T04 CHECK: negative payment (expect FAILURE) =====
+T04 EXPECTED FAILURE: The INSERT statement conflicted with the CHECK constraint "ck_payments_amount_positive". The conflict occurred in database "biofit", table "dbo.payments", column 'amount'.
+===== T05 CHECK: invalid appointment status (expect FAILURE) =====
+T05 EXPECTED FAILURE: The INSERT statement conflicted with the CHECK constraint "ck_appointments_status". The conflict occurred in database "biofit", table "dbo.appointments", column 'status'.
+===== T06 FK: invalid user_id on payment (expect FAILURE) =====
+T06 EXPECTED FAILURE: The INSERT statement conflicted with the FOREIGN KEY constraint "fk_payments_user". The conflict occurred in database "biofit", table "dbo.users", column 'id'.
+===== T07 Trigger: single INSERT audit =====
+T07 audit INSERT rows delta = 1 (expect >= 1)
+===== T08 Trigger: multi-row INSERT (set-based) =====
+T08 multi-row audit delta = 3 (expect 3)
+===== T09 Function BMI =====

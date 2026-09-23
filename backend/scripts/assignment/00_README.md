@@ -4,36 +4,49 @@
 **Engine:** Microsoft SQL Server / T-SQL  
 **Rule:** Additive only — does not rename or drop live application tables/columns.
 
-## Run order (SSMS)
+## Status (applied on this machine)
 
-1. Connect to SQL Server with a login that can alter `biofit`.
-2. `USE biofit;`
-3. Execute scripts **01 → 12** in order.
-4. Scripts **10–12** produce query/test/plan output — capture screenshots for the report.
-5. Do **not** fabricate outputs. Mark anything not yet run as *requires execution*.
+Scripts **01–12** were executed successfully against `localhost,1433` / `biofit`.
 
-| Script | Purpose | Assignment part |
-|--------|---------|-----------------|
-| `01_Database_Notes.sql` | Assumptions, ACID notes, run checklist | — |
-| `02_Tables_Additive_DDL.sql` | `workout_plan_exercises` + optional `subscriptions.amount` | A, B |
-| `03_Constraints_FKs_CHECKs.sql` | FKs, CHECKs, UNIQUE | B |
-| `04_Indexes.sql` | Performance indexes | D optimization |
-| `05_Sample_Data.sql` | ≥5 realistic rows per table | C |
-| `06_Views.sql` | Reporting views | B / reporting |
-| `07_Functions.sql` | `fn_CalculateBMI` | E |
-| `08_Stored_Procedures.sql` | `sp_CreateAppointment` | E |
-| `09_Triggers.sql` | `trg_health_metrics_audit` | F |
-| `10_Queries.sql` | QUERY 01–15 | D |
-| `11_Test_Cases.sql` | Integrity / proc / trigger tests | validation |
-| `12_Execution_Plan_Analysis.sql` | Plan capture helpers | D optimization |
+Verified:
+- All tables ≥5 rows
+- 34 foreign keys, 19 CHECK constraints
+- Objects: `workout_plan_exercises`, 4 views, `fn_CalculateBMI`, `sp_CreateAppointment`, `trg_health_metrics_audit`
+- BMI test: `fn_CalculateBMI(170,68)` → **23.53**
+- Procedure success + conflict/FK/CHECK rejection tests passed
+- Trigger multi-row audit delta = 3
+- Spring Boot (`sqlserver` profile) **Started** on port **8080**
 
-## Compatibility
+## Run order (SSMS or sqlcmd)
 
-- Existing Spring Boot / JPA / Flyway objects are preserved.
-- JSON columns (`plan_json`, `messages_json`, …) remain for the app.
-- `workout_plan_exercises` is the relational M:N demonstration for Part A.
-- Prefer running this pack in SSMS for assignment evidence; optional later Flyway mirror is separate.
+1. Ensure base Flyway schema exists (V1–V9).
+2. Run: `01` → `02` → **`02b`** → `03` → `04` → … → `12`
+3. For **sqlcmd**, always pass **`-I`** (QUOTED_IDENTIFIER ON):
+
+```bat
+sqlcmd -S localhost,1433 -E -C -d biofit -I -i 03_Constraints_FKs_CHECKs.sql
+```
+
+| Script | Purpose |
+|--------|---------|
+| `01_Database_Notes.sql` | Notes / checklist |
+| `02_Tables_Additive_DDL.sql` | Junction table + `subscriptions.amount` |
+| `02b_Hibernate_Column_Alignment.sql` | LOB types for Hibernate validate |
+| `03_Constraints_FKs_CHECKs.sql` | FKs / CHECKs / UNIQUE |
+| `04_Indexes.sql` | Indexes |
+| `05_Sample_Data.sql` | Sample data |
+| `06_Views.sql` | Views |
+| `07_Functions.sql` | `fn_CalculateBMI` |
+| `08_Stored_Procedures.sql` | `sp_CreateAppointment` |
+| `09_Triggers.sql` | Audit trigger |
+| `10_Queries.sql` | QUERY 01–15 |
+| `11_Test_Cases.sql` | Tests |
+| `12_Execution_Plan_Analysis.sql` | Plan helpers |
+
+## App note
+
+`application-sqlserver.properties` sets `spring.flyway.validate-on-migrate=false` because V7–V9 were applied via SSMS for this setup. Hibernate `ddl-auto=validate` still checks the schema.
 
 ## Evidence rule
 
-Never invent query results, timings, or plans. After running in SSMS, paste real grids / Actual Execution Plans into the report.
+Never invent query results, timings, or plans. Re-run 10–12 in SSMS and screenshot real grids/plans for the report.
