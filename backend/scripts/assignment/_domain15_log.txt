@@ -1,0 +1,3 @@
+Changed database context to 'biofit'.
+Script 15 domain triggers created (all set-based).
+Note: trg_meal_plans_version_bump updates meal_plans — nested trigger depth is OK (single hop).

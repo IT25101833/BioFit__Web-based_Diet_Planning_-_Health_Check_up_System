@@ -25,6 +25,8 @@ Location: `backend/scripts/assignment/`
 | `sp_CreateAppointment` | Validated transactional booking | E |
 | `trg_health_metrics_audit` | Set-based audit trigger | F |
 | Queries 01–15 + tests + plan helpers | Part D + validation | D |
+| Scripts 13–17 domain pack | Per-management fn/proc/trigger/views + tests | E/F/D/viva |
+| `REPORT_Domain_Speaker_Cards.md` | Team speaking map | viva |
 
 ## What was intentionally NOT changed
 - Table/column names used by JPA

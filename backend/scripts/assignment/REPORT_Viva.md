@@ -58,6 +58,25 @@ A: SQL Server fires once per statement; T08 multi-row INSERT must write multiple
 **Q: What tables does the trigger use?**  
 A: `inserted` / `deleted` virtual tables; writes to existing `audit_logs`.
 
+## Domain pack extras (assign speakers — see REPORT_Domain_Speaker_Cards.md)
+**Q: Nutrition — what does the meal-plan trigger do?**  
+A: `trg_meal_plans_version_bump` increments `version_no` when name/goal/description/plan_json change, and audits the bump.
+
+**Q: Support — how do Urgent tickets notify CX?**  
+A: `trg_support_tickets_status_audit` inserts into `notifications` (audience SUPPORT) when priority becomes Urgent.
+
+**Q: Programmes — how is capacity enforced?**  
+A: `sp_EnrolClientInProgramme` checks `fn_ProgrammeRemainingCapacity`; `trg_programme_enrolment_sync` recalculates `enrolled` and THROWs if over capacity.
+
+**Q: Fitness — why a junction procedure?**  
+A: `sp_AddExerciseToWorkoutPlan` validates both FKs then inserts `workout_plan_exercises` (M:N) transactionally.
+
+**Q: Billing — procedure vs CHECK?**  
+A: `sp_RecordPayment` rejects amount ≤ 0 with a clear error; `ck_payments_amount_positive` still blocks raw INSERT bypasses.
+
+**Q: Advanced SQL examples?**  
+A: Script 16: CTE+RANK running totals, LAG weight trend, CROSS APPLY latest appointment, HAVING backlog, window avg fill rate.
+
 ## Transactions / concurrency
 **Q: ACID in BioFit booking?**  
 A: Demonstrated in `sp_CreateAppointment` (atomic insert, rollback on error).
