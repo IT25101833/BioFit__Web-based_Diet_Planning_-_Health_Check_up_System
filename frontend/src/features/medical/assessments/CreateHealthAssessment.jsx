@@ -82,7 +82,7 @@ export default function CreateHealthAssessment({ mode: modeProp = 'create' }) {
         setClientWarning('')
       } else {
         setClientWarning(
-          `Client user ID ${preselectedClientUserId} is not in your attended clients list. Attend them from Appointments first.`,
+          `Client user ID ${preselectedClientUserId} is not in your attended clients list. Attend the Medical Request first.`,
         )
       }
     }

@@ -62,7 +62,7 @@ export default function SafetyValidations() {
           setClientWarning('')
         } else {
           setClientWarning(
-            `Client user ID ${clientUserIdParam} is not in your attended clients list. Attend them from Appointments first.`,
+            `Client user ID ${clientUserIdParam} is not in your attended clients list. Attend the Medical Request first.`,
           )
           if (!clientId && clientList[0]) setClientId(clientList[0].clientId)
         }
@@ -159,7 +159,7 @@ export default function SafetyValidations() {
           <div className="space-y-4">
             {clients.length === 0 ? (
               <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
-                No attended clients available. Attend a patient from Appointments first to select a
+                No attended clients available. Mark a Medical Request as attended first to select a
                 client.
               </p>
             ) : (

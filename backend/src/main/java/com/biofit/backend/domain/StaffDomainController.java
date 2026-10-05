@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/staff")
 @RequiredArgsConstructor
 @PreAuthorize(
-        "hasAnyRole('WELLNESS_CENTRE_MANAGER','FITNESS_COACH','NUTRITION_CONSULTANT','MEDICAL_ADVISOR','CUSTOMER_EXPERIENCE_OFFICER','DIGITAL_OPERATIONS_EXECUTIVE','ADMIN')")
+        "hasAnyRole('WELLNESS_CENTRE_MANAGER','FITNESS_COACH','NUTRITION_CONSULTANT','CUSTOMER_EXPERIENCE_OFFICER','DIGITAL_OPERATIONS_EXECUTIVE','ADMIN')")
 public class StaffDomainController {
 
     private final BookingAvailabilityService bookingAvailabilityService;

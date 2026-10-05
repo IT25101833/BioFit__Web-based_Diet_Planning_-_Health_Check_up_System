@@ -11,11 +11,17 @@ import {
   Leaf,
   LogOut,
   Settings,
+  ShieldCheck,
+  Stethoscope,
   UserRound,
   Utensils,
+  Wallet,
 } from 'lucide-react'
-import { Link, NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { useAuth } from '../../auth/AuthContext'
 import Avatar from '../ui/Avatar'
+import { fetchClientUnreadNotificationCount } from '../../features/client/notifications/data/notificationData'
 
 const navItems = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
@@ -28,11 +34,66 @@ const navItems = [
   { label: 'Nutrition Progress', to: '/client/nutrition-progress', icon: Leaf },
   { label: 'My Health', to: '/client/health', icon: HeartPulse },
   { label: 'Health Risk Alerts', to: '/client/health-alerts', icon: AlertTriangle },
+  { label: 'Request Medical Attention', to: '/client/medical-requests', icon: Stethoscope },
+  {
+    label: 'Wallet',
+    icon: Wallet,
+    children: [
+      { label: 'Overview', to: '/client/wallet' },
+      { label: 'Top-Up Requests', to: '/client/wallet/requests' },
+      { label: 'Transaction History', to: '/client/wallet/transactions' },
+    ],
+  },
+  { label: 'Access Requests', to: '/client/plan-access', icon: ShieldCheck },
   { label: 'My Support Tickets', to: '/client/support', icon: HelpCircle },
   { label: 'Notifications', to: '/client/notifications', icon: Bell },
 ]
 
+const ROLE_LABELS = {
+  CLIENT: 'Client',
+  WELLNESS_CENTRE_MANAGER: 'Wellness Centre Manager',
+  FITNESS_COACH: 'Fitness Coach',
+  NUTRITION_CONSULTANT: 'Nutrition Consultant',
+  DIGITAL_OPERATIONS_EXECUTIVE: 'Digital Operations',
+  CUSTOMER_EXPERIENCE_OFFICER: 'Customer Experience',
+  MEDICAL_ADVISOR: 'Medical Advisor',
+  ADMIN: 'Administrator',
+}
+
+function displayNameFromUser(user) {
+  if (!user) return ''
+  if (user.fullName?.trim()) return user.fullName.trim()
+  const parts = [user.firstName, user.lastName].filter(Boolean)
+  return parts.join(' ').trim()
+}
+
 export default function DashboardSidebar({ mobileOpen, onClose }) {
+  const { user, role, loading } = useAuth()
+  const location = useLocation()
+  const displayName = displayNameFromUser(user)
+  const roleLabel = ROLE_LABELS[role] || ROLE_LABELS[user?.primaryRole] || 'Client'
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadUnread() {
+      if (!user) {
+        if (!cancelled) setUnreadCount(0)
+        return
+      }
+      try {
+        const count = await fetchClientUnreadNotificationCount()
+        if (!cancelled) setUnreadCount(count)
+      } catch {
+        if (!cancelled) setUnreadCount(0)
+      }
+    }
+    loadUnread()
+    return () => {
+      cancelled = true
+    }
+  }, [user, location.pathname])
+
   return (
     <aside
       className={[
@@ -60,7 +121,32 @@ export default function DashboardSidebar({ mobileOpen, onClose }) {
         className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-5"
         aria-label="Client"
       >
-        {navItems.map(({ label, to, icon: Icon }) => (
+        {navItems.map(({ label, to, icon: Icon, children }) => children ? (
+          <div key={label} className="space-y-1">
+            <div className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#111827]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f4f6fb] text-[#6b7280]">
+                <Icon className="h-4 w-4" strokeWidth={2.1} />
+              </span>
+              <span>{label}</span>
+            </div>
+            {children.map((child) => (
+              <NavLink
+                key={child.to}
+                to={child.to}
+                end={child.to === '/client/wallet'}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  [
+                    'ml-11 block rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                    isActive ? 'bg-[#e6f5f0] text-[#005a40]' : 'text-[#4b5563] hover:bg-[#f4f6fb]',
+                  ].join(' ')
+                }
+              >
+                {child.label}
+              </NavLink>
+            ))}
+          </div>
+        ) : (
           <NavLink
             key={label}
             to={to}
@@ -87,7 +173,12 @@ export default function DashboardSidebar({ mobileOpen, onClose }) {
                 >
                   <Icon className="h-4 w-4" strokeWidth={2.1} />
                 </span>
-                {label}
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                {label === 'Notifications' && unreadCount > 0 ? (
+                  <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-[#005a40] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                ) : null}
               </>
             )}
           </NavLink>
@@ -100,13 +191,25 @@ export default function DashboardSidebar({ mobileOpen, onClose }) {
           onClick={onClose}
           className="mb-3 flex items-center gap-3 rounded-2xl bg-[#f4f6fb] px-3 py-2.5 transition-colors hover:bg-[#eef2f0]"
         >
-          <Avatar name="Alex Perera" size="sm" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold whitespace-nowrap text-[#111827]">
-              Alex Perera
-            </p>
-            <p className="text-[11px] whitespace-nowrap text-[#6b7280]">Client</p>
-          </div>
+          {loading || !displayName ? (
+            <>
+              <span className="inline-flex h-9 w-9 animate-pulse rounded-full bg-[#e8ecf1]" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <span className="block h-3.5 w-28 animate-pulse rounded bg-[#e8ecf1]" />
+                <span className="block h-2.5 w-14 animate-pulse rounded bg-[#e8ecf1]" />
+              </div>
+            </>
+          ) : (
+            <>
+              <Avatar name={displayName} size="sm" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold whitespace-nowrap text-[#111827]">
+                  {displayName}
+                </p>
+                <p className="text-[11px] whitespace-nowrap text-[#6b7280]">{roleLabel}</p>
+              </div>
+            </>
+          )}
         </Link>
         <div className="flex gap-2">
           <Link

@@ -194,6 +194,26 @@ export async function executeErasureRequest(id) {
   return apiRequest(`/api/admin/erasure-requests/${id}/execute`, { method: 'POST' })
 }
 
+/** DELETE /api/admin/appointments/:id — future erroneous/duplicate only */
+export async function hardDeleteAdminAppointment(id) {
+  return apiRequest(`/api/admin/appointments/${id}`, { method: 'DELETE' })
+}
+
+export function canHardDeleteAdminAppointment(item, todayIso) {
+  if (!item?.date) return false
+  return String(item.date) >= String(todayIso || '')
+}
+
+/** DELETE /api/admin/dietary-restrictions/:id — inactive unprotected junk only */
+export async function hardDeleteAdminDietaryRestriction(id) {
+  return apiRequest(`/api/admin/dietary-restrictions/${id}`, { method: 'DELETE' })
+}
+
+/** GET /api/admin/appointments — Admin only */
+export async function fetchAdminAppointments() {
+  return apiRequest('/api/admin/appointments')
+}
+
 let mockErasureSeq = 1
 let mockErasureRequests = []
 

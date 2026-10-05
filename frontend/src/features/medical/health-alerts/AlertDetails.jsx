@@ -12,6 +12,7 @@ import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
+import PlanAccessPanel from '../plan-access/PlanAccessPanel'
 import { fetchHealthRecords, formatMedicalDate } from '../health-records/data/healthRecordData'
 import {
   healthRecordHref,
@@ -119,6 +120,7 @@ export default function AlertDetails() {
         actions={
           <div className="flex flex-wrap gap-2.5">
             <StatusBadge status={alert.priority} />
+            <StatusBadge status={alert.category || 'General'} />
             <StatusBadge status={alert.status} />
             {alert.status === 'Open' ? (
               <Button
@@ -167,6 +169,10 @@ export default function AlertDetails() {
       />
 
       <PrivacyBanner />
+
+      <div className="mb-4">
+        <PlanAccessPanel clientUserId={clientUserId} clientName={alert.clientName} />
+      </div>
 
       <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[1.25rem] border border-[#e8ecf1] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">

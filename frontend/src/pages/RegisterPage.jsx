@@ -1,8 +1,9 @@
 import { Building2, Lock, Shield } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import AuthFooter from '../components/auth/AuthFooter'
 import AuthHeader from '../components/auth/AuthHeader'
 import RegisterForm, { TrustBanner } from '../components/auth/RegisterForm'
+import VerifyEmailForm from '../components/auth/VerifyEmailForm'
 import Container from '../components/ui/Container'
 
 const trustItems = [
@@ -12,6 +13,9 @@ const trustItems = [
 ]
 
 export default function RegisterPage() {
+  const location = useLocation()
+  const isVerify = location.pathname.includes('/verify')
+
   return (
     <div className="flex min-h-svh flex-col bg-[#f8f9fb]">
       <AuthHeader />
@@ -36,22 +40,25 @@ export default function RegisterPage() {
 
           <div className="mb-8 text-center">
             <h1 className="font-display text-3xl font-bold tracking-tight text-[#111827] sm:text-4xl">
-              Create Your BioFit Account
+              {isVerify ? 'Verify Your BioFit Account' : 'Create Your BioFit Account'}
             </h1>
-            <p className="mx-auto mt-3 text-sm font-normal leading-[1.65] text-[#6b7280] sm:text-base">
-              <span className="block sm:whitespace-nowrap">
-                Start your personalized wellness journey with clinical nutrition,
-                preventive vitals
-              </span>
-              <span className="block sm:whitespace-nowrap">
-                tracking, and bio-telemetry all in one place.
-              </span>
+            <p className="mx-auto mt-3 max-w-xl text-sm font-normal leading-relaxed text-[#6b7280] sm:text-base">
+              {isVerify
+                ? 'Please enter the verification code we sent to your email so we can activate your client account.'
+                : 'Start your personalized wellness journey with clinical nutrition, preventive vitals tracking, and bio-telemetry all in one place.'}
             </p>
           </div>
 
           <div className="mx-auto max-w-3xl">
-            <TrustBanner />
-            <RegisterForm />
+            {!isVerify ? <TrustBanner /> : null}
+            {isVerify ? (
+              <VerifyEmailForm
+                initialEmail={location.state?.email || ''}
+                initialDevOtp={location.state?.devOtp || ''}
+              />
+            ) : (
+              <RegisterForm />
+            )}
           </div>
 
           <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">

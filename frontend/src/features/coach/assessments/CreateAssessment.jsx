@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Input from '../../../components/ui/Input'
@@ -12,7 +12,7 @@ import { createAssessment } from './data/assessmentData'
 
 export default function CreateAssessment() {
   const navigate = useNavigate()
-  const clients = useMemo(() => getClientOptions(), [])
+  const [clients, setClients] = useState([])
   const [form, setForm] = useState({
     clientId: '',
     date: '2026-09-09',
@@ -34,6 +34,10 @@ export default function CreateAssessment() {
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState('')
+
+  useEffect(() => {
+    getClientOptions().then(setClients).catch(() => setClients([]))
+  }, [])
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))

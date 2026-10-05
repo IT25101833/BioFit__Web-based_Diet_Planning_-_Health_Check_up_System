@@ -70,7 +70,7 @@ export default function NutritionDashboard() {
           {todayLabel}
         </p>
         <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-[#111827] sm:text-[1.75rem]">
-          Good morning, {data.greetingName}
+          {data.greetingName ? `Good morning, ${data.greetingName}` : 'Good morning'}
         </h1>
         <p className="mt-1.5 text-sm text-[#6b7280]">
           Here’s an overview of your clients, meal plans and nutrition appointments today.
@@ -107,7 +107,10 @@ export default function NutritionDashboard() {
       <div className="mb-5 grid gap-4 lg:grid-cols-3">
         <SectionCard title="Today’s Appointments" className="lg:col-span-2">
           <div className="space-y-3">
-            {todaysAppointments.map((item) => (
+            {todaysAppointments.length === 0 ? (
+              <p className="py-4 text-sm text-[#6b7280]">No appointments scheduled for today.</p>
+            ) : (
+              todaysAppointments.map((item) => (
               <div
                 key={item.id}
                 className="flex flex-col gap-3 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -117,35 +120,44 @@ export default function NutritionDashboard() {
                     {item.time} · {item.client || item.clientName}
                   </p>
                   <p className="mt-1 text-[12px] text-[#6b7280]">
-                    {item.type || item.serviceType || item.service} · {item.programme || '—'} ·{' '}
-                    {item.duration || '30 min'}
+                    {[item.type || item.serviceType || item.service, item.programme, item.duration]
+                      .filter(Boolean)
+                      .join(' · ') || '—'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <StatusBadge status={item.status} />
-                  <Button
-                    to={`/nutrition/clients/${item.clientId || 'BF-C1024'}`}
-                    size="sm"
-                    variant="outline"
-                    className="!text-[#005a40]"
-                  >
-                    View Client
-                  </Button>
-                  <Button
-                    to="/nutrition/appointments"
-                    size="sm"
-                    variant="outline"
-                    className="!text-[#005a40]"
-                  >
-                    View Appointment
-                  </Button>
+                  {item.clientId ? (
+                    <Button
+                      to={`/nutrition/clients/${item.clientId}`}
+                      size="sm"
+                      variant="outline"
+                      className="!text-[#005a40]"
+                    >
+                      View Client
+                    </Button>
+                  ) : null}
+                  {item.id ? (
+                    <Button
+                      to={`/nutrition/appointments?id=${encodeURIComponent(item.id)}`}
+                      size="sm"
+                      variant="outline"
+                      className="!text-[#005a40]"
+                    >
+                      View Appointment
+                    </Button>
+                  ) : null}
                 </div>
               </div>
-            ))}
+            ))
+            )}
           </div>
         </SectionCard>
 
         <SectionCard title="Meal plans requiring attention">
+          {mealPlanAttention.length === 0 ? (
+            <p className="py-4 text-sm text-[#6b7280]">No meal plans found.</p>
+          ) : (
           <ul className="space-y-3">
             {mealPlanAttention.map((item) => (
               <li key={item.id || item.planId} className="rounded-2xl bg-[#fff7ed] px-3 py-3">
@@ -169,13 +181,17 @@ export default function NutritionDashboard() {
               </li>
             ))}
           </ul>
+          )}
         </SectionCard>
       </div>
 
       <div className="mb-5 grid gap-4 lg:grid-cols-3">
         <SectionCard title="Recent dietary updates" className="lg:col-span-2">
           <div className="space-y-3">
-            {dietaryUpdates.map((item) => (
+            {dietaryUpdates.length === 0 ? (
+              <p className="py-4 text-sm text-[#6b7280]">No dietary restrictions recorded.</p>
+            ) : (
+              dietaryUpdates.map((item) => (
               <div
                 key={item.id}
                 className="flex flex-col gap-2 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -189,20 +205,27 @@ export default function NutritionDashboard() {
                     {formatNutritionDate(item.date || item.lastReviewed || item.dateRecorded)}
                   </p>
                 </div>
-                <Button
-                  to={`/nutrition/clients/${item.clientId || 'BF-C1024'}`}
-                  size="sm"
-                  variant="outline"
-                  className="!text-[#005a40]"
-                >
-                  View Client
-                </Button>
+                {item.clientId ? (
+                  <Button
+                    to={`/nutrition/clients/${item.clientId}`}
+                    size="sm"
+                    variant="outline"
+                    className="!text-[#005a40]"
+                  >
+                    View Client
+                  </Button>
+                ) : null}
               </div>
-            ))}
+            ))
+            )}
           </div>
         </SectionCard>
 
         <SectionCard title="Client nutrition progress">
+          {progressTrend.length === 0 ? (
+            <p className="py-6 text-sm text-[#6b7280]">No nutrition progress data yet.</p>
+          ) : (
+          <>
           <div className="flex h-44 items-end gap-2 pt-2">
             {progressTrend.map((item) => (
               <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
@@ -215,6 +238,8 @@ export default function NutritionDashboard() {
             ))}
           </div>
           <p className="mt-3 text-[12px] text-[#6b7280]">Weekly meal-plan participation %</p>
+          </>
+          )}
         </SectionCard>
       </div>
 
@@ -239,17 +264,21 @@ export default function NutritionDashboard() {
       </div>
 
       <SectionCard title="Recent client activity">
-        <ul className="space-y-3">
-          {recentActivity.map((item) => (
-            <li
-              key={item.id || item.text || item.title}
-              className="flex flex-col gap-1 border-b border-[#eef2f0] pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <p className="text-sm text-[#374151]">{item.text || item.detail || item.title}</p>
-              <p className="text-[12px] whitespace-nowrap text-[#8b93a1]">{item.at}</p>
-            </li>
-          ))}
-        </ul>
+        {recentActivity.length === 0 ? (
+          <p className="py-4 text-sm text-[#6b7280]">No recent client activity.</p>
+        ) : (
+          <ul className="space-y-3">
+            {recentActivity.map((item) => (
+              <li
+                key={item.id || item.text || item.title}
+                className="flex flex-col gap-1 border-b border-[#eef2f0] pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p className="text-sm text-[#374151]">{item.text || item.detail || item.title}</p>
+                <p className="text-[12px] whitespace-nowrap text-[#8b93a1]">{item.at}</p>
+              </li>
+            ))}
+          </ul>
+        )}
       </SectionCard>
     </div>
   )

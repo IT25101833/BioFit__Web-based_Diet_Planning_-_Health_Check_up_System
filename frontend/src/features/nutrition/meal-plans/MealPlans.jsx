@@ -16,8 +16,10 @@ import Toast from '../../../components/ui/Toast'
 import { formatNutritionDate } from '../clients/data/nutritionClientData'
 import {
   archiveMealPlan,
+  canHardDeleteMealPlan,
   duplicateMealPlan,
   fetchMealPlans,
+  hardDeleteMealPlan,
 } from './data/mealPlanData'
 
 export default function MealPlans() {
@@ -28,6 +30,7 @@ export default function MealPlans() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [archiveId, setArchiveId] = useState('')
+  const [hardDeleteId, setHardDeleteId] = useState('')
   const [toast, setToast] = useState('')
 
   async function load() {
@@ -49,9 +52,21 @@ export default function MealPlans() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return plans.filter((plan) => {
-      if (q && !plan.name.toLowerCase().includes(q) && !plan.clientName.toLowerCase().includes(q))
+      if (
+        q &&
+        !String(plan.name || '')
+          .toLowerCase()
+          .includes(q) &&
+        !String(plan.clientName || '')
+          .toLowerCase()
+          .includes(q)
+      )
         return false
-      if (status && plan.status !== status) return false
+      if (status) {
+        if (plan.status !== status) return false
+      } else if (String(plan.status || '').toLowerCase() === 'archived') {
+        return false
+      }
       return true
     })
   }, [plans, search, status])
@@ -148,7 +163,21 @@ export default function MealPlans() {
                               navigate(`/nutrition/meal-plans/${copy.id}/edit`)
                             },
                           },
-                          { label: 'Archive', tone: 'danger', onClick: () => setArchiveId(plan.id) },
+                          {
+                            label: 'Archive',
+                            tone: 'danger',
+                            disabled: String(plan.status || '').toLowerCase() === 'archived',
+                            onClick: () => setArchiveId(plan.id),
+                          },
+                          ...(canHardDeleteMealPlan(plan)
+                            ? [
+                                {
+                                  label: 'Delete permanently',
+                                  tone: 'danger',
+                                  onClick: () => setHardDeleteId(plan.id),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>
@@ -172,6 +201,24 @@ export default function MealPlans() {
         title="Archive this meal plan?"
         description="Previous plan history remains available for reference."
         confirmLabel="Archive"
+        tone="danger"
+      />
+      <ConfirmDialog
+        open={Boolean(hardDeleteId)}
+        onClose={() => setHardDeleteId('')}
+        onConfirm={async () => {
+          try {
+            await hardDeleteMealPlan(hardDeleteId)
+            setHardDeleteId('')
+            setToast('Draft meal plan permanently deleted.')
+            await load()
+          } catch (err) {
+            setToast(err?.message || 'Unable to permanently delete this plan.')
+          }
+        }}
+        title="Permanently delete this draft?"
+        description="This action permanently deletes this record and cannot be undone. Only unused draft plans can be deleted."
+        confirmLabel="Delete permanently"
         tone="danger"
       />
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />

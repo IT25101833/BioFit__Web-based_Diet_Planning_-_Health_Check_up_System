@@ -16,7 +16,6 @@ import {
   UserRound,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { homeForRole } from '../../api/authApi'
 import { useAuth } from '../../auth/AuthContext'
 import Button from '../ui/Button'
 import Checkbox from '../ui/Checkbox'
@@ -195,6 +194,7 @@ export default function RegisterForm() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [pendingVerify, setPendingVerify] = useState({ email: '', devOtp: null })
   const [submitError, setSubmitError] = useState('')
   const [duplicateEmail, setDuplicateEmail] = useState(false)
 
@@ -270,10 +270,16 @@ export default function RegisterForm() {
       })
 
       sessionStorage.removeItem(STORAGE_KEY)
+      const verifyState = {
+        email: result.email || email,
+        devOtp: result.devOtp || null,
+      }
+      setPendingVerify(verifyState)
       setSuccess(true)
       window.setTimeout(() => {
-        navigate(homeForRole(result.user.primaryRole || result.user.roles?.[0]), {
+        navigate('/register/verify', {
           replace: true,
+          state: verifyState,
         })
       }, 1200)
     } catch (err) {
@@ -294,19 +300,25 @@ export default function RegisterForm() {
           <Check className="h-8 w-8" strokeWidth={2.4} />
         </span>
         <h2 className="mt-5 font-display text-2xl font-bold text-[#111827]">
-          Welcome to BioFit!
+          Check your email
         </h2>
         <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#6b7280]">
-          Your account is ready. No email verification is required in this demo —
-          taking you to your dashboard now.
+          {pendingVerify.devOtp
+            ? 'Your BioFit account was created. Email could not be sent — you will see a development verification code on the next screen.'
+            : 'Your BioFit account was created. We sent a verification code to your email — taking you to verification now.'}
         </p>
         <Button
           type="button"
           size="lg"
           className="mt-8 rounded-xl !bg-[#005a40] hover:!bg-[#004833]"
-          onClick={() => navigate('/dashboard', { replace: true })}
+          onClick={() =>
+            navigate('/register/verify', {
+              replace: true,
+              state: pendingVerify,
+            })
+          }
         >
-          Continue to Dashboard
+          Continue to Verification
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

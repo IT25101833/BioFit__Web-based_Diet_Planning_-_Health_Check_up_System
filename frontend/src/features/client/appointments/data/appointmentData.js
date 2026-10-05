@@ -1,47 +1,10 @@
-import { apiRequest, USE_MOCK } from '../../../../api/client'
+import { apiRequest } from '../../../../api/client'
 import {
   buildUpcomingDates,
   formatMinutesToLabel,
   parseDurationMinutes,
   parseTimeToMinutes,
 } from '../../../booking/bookingEngine'
-import {
-  BOOKING_SERVICES,
-  createMockBooking,
-  getProfessionalAvailability,
-  listMockBookingsForClient,
-  listProfessionals,
-  listServices,
-} from '../../../booking/bookingStore'
-
-export const appointments = [
-  {
-    id: 'apt-1',
-    service: 'Fitness Consultation',
-    professional: 'Maya Fernando',
-    professionalRole: 'Nutrition Consultant',
-    date: '2026-09-12',
-    time: '10:00 AM',
-    status: 'Upcoming',
-    bookingReference: 'BF-APT-10421',
-    notes:
-      'Wear comfortable clothing. Bring any recent activity notes you would like to discuss.',
-    location: 'VitalLife Wellness Centre · Studio 2',
-  },
-]
-
-/** @deprecated use listServices / fetchBookingCatalog */
-export const bookingServices = BOOKING_SERVICES.filter((s) => s.forAudience === 'CLIENT')
-
-/** @deprecated use listProfessionals */
-export const bookingProfessionals = {}
-
-/** @deprecated use fetchProfessionalAvailability */
-export const availableSlots = []
-
-function delay(ms = 420) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 export function formatAppointmentDate(isoDate) {
   if (!isoDate) return ''
@@ -120,13 +83,6 @@ export function getBookingDateOptions() {
 
 /** GET /api/client/booking/catalog or /api/staff/booking/catalog */
 export async function fetchBookingCatalog(audience = 'CLIENT') {
-  if (USE_MOCK) {
-    await delay(200)
-    return {
-      services: listServices(audience),
-      professionals: listProfessionals({ audience }),
-    }
-  }
   const base = audience === 'STAFF' ? '/api/staff' : '/api/client'
   return apiRequest(`${base}/booking/catalog?audience=${encodeURIComponent(audience)}`)
 }
@@ -139,10 +95,6 @@ export async function fetchProfessionalAvailability({
   audience = 'CLIENT',
   excludeAppointmentId,
 }) {
-  if (USE_MOCK) {
-    await delay(180)
-    return getProfessionalAvailability(professionalId, date, duration)
-  }
   const params = new URLSearchParams({
     professionalId,
     date,
@@ -155,32 +107,18 @@ export async function fetchProfessionalAvailability({
 
 /** GET /api/client/appointments or /api/staff/appointments */
 export async function fetchClientAppointments(audience = 'CLIENT') {
-  if (USE_MOCK) {
-    await delay()
-    return listMockBookingsForClient()
-  }
   const base = audience === 'STAFF' ? '/api/staff' : '/api/client'
   return apiRequest(`${base}/appointments`)
 }
 
 /** GET /api/client/appointments/:id or /api/staff/appointments/:id */
 export async function fetchClientAppointmentById(id, audience = 'CLIENT') {
-  if (USE_MOCK) {
-    await delay()
-    const found = listMockBookingsForClient().find((item) => item.id === id)
-    if (!found) throw new Error('Appointment not found')
-    return { ...found }
-  }
   const base = audience === 'STAFF' ? '/api/staff' : '/api/client'
   return apiRequest(`${base}/appointments/${id}`)
 }
 
 /** POST /api/client/appointments or /api/staff/appointments */
 export async function createClientAppointment(payload) {
-  if (USE_MOCK) {
-    await delay(500)
-    return createMockBooking(payload)
-  }
   const path =
     payload?.audience === 'STAFF' ? '/api/staff/appointments' : '/api/client/appointments'
   return apiRequest(path, {
@@ -189,22 +127,27 @@ export async function createClientAppointment(payload) {
   })
 }
 
+/** GET /api/client/review-requests/:id */
+export async function fetchMedicalReviewRequest(id) {
+  return apiRequest(`/api/client/review-requests/${encodeURIComponent(id)}`)
+}
+
+/** POST /api/client/review-requests/:id/book */
+export async function bookMedicalReviewRequest(id, { time }) {
+  return apiRequest(`/api/client/review-requests/${encodeURIComponent(id)}/book`, {
+    method: 'POST',
+    body: JSON.stringify({ time }),
+  })
+}
+
 /** PATCH .../appointments/:id/cancel */
 export async function cancelClientAppointment(id, audience = 'CLIENT') {
-  if (USE_MOCK) {
-    await delay(500)
-    return { id, status: 'Cancelled' }
-  }
   const base = audience === 'STAFF' ? '/api/staff' : '/api/client'
   return apiRequest(`${base}/appointments/${id}/cancel`, { method: 'PATCH' })
 }
 
 /** PATCH .../appointments/:id/reschedule */
 export async function rescheduleClientAppointment(id, payload, audience = 'CLIENT') {
-  if (USE_MOCK) {
-    await delay(500)
-    return { id, ...payload, status: 'Upcoming' }
-  }
   const base = audience === 'STAFF' ? '/api/staff' : '/api/client'
   return apiRequest(`${base}/appointments/${id}/reschedule`, {
     method: 'PATCH',

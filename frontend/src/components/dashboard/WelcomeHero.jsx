@@ -8,7 +8,7 @@ function getGreeting() {
   return 'Good Evening'
 }
 
-export default function WelcomeHero({ name = 'Alex' }) {
+export default function WelcomeHero({ name = 'there' }) {
   return (
     <section className="relative overflow-hidden rounded-[1.25rem] border border-[var(--bf-border)] bg-[var(--bf-surface-raised)] px-6 py-7 shadow-[var(--bf-shadow-out)] sm:px-8 sm:py-8">
       <div

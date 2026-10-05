@@ -29,4 +29,5 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
             Long userId, String type, Instant startInclusive, Instant endExclusive);
 
     Optional<NotificationEntity> findByIdAndAudienceIgnoreCase(String id, String audience);
+    long countByUserIdAndReadFlagFalse(Long userId);
 }

@@ -12,6 +12,7 @@ import { fetchAssessments } from '../assessments/data/healthAssessmentData'
 import { fetchHealthAlerts } from '../health-alerts/data/healthAlertData'
 import { fetchMedicalHistory } from '../medical-history/data/medicalHistoryData'
 import { fetchSafetyValidations } from '../safety-validation/data/safetyValidationData'
+import PlanAccessPanel from '../plan-access/PlanAccessPanel'
 import PrivacyBanner from '../shared/PrivacyBanner'
 import { fetchHealthRecordById, formatMedicalDate } from './data/healthRecordData'
 
@@ -21,8 +22,6 @@ const tabs = [
   { value: 'assessments', label: 'Health Assessments' },
   { value: 'alerts', label: 'Health Risk Alerts' },
   { value: 'safety', label: 'Safety Validations' },
-  { value: 'guidance', label: 'Wellness Safety Guidance' },
-  { value: 'appointments', label: 'Appointments' },
   { value: 'record-history', label: 'Record History' },
 ]
 
@@ -109,8 +108,6 @@ export default function MedicalRecordDetails() {
   const clientUserId = record.userId != null ? String(record.userId) : ''
   const q = clientUserId ? `?clientUserId=${encodeURIComponent(clientUserId)}` : ''
   const history = record.medicalHistory || {}
-  const guidance = record.wellnessGuidance || {}
-  const appointments = record.appointments || []
   const timeline = record.history || []
 
   return (
@@ -336,6 +333,7 @@ export default function MedicalRecordDetails() {
       ) : null}
 
       {tab === 'alerts' ? (
+        <>
         <SectionCard
           title="Health Risk Alerts"
           actions={
@@ -382,6 +380,10 @@ export default function MedicalRecordDetails() {
             </div>
           )}
         </SectionCard>
+        <div className="mt-4">
+          <PlanAccessPanel clientUserId={clientUserId} clientName={record.clientName} />
+        </div>
+        </>
       ) : null}
 
       {tab === 'safety' ? (
@@ -418,81 +420,6 @@ export default function MedicalRecordDetails() {
                     </p>
                   </div>
                   <StatusBadge status={item.resultStatus || item.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
-      ) : null}
-
-      {tab === 'guidance' ? (
-        <SectionCard
-          title="Shared Wellness Safety Guidance"
-          actions={
-            <Button
-              to={`/medical/health-records/${record.id}/edit`}
-              size="sm"
-              variant="outline"
-              className="!text-[#005a40]"
-            >
-              Update Guidance
-            </Button>
-          }
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] p-4">
-              <p className="text-[11px] font-medium text-[#8b93a1]">Fitness Guidance</p>
-              <p className="mt-2 text-sm leading-relaxed text-[#4b5563]">
-                {guidance.fitness || 'No fitness guidance recorded.'}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] p-4">
-              <p className="text-[11px] font-medium text-[#8b93a1]">Nutrition Guidance</p>
-              <p className="mt-2 text-sm leading-relaxed text-[#4b5563]">
-                {guidance.nutrition || 'No nutrition guidance recorded.'}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3 text-[12px] text-[#6b7280]">
-            {guidance.status ? <StatusBadge status={guidance.status} /> : null}
-            <span>Last updated {formatMedicalDate(guidance.lastUpdated) || '—'}</span>
-            {guidance.updatedBy ? <span>Updated by {guidance.updatedBy}</span> : null}
-            {guidance.sharedWith?.length ? (
-              <span>Shared with {guidance.sharedWith.join(', ')}</span>
-            ) : null}
-          </div>
-        </SectionCard>
-      ) : null}
-
-      {tab === 'appointments' ? (
-        <SectionCard
-          title="Medical Appointments"
-          actions={
-            <Link
-              to="/medical/appointments"
-              className="text-sm font-semibold text-[#005a40] hover:underline"
-            >
-              View all
-            </Link>
-          }
-        >
-          {appointments.length === 0 ? (
-            <p className="text-sm text-[#6b7280]">No appointments linked to this record.</p>
-          ) : (
-            <div className="space-y-3">
-              {appointments.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-[#111827]">{item.type}</p>
-                    <p className="mt-1 text-[12px] text-[#6b7280]">
-                      {formatMedicalDate(item.date)} · {item.time}
-                      {item.professional ? ` · ${item.professional}` : ''}
-                    </p>
-                  </div>
-                  <StatusBadge status={item.status} />
                 </div>
               ))}
             </div>

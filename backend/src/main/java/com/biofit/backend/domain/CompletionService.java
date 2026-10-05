@@ -44,6 +44,8 @@ public class CompletionService {
     private final AuditLogRepository auditLogRepository;
     private final DomainMapper mapper;
     private final NotificationRepository notificationRepository;
+    private final MedicalReviewRequestService medicalReviewRequestService;
+    private final MedicalAdvisorService medicalAdvisorService;
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -130,6 +132,18 @@ public class CompletionService {
             a.setTitle(isBlank(a.getAssessmentType()) ? "Health assessment" : a.getAssessmentType());
         }
         healthAssessmentRepository.save(a);
+        if (body.containsKey("nextReview")) {
+            Instant next = parseOptionalDate(body.get("nextReview"));
+            Long advisorUserId = asLong(body.get("advisorUserId"));
+            if (advisorUserId != null && a.getId() != null) {
+                medicalReviewRequestService.syncFromSource(
+                        a.getUserId(),
+                        advisorUserId,
+                        MedicalReviewRequestService.toLocalDate(next),
+                        MedicalReviewRequest.SOURCE_HEALTH_ASSESSMENT,
+                        String.valueOf(a.getId()));
+            }
+        }
         return mapMedicalAssessment(a);
     }
 
@@ -160,6 +174,11 @@ public class CompletionService {
         alert.setTitle(str(body.getOrDefault("title", "Health alert")));
         alert.setStatus(str(body.getOrDefault("status", "Open")));
         alert.setPriority(str(body.getOrDefault("priority", "Medium")));
+        if (body.get("category") != null) {
+            alert.setCategory(PlanAccessService.normalizeCategory(str(body.get("category"))));
+        } else if (alert.getCategory() == null || alert.getCategory().isBlank()) {
+            alert.setCategory("General");
+        }
         alert.setReason(str(body.get("reason")));
         alert.setGuidance(str(body.getOrDefault("guidance", body.get("reason"))));
         alert.setAssignedAdvisor(str(body.getOrDefault("assignedAdvisor", body.get("advisor"))));
@@ -169,6 +188,13 @@ public class CompletionService {
         alert.setRelatedAssessmentId(str(body.get("relatedAssessmentId")));
         if (alert.getDateRaised() == null) alert.setDateRaised(Instant.now());
         Instant followUpAt = parseOptionalDate(body.get("followUpDate"));
+        if (followUpAt == null && body.get("followUp") instanceof Map<?, ?> followUpMap) {
+            followUpAt = parseOptionalDate(followUpMap.get("dueDate"));
+        }
+        boolean followUpTouched =
+                body.containsKey("followUpDate")
+                        || body.containsKey("followUp")
+                        || (followUpAt != null);
         if (followUpAt != null || (body.containsKey("followUpDate") && isBlank(body.get("followUpDate")))) {
             alert.setFollowUpAt(followUpAt);
         }
@@ -184,6 +210,23 @@ public class CompletionService {
         if (body.get("activity") != null) details.put("activity", body.get("activity"));
         alert.setDetailsJson(mapper.toJson(details));
         healthRiskAlertRepository.save(alert);
+        if (followUpTouched) {
+            Long advisorUserId = asLong(body.get("advisorUserId"));
+            LocalDate reviewDate = MedicalReviewRequestService.toLocalDate(alert.getFollowUpAt());
+            if (advisorUserId != null && alert.getId() != null) {
+                boolean cleared =
+                        (body.containsKey("followUpDate") && isBlank(body.get("followUpDate")))
+                                || (body.get("followUp") instanceof Map<?, ?> fu
+                                        && isBlank(fu.get("dueDate"))
+                                        && !Boolean.TRUE.equals(fu.get("required")));
+                medicalReviewRequestService.syncFromSource(
+                        alert.getUserId(),
+                        advisorUserId,
+                        cleared ? null : reviewDate,
+                        MedicalReviewRequest.SOURCE_HEALTH_RISK_ALERT,
+                        String.valueOf(alert.getId()));
+            }
+        }
         return mapAlert(alert);
     }
 
@@ -195,6 +238,9 @@ public class CompletionService {
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Alert not found", HttpStatus.NOT_FOUND));
         if (body.get("status") != null) alert.setStatus(str(body.get("status")));
         if (body.get("priority") != null) alert.setPriority(str(body.get("priority")));
+        if (body.get("category") != null) {
+            alert.setCategory(PlanAccessService.normalizeCategory(str(body.get("category"))));
+        }
         if (body.get("guidance") != null) {
             if (body.get("guidance") instanceof String) alert.setGuidance(str(body.get("guidance")));
             Map<String, Object> details = detailsMap(alert);
@@ -205,6 +251,10 @@ public class CompletionService {
             Map<String, Object> details = detailsMap(alert);
             details.put("followUp", body.get("followUp"));
             alert.setDetailsJson(mapper.toJson(details));
+            if (body.get("followUp") instanceof Map<?, ?> fu) {
+                Instant due = parseOptionalDate(fu.get("dueDate"));
+                alert.setFollowUpAt(due);
+            }
         }
         if (body.get("activity") != null) {
             Map<String, Object> details = detailsMap(alert);
@@ -212,6 +262,22 @@ public class CompletionService {
             alert.setDetailsJson(mapper.toJson(details));
         }
         healthRiskAlertRepository.save(alert);
+        if (body.containsKey("followUp") || body.containsKey("followUpDate") || body.containsKey("advisorUserId")) {
+            Long advisorUserId = asLong(body.get("advisorUserId"));
+            if (advisorUserId != null && alert.getId() != null) {
+                LocalDate reviewDate = MedicalReviewRequestService.toLocalDate(alert.getFollowUpAt());
+                boolean cleared = reviewDate == null;
+                if (body.get("followUp") instanceof Map<?, ?> fu && isBlank(fu.get("dueDate"))) {
+                    cleared = true;
+                }
+                medicalReviewRequestService.syncFromSource(
+                        alert.getUserId(),
+                        advisorUserId,
+                        cleared ? null : reviewDate,
+                        MedicalReviewRequest.SOURCE_HEALTH_RISK_ALERT,
+                        String.valueOf(alert.getId()));
+            }
+        }
         return mapAlert(alert);
     }
 
@@ -296,6 +362,29 @@ public class CompletionService {
             profile.setNextCheckupAt(next);
         }
         healthProfileRepository.save(profile);
+        if (body.get("medicalHistory") instanceof Map<?, ?> medicalHistory) {
+            String name = str(body.get("clientName"));
+            if (isBlank(name)) name = clientName(userId);
+            medicalAdvisorService.syncMedicalHistoryFromHealthRecord(
+                    profile.getId(),
+                    userId,
+                    profile.getClientCode(),
+                    name,
+                    medicalHistory,
+                    asLong(body.get("advisorUserId")));
+        }
+        if (body.containsKey("nextCheckup") || body.containsKey("nextReviewDate")) {
+            Long advisorUserId = asLong(body.get("advisorUserId"));
+            if (advisorUserId != null && profile.getId() != null) {
+                Instant next = profile.getNextCheckupAt();
+                medicalReviewRequestService.syncFromSource(
+                        profile.getUserId(),
+                        advisorUserId,
+                        MedicalReviewRequestService.toLocalDate(next),
+                        MedicalReviewRequest.SOURCE_MEDICAL_RECORD,
+                        String.valueOf(profile.getId()));
+            }
+        }
         return mapRecordListItem(profile);
     }
 
@@ -1027,6 +1116,7 @@ public class CompletionService {
         m.put("title", a.getTitle());
         m.put("dateRaised", a.getDateRaised() == null ? null : DAY.format(a.getDateRaised().atZone(ZoneOffset.UTC)));
         m.put("priority", a.getPriority());
+        m.put("category", a.getCategory() == null ? "General" : a.getCategory());
         m.put("status", a.getStatus());
         m.put("active", a.isActive());
         m.put("reason", a.getReason());
@@ -1192,6 +1282,18 @@ public class CompletionService {
             return new LinkedHashMap<>((Map<String, Object>) map);
         }
         return new LinkedHashMap<>();
+    }
+
+    private Long asLong(Object value) {
+        if (value instanceof Number n) return n.longValue();
+        if (value instanceof String s && !s.isBlank()) {
+            try {
+                return Long.parseLong(s.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private Long resolveUserId(Map<String, Object> body) {

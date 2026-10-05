@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Avatar from '../../../components/ui/Avatar'
 import Button from '../../../components/ui/Button'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -168,15 +167,6 @@ export default function MedicalProfile() {
           </div>
         )}
       </SectionCard>
-
-      <div className="mt-4">
-        <Link
-          to="/medical/availability"
-          className="text-sm font-semibold text-[#005a40] hover:underline"
-        >
-          Manage my availability
-        </Link>
-      </div>
 
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>

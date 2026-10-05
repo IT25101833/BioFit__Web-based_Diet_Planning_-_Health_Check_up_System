@@ -7,11 +7,13 @@ import com.biofit.backend.health.HealthAssessment;
 import com.biofit.backend.health.HealthAssessmentRepository;
 import com.biofit.backend.health.HealthRiskAlert;
 import com.biofit.backend.health.HealthRiskAlertRepository;
+import com.biofit.backend.security.UserPrincipal;
 import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.WeekFields;
 import java.util.ArrayList;
@@ -21,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,6 +39,7 @@ public class DomainService {
     private final WellnessProgrammeRepository programmeRepository;
     private final ProgrammeEnrolmentRepository enrolmentRepository;
     private final AppointmentRepository appointmentRepository;
+    private final MedicalRequestRepository medicalRequestRepository;
     private final WorkoutPlanRepository workoutPlanRepository;
     private final MealPlanRepository mealPlanRepository;
     private final DietaryRestrictionRepository dietaryRestrictionRepository;
@@ -141,6 +145,13 @@ public class DomainService {
         } else if (professionalId != null && professionalId.startsWith("user-")) {
             professionalUserId = asLong(professionalId.substring(5));
         }
+        if (isMedicalAdvisorUser(professionalUserId)
+                || "MEDICAL_ADVISOR".equalsIgnoreCase(str(payload.get("professionalRole")))) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Medical Advisors are not available for appointment booking.",
+                    HttpStatus.BAD_REQUEST);
+        }
         a.setProfessionalUserId(professionalUserId);
         a.setProfessionalRole(str(payload.get("professionalRole")));
         a.setProgramme(str(payload.get("programme")));
@@ -154,37 +165,41 @@ public class DomainService {
         a.setAudience(nullTo(str(payload.get("audience")), "CLIENT"));
         appointmentRepository.save(a);
 
+        String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
+        String clientDateLabel =
+                a.getAppointmentDate() == null
+                        ? ""
+                        : a.getAppointmentDate()
+                                .format(java.time.format.DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH));
+        createNotification(
+                userId,
+                "CLIENT",
+                "appointment",
+                "Appointment Booked",
+                "Your "
+                        + typeLabel
+                        + " appointment has been booked for "
+                        + clientDateLabel
+                        + " at "
+                        + firstNonBlank(a.getAppointmentTime(), "")
+                        + ".",
+                "/client/appointments");
+
         if (isMedicalAdvisorUser(professionalUserId)) {
-            String clientLabel = firstNonBlank(a.getClientName(), "A client");
-            String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
-            createNotification(
-                    professionalUserId,
-                    "MEDICAL",
-                    "APPOINTMENT_BOOKED",
-                    "New appointment booked",
-                    clientLabel
-                            + " booked a "
-                            + typeLabel
-                            + " on "
-                            + a.getAppointmentDate()
-                            + " at "
-                            + a.getAppointmentTime()
-                            + ".",
-                    "/medical/appointments");
-        } else {
-            bookingAvailabilityService.notifyProfessional(
-                    professionalUserId,
-                    "New appointment booked",
-                    a.getClientName()
-                            + " booked "
-                            + a.getServiceType()
-                            + " on "
-                            + a.getAppointmentDate()
-                            + " at "
-                            + a.getAppointmentTime()
-                            + ".",
-                    "/notifications");
+            return mapper.appointmentMap(a);
         }
+        bookingAvailabilityService.notifyProfessional(
+                professionalUserId,
+                "New appointment booked",
+                a.getClientName()
+                        + " booked "
+                        + a.getServiceType()
+                        + " on "
+                        + a.getAppointmentDate()
+                        + " at "
+                        + a.getAppointmentTime()
+                        + ".",
+                "/notifications");
 
         return mapper.appointmentMap(a);
     }
@@ -195,33 +210,96 @@ public class DomainService {
                 appointmentRepository
                         .findByIdAndClientUserId(id, userId)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
-        if ("Cancelled".equalsIgnoreCase(a.getStatus())) {
+        if ("Cancelled".equalsIgnoreCase(a.getStatus())
+                || (a.getStatus() != null
+                        && a.getStatus().toLowerCase(Locale.ROOT).startsWith("cancelled "))) {
             return Map.of("id", id, "status", "Cancelled");
+        }
+        if ("Completed".equalsIgnoreCase(a.getStatus())
+                || "ATTENDED".equalsIgnoreCase(a.getAttendance())) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Completed appointments cannot be cancelled.",
+                    HttpStatus.BAD_REQUEST);
         }
         a.setStatus("Cancelled");
         a.setUpdatedAt(Instant.now());
         appointmentRepository.save(a);
-
-        if (isMedicalAdvisorUser(a.getProfessionalUserId())) {
-            String clientLabel = firstNonBlank(a.getClientName(), "A client");
-            String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
-            createNotification(
-                    a.getProfessionalUserId(),
-                    "MEDICAL",
-                    "APPOINTMENT_CANCELLED",
-                    "Appointment cancelled",
-                    clientLabel
-                            + " cancelled their "
-                            + typeLabel
-                            + " on "
-                            + a.getAppointmentDate()
-                            + " at "
-                            + a.getAppointmentTime()
-                            + ".",
-                    "/medical/appointments");
-        }
+        writeAudit(userId, "APPOINTMENT_CANCELLED", "Appointment", id, "Appointment cancelled");
 
         return Map.of("id", id, "status", "Cancelled");
+    }
+
+    public List<Map<String, Object>> adminAppointments() {
+        return appointmentRepository.findAll().stream()
+                .sorted(
+                        Comparator.comparing(
+                                        Appointment::getAppointmentDate,
+                                        Comparator.nullsLast(Comparator.reverseOrder()))
+                                .thenComparing(
+                                        Appointment::getAppointmentTime,
+                                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(mapper::appointmentMap)
+                .toList();
+    }
+
+    @Transactional
+    public Map<String, Object> hardDeleteAppointment(Long adminUserId, String id) {
+        Appointment a =
+                appointmentRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
+        if (!isAppointmentInFuture(a)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Only future appointments can be permanently deleted. Past appointments must be kept for history.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        appointmentRepository.delete(a);
+        writeAudit(
+                adminUserId,
+                "APPOINTMENT_HARD_DELETED",
+                "Appointment",
+                id,
+                "Permanently deleted future appointment "
+                        + firstNonBlank(a.getServiceType(), "")
+                        + " on "
+                        + a.getAppointmentDate());
+        return Map.of("id", id, "deleted", true);
+    }
+
+    private static boolean isAppointmentInFuture(Appointment a) {
+        if (a.getAppointmentDate() == null) return false;
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        if (a.getAppointmentDate().isAfter(today)) return true;
+        if (a.getAppointmentDate().isBefore(today)) return false;
+        Integer startMins = parseAppointmentTimeMinutes(a.getAppointmentTime());
+        if (startMins == null) return true;
+        int nowMins = LocalTime.now(zone).toSecondOfDay() / 60;
+        return startMins > nowMins;
+    }
+
+    private static Integer parseAppointmentTimeMinutes(String label) {
+        if (label == null || label.isBlank()) return null;
+        String t = label.trim().toUpperCase(Locale.ROOT);
+        try {
+            if (t.endsWith("AM") || t.endsWith("PM")) {
+                boolean pm = t.endsWith("PM");
+                String core = t.replace("AM", "").replace("PM", "").trim();
+                String[] parts = core.split(":");
+                int h = Integer.parseInt(parts[0].trim());
+                int m = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 0;
+                if (h == 12) h = 0;
+                if (pm) h += 12;
+                return h * 60 + m;
+            }
+            String[] parts = t.split(":");
+            return Integer.parseInt(parts[0].trim()) * 60
+                    + (parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 0);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     @Transactional
@@ -280,9 +358,6 @@ public class DomainService {
 
         bookingAvailabilityService.assertSlotAvailable(professionalId, date, time, duration, a.getId());
 
-        LocalDate oldDate = a.getAppointmentDate();
-        String oldTime = a.getAppointmentTime();
-
         a.setAppointmentDate(date);
         a.setAppointmentTime(time);
         a.setDuration(duration);
@@ -293,28 +368,7 @@ public class DomainService {
         a.setUpdatedAt(Instant.now());
         appointmentRepository.save(a);
 
-        if (isMedicalAdvisorUser(a.getProfessionalUserId())) {
-            String clientLabel = firstNonBlank(a.getClientName(), "A client");
-            String typeLabel = firstNonBlank(a.getServiceType(), "appointment");
-            createNotification(
-                    a.getProfessionalUserId(),
-                    "MEDICAL",
-                    "APPOINTMENT_RESCHEDULED",
-                    "Appointment rescheduled",
-                    clientLabel
-                            + " rescheduled their "
-                            + typeLabel
-                            + " from "
-                            + oldDate
-                            + " at "
-                            + oldTime
-                            + " to "
-                            + a.getAppointmentDate()
-                            + " at "
-                            + a.getAppointmentTime()
-                            + ".",
-                    "/medical/appointments");
-        } else {
+        if (!isMedicalAdvisorUser(a.getProfessionalUserId())) {
             bookingAvailabilityService.notifyProfessional(
                     a.getProfessionalUserId(),
                     "Appointment rescheduled",
@@ -337,15 +391,37 @@ public class DomainService {
                 workoutPlanRepository
                         .findFirstByClientUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(userId, "Active")
                         .or(() -> workoutPlanRepository.findByClientUserId(userId).stream().findFirst())
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Workout plan not found", HttpStatus.NOT_FOUND));
+                        .orElse(null);
+        if (plan == null) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("assigned", false);
+            empty.put("empty", true);
+            empty.put("days", List.of());
+            return empty;
+        }
         Map<String, Object> m = mapper.workoutPlanListItem(plan);
-        m.put("coach", "Daniel Perera");
+        m.put("assigned", true);
+        m.put("coach", "");
         m.put("weekLabel", plan.getCurrentWeek());
-        m.put("completionPercent", plan.getProgress());
+        m.put("completionPercent", plan.getProgress() == null ? 0 : plan.getProgress());
         Object parsed = mapper.parseJson(plan.getPlanJson(), Map.of());
         if (parsed instanceof Map<?, ?> map) {
             Object days = map.get("days");
-            m.put("days", days != null ? days : List.of());
+            Object weeks = map.get("weeks");
+            if (days != null) {
+                m.put("days", days);
+            } else if (weeks instanceof List<?> weekList && !weekList.isEmpty()) {
+                Object first = weekList.get(0);
+                if (first instanceof Map<?, ?> weekMap && weekMap.get("days") != null) {
+                    m.put("days", weekMap.get("days"));
+                } else {
+                    m.put("days", List.of());
+                }
+            } else {
+                m.put("days", List.of());
+            }
+        } else {
+            m.put("days", List.of());
         }
         return m;
     }
@@ -355,32 +431,15 @@ public class DomainService {
                 workoutPlanRepository
                         .findFirstByClientUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(userId, "Active")
                         .orElse(null);
-        int progress = plan != null && plan.getProgress() != null ? plan.getProgress() : 70;
+        int progress = plan != null && plan.getProgress() != null ? plan.getProgress() : 0;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("participation", progress);
-        m.put("completedSessions", Math.round(progress * 0.32));
-        m.put("plannedSessions", 32);
+        m.put("completedSessions", 0);
+        m.put("plannedSessions", plan != null && plan.getTotalWeeks() != null ? plan.getTotalWeeks() * 3 : 0);
         m.put("programmeProgress", progress);
-        m.put(
-                "monthly",
-                List.of(
-                        Map.of("label", "May", "value", 55),
-                        Map.of("label", "Jun", "value", 62),
-                        Map.of("label", "Jul", "value", 70),
-                        Map.of("label", "Aug", "value", Math.max(60, progress - 4)),
-                        Map.of("label", "Sep", "value", progress)));
-        m.put(
-                "assessments",
-                List.of(
-                        Map.of(
-                                "id",
-                                "fa-1",
-                                "date",
-                                "2026-08-28",
-                                "type",
-                                "Movement comfort review",
-                                "summary",
-                                "Steady improvement in mobility and session consistency.")));
+        m.put("monthly", List.of());
+        m.put("assessments", List.of());
+        m.put("assigned", plan != null);
         return m;
     }
 
@@ -389,8 +448,31 @@ public class DomainService {
                 mealPlanRepository
                         .findFirstByClientUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(userId, "Active")
                         .or(() -> mealPlanRepository.findByClientUserId(userId).stream().findFirst())
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Meal plan not found", HttpStatus.NOT_FOUND));
-        return mapper.mealPlanListItem(plan);
+                        .orElse(null);
+        if (plan == null) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("assigned", false);
+            empty.put("empty", true);
+            empty.put("days", List.of());
+            empty.put("considerations", List.of());
+            return empty;
+        }
+        Map<String, Object> m = mapper.mealPlanListItem(plan);
+        m.put("assigned", true);
+        List<Map<String, Object>> restrictions =
+                dietaryRestrictionRepository.findByClientUserId(userId).stream()
+                        .filter(d -> d.getStatus() == null || "Active".equalsIgnoreCase(d.getStatus()))
+                        .map(mapper::dietaryMap)
+                        .toList();
+        if (!m.containsKey("considerations") || m.get("considerations") == null) {
+            m.put(
+                    "considerations",
+                    restrictions.stream()
+                            .map(r -> String.valueOf(r.getOrDefault("name", "")))
+                            .filter(s -> !s.isBlank())
+                            .toList());
+        }
+        return m;
     }
 
     public Map<String, Object> clientNutritionProgress(Long userId) {
@@ -398,38 +480,18 @@ public class DomainService {
                 mealPlanRepository
                         .findFirstByClientUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(userId, "Active")
                         .orElse(null);
-        int progress = plan != null && plan.getProgress() != null ? plan.getProgress() : 80;
+        int progress = plan != null && plan.getProgress() != null ? plan.getProgress() : 0;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("participation", progress);
-        m.put(
-                "weeklyConsistency",
-                List.of(
-                        Map.of("label", "Mon", "value", 100),
-                        Map.of("label", "Tue", "value", 100),
-                        Map.of("label", "Wed", "value", 75),
-                        Map.of("label", "Thu", "value", 100),
-                        Map.of("label", "Fri", "value", 50),
-                        Map.of("label", "Sat", "value", 75),
-                        Map.of("label", "Sun", "value", 100)));
-        m.put("planStatus", "On track");
-        m.put(
-                "reviews",
-                List.of(
-                        Map.of(
-                                "id",
-                                "nr-1",
-                                "date",
-                                "2026-09-02",
-                                "title",
-                                "Consultant check-in",
-                                "note",
-                                "Meal rhythm looks sustainable.")));
+        m.put("weeklyConsistency", List.of());
+        m.put("planStatus", plan == null ? "Not assigned" : firstNonBlank(plan.getStatus(), "Active"));
+        m.put("reviews", List.of());
         m.put(
                 "trends",
-                List.of(
-                        Map.of("label", "Meal-plan participation", "value", progress),
-                        Map.of("label", "Hydration habit", "value", 72),
-                        Map.of("label", "Evening meal timing", "value", 68)));
+                plan == null
+                        ? List.of()
+                        : List.of(Map.of("label", "Meal-plan participation", "value", progress)));
+        m.put("assigned", plan != null);
         return m;
     }
 
@@ -439,12 +501,24 @@ public class DomainService {
                 .toList();
     }
 
+    public long clientUnreadNotificationCount(Long userId) {
+        return notificationRepository.countByUserIdAndReadFlagFalse(userId);
+    }
+
     @Transactional
     public Map<String, Object> markNotificationRead(String id) {
+        return markNotificationRead(null, id);
+    }
+
+    @Transactional
+    public Map<String, Object> markNotificationRead(Long userId, String id) {
         NotificationEntity n =
                 notificationRepository
                         .findById(id)
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Notification not found", HttpStatus.NOT_FOUND));
+        if (userId != null && n.getUserId() != null && !Objects.equals(n.getUserId(), userId)) {
+            throw new ApiException("FORBIDDEN", "Notification not found", HttpStatus.NOT_FOUND);
+        }
         n.setReadFlag(true);
         notificationRepository.save(n);
         return mapper.notificationMap(n);
@@ -691,13 +765,14 @@ public class DomainService {
         m.put("firstName", user.getFirstName());
         m.put("lastName", user.getLastName());
         m.put("email", user.getEmail());
-        m.put("contactNumber", user.getContactNumber() != null ? user.getContactNumber() : "+94 77 000 0000");
-        m.put("dateOfBirth", "1994-05-12");
-        m.put("gender", "Prefer not to say");
-        m.put("accountStatus", "Active");
-        m.put(
-                "emergencyContact",
-                Map.of("name", "Emergency Contact", "relationship", "Family", "phone", "+94 77 111 1111"));
+        m.put("contactNumber", user.getContactNumber() != null ? user.getContactNumber() : "");
+        m.put("specialization", user.getSpecialization() != null ? user.getSpecialization() : "");
+        String roleLabel = "";
+        if (user.getRoles() != null && !user.getRoles().isEmpty()) {
+            roleLabel = user.getRoles().iterator().next().getName().name().replace('_', ' ');
+        }
+        m.put("role", roleLabel);
+        m.put("accountStatus", user.getDeletedAt() == null ? "Active" : "Inactive");
         return m;
     }
 
@@ -707,6 +782,7 @@ public class DomainService {
         if (payload.get("firstName") != null) user.setFirstName(str(payload.get("firstName")));
         if (payload.get("lastName") != null) user.setLastName(str(payload.get("lastName")));
         if (payload.get("contactNumber") != null) user.setContactNumber(str(payload.get("contactNumber")));
+        if (payload.get("specialization") != null) user.setSpecialization(str(payload.get("specialization")));
         userRepository.save(user);
         return clientProfile(userId);
     }
@@ -1072,6 +1148,16 @@ public class DomainService {
         p.setName(str(payload.getOrDefault("name", "Workout plan")));
         p.setClientId(str(payload.get("clientId")));
         p.setClientName(str(payload.get("clientName")));
+        Long clientUserId = resolveLinkedClientUserId(payload);
+        if (clientUserId != null) {
+            p.setClientUserId(clientUserId);
+            if (isBlank(p.getClientId())) {
+                p.setClientId("BF-C" + clientUserId);
+            }
+            if (isBlank(p.getClientName())) {
+                p.setClientName(clientDisplayName(clientUserId));
+            }
+        }
         p.setProgramme(str(payload.get("programme")));
         p.setGoal(str(payload.get("goal")));
         p.setDifficulty(str(payload.getOrDefault("difficulty", "Moderate")));
@@ -1088,6 +1174,7 @@ public class DomainService {
         p.setPlanJson(mapper.toJson(Map.of("weeks", weeks == null ? List.of() : weeks, "days", payload.getOrDefault("days", List.of()))));
         p.setUpdatedAt(Instant.now());
         workoutPlanRepository.save(p);
+        writeAudit(null, id == null ? "WORKOUT_PLAN_CREATED" : "WORKOUT_PLAN_UPDATED", "WorkoutPlan", p.getId(), p.getName());
         return mapper.workoutPlanListItem(p);
     }
 
@@ -1100,7 +1187,25 @@ public class DomainService {
         p.setStatus("Archived");
         p.setUpdatedAt(Instant.now());
         workoutPlanRepository.save(p);
+        writeAudit(null, "WORKOUT_PLAN_ARCHIVED", "WorkoutPlan", id, p.getName());
         return mapper.workoutPlanListItem(p);
+    }
+
+    @Transactional
+    public Map<String, Object> hardDeleteUnusedDraftWorkoutPlan(Long actorUserId, String id) {
+        WorkoutPlanEntity p =
+                workoutPlanRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Plan not found", HttpStatus.NOT_FOUND));
+        assertUnusedDraftPlan(
+                p.getStatus(),
+                p.getClientUserId(),
+                p.getClientId(),
+                p.getClientName(),
+                p.getProgress());
+        workoutPlanRepository.delete(p);
+        writeAudit(actorUserId, "WORKOUT_PLAN_HARD_DELETED", "WorkoutPlan", id, "Deleted unused draft");
+        return Map.of("id", id, "deleted", true);
     }
 
     public List<Map<String, Object>> mealPlans() {
@@ -1122,6 +1227,16 @@ public class DomainService {
         p.setName(str(payload.getOrDefault("name", "Meal plan")));
         p.setClientId(str(payload.get("clientId")));
         p.setClientName(str(payload.get("clientName")));
+        Long clientUserId = resolveLinkedClientUserId(payload);
+        if (clientUserId != null) {
+            p.setClientUserId(clientUserId);
+            if (isBlank(p.getClientId())) {
+                p.setClientId("BF-C" + clientUserId);
+            }
+            if (isBlank(p.getClientName())) {
+                p.setClientName(clientDisplayName(clientUserId));
+            }
+        }
         p.setProgramme(str(payload.get("programme")));
         p.setGoal(str(payload.get("goal")));
         p.setDescription(str(payload.get("description")));
@@ -1141,9 +1256,10 @@ public class DomainService {
                                 "history",
                                 payload.getOrDefault("history", List.of()),
                                 "consultant",
-                                payload.getOrDefault("consultant", "Maya Fernando"))));
+                                payload.getOrDefault("consultant", ""))));
         p.setUpdatedAt(Instant.now());
         mealPlanRepository.save(p);
+        writeAudit(null, id == null ? "MEAL_PLAN_CREATED" : "MEAL_PLAN_UPDATED", "MealPlan", p.getId(), p.getName());
         return mapper.mealPlanListItem(p);
     }
 
@@ -1156,7 +1272,25 @@ public class DomainService {
         p.setStatus("Archived");
         p.setUpdatedAt(Instant.now());
         mealPlanRepository.save(p);
+        writeAudit(null, "MEAL_PLAN_ARCHIVED", "MealPlan", id, p.getName());
         return mapper.mealPlanListItem(p);
+    }
+
+    @Transactional
+    public Map<String, Object> hardDeleteUnusedDraftMealPlan(Long actorUserId, String id) {
+        MealPlanEntity p =
+                mealPlanRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Plan not found", HttpStatus.NOT_FOUND));
+        assertUnusedDraftPlan(
+                p.getStatus(),
+                p.getClientUserId(),
+                p.getClientId(),
+                p.getClientName(),
+                p.getProgress());
+        mealPlanRepository.delete(p);
+        writeAudit(actorUserId, "MEAL_PLAN_HARD_DELETED", "MealPlan", id, "Deleted unused draft");
+        return Map.of("id", id, "deleted", true);
     }
 
     public List<Map<String, Object>> dietaryRestrictions() {
@@ -1176,6 +1310,16 @@ public class DomainService {
         if (d.getId() == null) d.setId("dr-" + UUID.randomUUID().toString().substring(0, 8));
         d.setClientId(str(payload.get("clientId")));
         d.setClientName(str(payload.get("clientName")));
+        Long clientUserId = resolveLinkedClientUserId(payload);
+        if (clientUserId != null) {
+            d.setClientUserId(clientUserId);
+            if (isBlank(d.getClientId())) {
+                d.setClientId("BF-C" + clientUserId);
+            }
+            if (isBlank(d.getClientName())) {
+                d.setClientName(clientDisplayName(clientUserId));
+            }
+        }
         d.setName(str(payload.get("name")));
         d.setType(str(payload.get("type")));
         d.setStatus(str(payload.getOrDefault("status", "Active")));
@@ -1187,6 +1331,12 @@ public class DomainService {
         d.setSource(str(payload.getOrDefault("source", "Consultant")));
         d.setProtectedFlag(Boolean.TRUE.equals(payload.get("protected")));
         dietaryRestrictionRepository.save(d);
+        writeAudit(
+                null,
+                id == null ? "DIETARY_RESTRICTION_CREATED" : "DIETARY_RESTRICTION_UPDATED",
+                "DietaryRestriction",
+                d.getId(),
+                d.getName());
         return mapper.dietaryMap(d);
     }
 
@@ -1198,7 +1348,36 @@ public class DomainService {
                         .orElseThrow(() -> new ApiException("NOT_FOUND", "Restriction not found", HttpStatus.NOT_FOUND));
         d.setStatus("Inactive");
         dietaryRestrictionRepository.save(d);
+        writeAudit(null, "DIETARY_RESTRICTION_DEACTIVATED", "DietaryRestriction", id, d.getName());
         return mapper.dietaryMap(d);
+    }
+
+    @Transactional
+    public Map<String, Object> hardDeleteInactiveDietary(Long adminUserId, String id) {
+        DietaryRestrictionEntity d =
+                dietaryRestrictionRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Restriction not found", HttpStatus.NOT_FOUND));
+        if (d.isProtectedFlag()) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Protected medical allergy/restriction records cannot be permanently deleted.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (d.getStatus() == null || !d.getStatus().equalsIgnoreCase("Inactive")) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Only inactive test/junk dietary records can be permanently deleted. Deactivate first.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        dietaryRestrictionRepository.delete(d);
+        writeAudit(
+                adminUserId,
+                "DIETARY_RESTRICTION_HARD_DELETED",
+                "DietaryRestriction",
+                id,
+                "Permanently deleted inactive dietary record " + firstNonBlank(d.getName(), id));
+        return Map.of("id", id, "deleted", true);
     }
 
     public List<Map<String, Object>> exercises() {
@@ -1251,6 +1430,243 @@ public class DomainService {
                 .stream()
                 .map(mapper::appointmentMap)
                 .toList();
+    }
+
+    public List<Map<String, Object>> nutritionAppointmentsForProfessional(Long nutritionistUserId) {
+        User user = userRepository.findById(nutritionistUserId).orElseThrow();
+        String nutritionistName = staffDisplayName(user);
+        return appointmentRepository.findAll().stream()
+                .filter(a -> isNutritionAppointmentForProfessional(a, nutritionistUserId, nutritionistName))
+                .sorted(
+                        Comparator.comparing(
+                                        Appointment::getAppointmentDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(
+                                        Appointment::getAppointmentTime, Comparator.nullsLast(String::compareTo)))
+                .map(mapper::appointmentMap)
+                .toList();
+    }
+
+    /**
+     * Clients available in Nutrition Select Client after Attend.
+     * Same source of truth as Medical: attendance == ATTENDED for this nutritionist.
+     */
+    public List<Map<String, Object>> nutritionClientsForConsultant(UserPrincipal principal) {
+        if (principal == null) {
+            throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
+        }
+        List<Appointment> appointments =
+                principal.hasRole(RoleName.ADMIN)
+                        ? appointmentRepository
+                                .findByProfessionalRoleContainingIgnoreCaseOrderByAppointmentDateAsc("Nutrition")
+                        : appointmentRepository.findAll().stream()
+                                .filter(
+                                        a ->
+                                                isNutritionAppointmentForProfessional(
+                                                        a,
+                                                        principal.getId(),
+                                                        staffDisplayName(
+                                                                userRepository
+                                                                        .findById(principal.getId())
+                                                                        .orElse(null))))
+                                .toList();
+
+        LinkedHashMap<Long, Map<String, Object>> byClient = new LinkedHashMap<>();
+        for (Appointment appointment : appointments) {
+            if (appointment.getClientUserId() == null) continue;
+            if (!"ATTENDED".equalsIgnoreCase(appointment.getAttendance())) continue;
+            Long clientUserId = appointment.getClientUserId();
+            if (byClient.containsKey(clientUserId)) continue;
+
+            User client = userRepository.findById(clientUserId).orElse(null);
+            if (client == null || client.getDeletedAt() != null) continue;
+
+            String clientCode = firstNonBlank(appointment.getClientId(), "BF-C" + clientUserId);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", clientCode);
+            row.put("userId", clientUserId);
+            row.put("clientId", clientCode);
+            row.put(
+                    "name",
+                    firstNonBlank(
+                            appointment.getClientName(),
+                            (client.getFirstName() + " " + client.getLastName()).trim()));
+            row.put("clientName", row.get("name"));
+            row.put("email", client.getEmail());
+            row.put("programme", appointment.getProgramme());
+            row.put("appointmentId", appointment.getId());
+            row.put("attendance", appointment.getAttendance());
+            row.put("mealPlan", "");
+            row.put("planStatus", "None");
+            row.put("dietaryStatus", "None");
+            row.put("reviewStatus", "Current");
+            row.put("status", "Active");
+            byClient.put(clientUserId, row);
+        }
+        return new ArrayList<>(byClient.values());
+    }
+
+    public Map<String, Object> nutritionClientForConsultant(UserPrincipal principal, String id) {
+        return nutritionClientsForConsultant(principal).stream()
+                .filter(
+                        c ->
+                                id.equals(String.valueOf(c.get("id")))
+                                        || id.equals(String.valueOf(c.get("clientId")))
+                                        || id.equals(String.valueOf(c.get("userId"))))
+                .findFirst()
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "NOT_FOUND",
+                                        "Client not found. Attend this client from Appointment Lobby first.",
+                                        HttpStatus.NOT_FOUND));
+    }
+
+    @Transactional
+    public Map<String, Object> markNutritionAppointmentAttendance(
+            UserPrincipal principal, String appointmentId, Map<String, Object> body) {
+        if (principal == null) {
+            throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
+        }
+        Appointment appointment =
+                appointmentRepository
+                        .findById(appointmentId)
+                        .orElseThrow(
+                                () -> new ApiException("NOT_FOUND", "Appointment not found", HttpStatus.NOT_FOUND));
+
+        User actor = userRepository.findById(principal.getId()).orElse(null);
+        String nutritionistName = staffDisplayName(actor);
+        boolean admin = principal.hasRole(RoleName.ADMIN);
+        boolean owner =
+                isNutritionAppointmentForProfessional(appointment, principal.getId(), nutritionistName);
+        if (!admin && !owner) {
+            throw new ApiException(
+                    "FORBIDDEN",
+                    "You can only mark attendance for your own nutrition appointments",
+                    HttpStatus.FORBIDDEN);
+        }
+
+        String status = appointment.getStatus() == null ? "" : appointment.getStatus().trim();
+        if (status.equalsIgnoreCase("Cancelled")
+                || status.toLowerCase(Locale.ROOT).startsWith("cancelled ")
+                || status.equalsIgnoreCase("Completed")) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "This appointment is already cancelled or completed.",
+                    HttpStatus.CONFLICT);
+        }
+        if (appointment.getAttendance() != null && !appointment.getAttendance().isBlank()) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "Attendance has already been marked for this appointment.",
+                    HttpStatus.CONFLICT);
+        }
+
+        String attendance = str(body.get("attendance"));
+        if (attendance == null) {
+            throw new ApiException("VALIDATION_ERROR", "attendance is required", HttpStatus.BAD_REQUEST);
+        }
+        String attendanceNorm = attendance.trim().toUpperCase(Locale.ROOT);
+        String note = str(body.get("note"));
+        Instant now = Instant.now();
+
+        // Backfill professionalUserId so subsequent ownership checks stay consistent.
+        if (appointment.getProfessionalUserId() == null && !admin) {
+            appointment.setProfessionalUserId(principal.getId());
+        }
+
+        if ("ATTENDED".equals(attendanceNorm)) {
+            appointment.setAttendance("ATTENDED");
+            appointment.setAttendanceNote(isBlank(note) ? null : note.trim());
+            appointment.setAttendanceMarkedAt(now);
+            appointment.setStatus("Completed");
+            appointment.setUpdatedAt(now);
+            appointmentRepository.save(appointment);
+
+            if (appointment.getClientUserId() != null) {
+                String typeLabel = firstNonBlank(appointment.getServiceType(), "Nutrition Consultation");
+                NotificationEntity n = new NotificationEntity();
+                n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+                n.setUserId(appointment.getClientUserId());
+                n.setAudience("CLIENT");
+                n.setType("appointment");
+                n.setTitle("Appointment Completed");
+                n.setBody("Your " + typeLabel + " appointment has been completed.");
+                n.setLink("/client/appointments");
+                n.setReadFlag(false);
+                n.setCreatedAt(now);
+                notificationRepository.save(n);
+            }
+
+            writeAudit(
+                    principal.getId(),
+                    "NUTRITION_APPOINTMENT_ATTENDED",
+                    "Appointment",
+                    appointment.getId(),
+                    "Marked attended for " + firstNonBlank(appointment.getClientName(), "client"));
+            return mapper.appointmentMap(appointment);
+        }
+
+        if ("ADVISOR_UNAVAILABLE".equals(attendanceNorm)) {
+            if (isBlank(note)) {
+                throw new ApiException(
+                        "VALIDATION_ERROR",
+                        "A reason is required when marking unavailable.",
+                        HttpStatus.BAD_REQUEST);
+            }
+            String reason = note.trim();
+            if (reason.length() > 500) {
+                reason = reason.substring(0, 500);
+            }
+            appointment.setAttendance("ADVISOR_UNAVAILABLE");
+            appointment.setAttendanceNote(reason);
+            appointment.setAttendanceMarkedAt(now);
+            appointment.setStatus("Cancelled by Advisor");
+            appointment.setUpdatedAt(now);
+            appointmentRepository.save(appointment);
+
+            String dateLabel =
+                    appointment.getAppointmentDate() == null
+                            ? "the scheduled date"
+                            : appointment.getAppointmentDate().toString();
+            String timeLabel =
+                    isBlank(appointment.getAppointmentTime())
+                            ? "the scheduled time"
+                            : appointment.getAppointmentTime();
+            String bodyText =
+                    "Your nutrition consultation on "
+                            + dateLabel
+                            + " at "
+                            + timeLabel
+                            + " could not go ahead because the consultant was unavailable. Please reschedule. Reason: "
+                            + reason;
+
+            if (appointment.getClientUserId() != null) {
+                NotificationEntity n = new NotificationEntity();
+                n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+                n.setUserId(appointment.getClientUserId());
+                n.setAudience("CLIENT");
+                n.setType("appointments");
+                n.setTitle("Nutrition appointment unavailable");
+                n.setBody(bodyText);
+                n.setLink("/client/appointments/" + appointment.getId() + "/reschedule");
+                n.setReadFlag(false);
+                n.setCreatedAt(now);
+                notificationRepository.save(n);
+            }
+
+            writeAudit(
+                    principal.getId(),
+                    "NUTRITION_APPOINTMENT_CONSULTANT_UNAVAILABLE",
+                    "Appointment",
+                    appointment.getId(),
+                    "Consultant unavailable: " + reason);
+            return mapper.appointmentMap(appointment);
+        }
+
+        throw new ApiException(
+                "VALIDATION_ERROR",
+                "attendance must be ATTENDED or ADVISOR_UNAVAILABLE",
+                HttpStatus.BAD_REQUEST);
     }
 
     public List<Map<String, Object>> allTickets() {
@@ -1309,43 +1725,34 @@ public class DomainService {
                         "activePlans",
                         Map.of("value", plans, "hint", "Assigned plans"),
                         "assessmentsDue",
-                        Map.of("value", Math.max(1, Math.min(5, (int) plans)), "hint", "Review soon")));
+                        Map.of("value", 0, "hint", "Review soon")));
         m.put("todaysSchedule", schedule);
         m.put(
                 "attention",
-                List.of(
-                        Map.of(
-                                "id",
-                                "att1",
-                                "clientId",
-                                "BF-C1024",
-                                "client",
-                                "Alex Morgan",
-                                "reason",
-                                "Fitness assessment due",
-                                "due",
-                                "Due this week"),
-                        Map.of(
-                                "id",
-                                "att2",
-                                "clientId",
-                                "BF-C1088",
-                                "client",
-                                "Sahan De Silva",
-                                "reason",
-                                "Workout plan ending soon",
-                                "due",
-                                "Review progress")));
-        m.put(
-                "progressTrend",
-                List.of(
-                        Map.of("label", "Mon", "value", 72),
-                        Map.of("label", "Tue", "value", 78),
-                        Map.of("label", "Wed", "value", 70),
-                        Map.of("label", "Thu", "value", 82),
-                        Map.of("label", "Fri", "value", 76),
-                        Map.of("label", "Sat", "value", 68),
-                        Map.of("label", "Sun", "value", 64)));
+                plansList.stream()
+                        .filter(
+                                p -> {
+                                    String status = String.valueOf(p.getOrDefault("status", ""));
+                                    int prog = p.get("progress") instanceof Number n ? n.intValue() : 0;
+                                    return "Draft".equalsIgnoreCase(status) || prog >= 70;
+                                })
+                        .limit(5)
+                        .map(
+                                p -> {
+                                    Map<String, Object> row = new LinkedHashMap<>();
+                                    row.put("id", "att-" + p.get("id"));
+                                    row.put("clientId", p.get("clientId"));
+                                    row.put("client", p.getOrDefault("clientName", p.get("client")));
+                                    row.put(
+                                            "reason",
+                                            "Draft".equalsIgnoreCase(String.valueOf(p.get("status")))
+                                                    ? "Draft plan awaiting assignment"
+                                                    : "Workout plan progressing — review soon");
+                                    row.put("due", p.getOrDefault("weekLabel", "Review"));
+                                    return row;
+                                })
+                        .toList());
+        m.put("progressTrend", List.of());
         m.put("activePlans", plansList);
         m.put(
                 "recentActivity",
@@ -1354,19 +1761,12 @@ public class DomainService {
                                 "id",
                                 "ra1",
                                 "text",
-                                "Client workout plan progress updated",
-                                "at",
-                                "Today"),
-                        Map.of(
-                                "id",
-                                "ra2",
-                                "text",
-                                plans + " active workout plan(s) tracked",
+                                plans + " workout plan(s) in the system",
                                 "at",
                                 "Just now"),
                         Map.of(
                                 "id",
-                                "ra3",
+                                "ra2",
                                 "text",
                                 schedule.size() + " coach session(s) on the schedule",
                                 "at",
@@ -1376,144 +1776,293 @@ public class DomainService {
 
     public Map<String, Object> nutritionDashboard(Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
-        long mealPlans = mealPlanRepository.count();
-        long restrictions = dietaryRestrictionRepository.count();
-        long clients = enrolmentRepository.count();
-        List<Map<String, Object>> appointments =
-                appointmentsForRole("Nutrition").stream()
-                        .limit(5)
-                        .map(
-                                a -> {
-                                    Map<String, Object> row = new LinkedHashMap<>(a);
-                                    row.putIfAbsent("type", a.getOrDefault("serviceType", a.get("service")));
-                                    if (row.get("duration") == null) row.put("duration", "30 min");
-                                    return row;
-                                })
-                        .toList();
-        List<Map<String, Object>> plans = mealPlans();
-        List<Map<String, Object>> mealPlanAttention =
-                plans.stream()
-                        .limit(3)
-                        .map(
-                                p -> {
-                                    Map<String, Object> row = new LinkedHashMap<>();
-                                    row.put("id", "att-" + p.get("id"));
-                                    row.put("planId", p.get("id"));
-                                    row.put("clientId", p.get("clientId"));
-                                    row.put("client", p.getOrDefault("clientName", p.get("client")));
-                                    row.put("reason", "Meal plan review due");
-                                    row.put(
-                                            "detail",
-                                            p.get("currentWeek") != null
-                                                    ? String.valueOf(p.get("currentWeek"))
-                                                    : "Review meal alternatives");
-                                    return row;
-                                })
-                        .toList();
-        List<Map<String, Object>> dietaryUpdates =
-                dietaryRestrictions().stream()
-                        .limit(3)
-                        .map(
-                                d -> {
-                                    Map<String, Object> row = new LinkedHashMap<>();
-                                    row.put("id", d.get("id"));
-                                    row.put("clientId", d.get("clientId"));
-                                    row.put("client", d.getOrDefault("clientName", d.get("client")));
-                                    row.put(
-                                            "update",
-                                            d.get("name") != null
-                                                    ? d.get("name") + " recorded"
-                                                    : "Dietary preference updated");
-                                    row.put(
-                                            "date",
-                                            d.getOrDefault(
-                                                    "lastReviewed",
-                                                    d.getOrDefault("dateRecorded", "2026-09-08")));
-                                    return row;
-                                })
-                        .toList();
-
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("greetingName", user.getFirstName());
-        m.put(
-                "stats",
-                Map.of(
-                        "assignedClients",
-                        Map.of("value", clients, "hint", "On programmes"),
-                        "plansRequiringReview",
-                        Map.of("value", Math.max(1, mealPlanAttention.size()), "hint", "Needs follow-up"),
-                        "todaysAppointments",
-                        Map.of("value", appointments.size(), "hint", "Scheduled today"),
-                        "dietaryUpdates",
-                        Map.of("value", restrictions, "hint", "Tracked restrictions")));
-        m.put("todaysAppointments", appointments);
-        m.put("mealPlanAttention", mealPlanAttention);
-        m.put("dietaryUpdates", dietaryUpdates);
-        m.put(
-                "progressTrend",
-                List.of(
-                        Map.of("label", "Mon", "value", 78),
-                        Map.of("label", "Tue", "value", 82),
-                        Map.of("label", "Wed", "value", 74),
-                        Map.of("label", "Thu", "value", 86),
-                        Map.of("label", "Fri", "value", 80),
-                        Map.of("label", "Sat", "value", 70),
-                        Map.of("label", "Sun", "value", 68)));
-        m.put(
-                "recentActivity",
-                List.of(
-                        Map.of(
-                                "id",
-                                "ra1",
-                                "text",
-                                "Dietary restriction list reviewed",
-                                "at",
-                                "Today"),
-                        Map.of(
-                                "id",
-                                "ra2",
-                                "text",
-                                mealPlans + " meal plan(s) currently active",
-                                "at",
-                                "Just now"),
-                        Map.of(
-                                "id",
-                                "ra3",
-                                "text",
-                                appointments.size() + " nutrition appointment(s) on the schedule",
-                                "at",
-                                "Today")));
-        return m;
-    }
-
-    public Map<String, Object> medicalDashboard(Long userId) {
-        User user = userRepository.findById(userId).orElseThrow();
         LocalDate today = LocalDate.now(ZoneId.systemDefault());
+        String nutritionistName = staffDisplayName(user);
 
-        List<Appointment> advisorAppointments =
-                appointmentRepository.findByProfessionalUserIdOrderByAppointmentDateDesc(userId).stream()
+        Set<Long> assignedClientUserIds = nutritionAssignedClientUserIds(user);
+        Set<String> assignedClientCodes = nutritionAssignedClientCodes(user, assignedClientUserIds);
+
+        List<Appointment> nutritionistAppointments =
+                appointmentRepository.findAll().stream()
+                        .filter(a -> isNutritionAppointmentForProfessional(a, userId, nutritionistName))
                         .filter(a -> !isCancelledAppointmentStatus(a.getStatus()))
                         .toList();
 
-        Set<Long> clientIds =
-                advisorAppointments.stream()
-                        .map(Appointment::getClientUserId)
-                        .filter(id -> id != null)
-                        .collect(Collectors.toCollection(LinkedHashSet::new));
-
         List<Map<String, Object>> todaysAppointments =
-                advisorAppointments.stream()
+                nutritionistAppointments.stream()
                         .filter(a -> today.equals(a.getAppointmentDate()))
                         .filter(DomainService::isEligibleForTodayReminder)
-                        .sorted(Comparator.comparing(Appointment::getAppointmentTime, Comparator.nullsLast(String::compareTo)))
+                        .sorted(
+                                Comparator.comparing(
+                                        Appointment::getAppointmentTime, Comparator.nullsLast(String::compareTo)))
                         .map(
                                 a -> {
                                     Map<String, Object> row = new LinkedHashMap<>(mapper.appointmentMap(a));
                                     row.putIfAbsent("type", a.getServiceType());
-                                    if (row.get("duration") == null) row.put("duration", "30 min");
                                     return row;
                                 })
                         .toList();
+
+        List<MealPlanEntity> assignedMealPlans =
+                mealPlanRepository.findAll().stream()
+                        .filter(p -> mealPlanBelongsToAssignedClients(p, assignedClientUserIds, assignedClientCodes))
+                        .toList();
+
+        List<Map<String, Object>> mealPlanAttention =
+                assignedMealPlans.stream()
+                        .filter(
+                                p -> {
+                                    String status = p.getStatus() == null ? "" : p.getStatus();
+                                    return "Review Due".equalsIgnoreCase(status)
+                                            || "Draft".equalsIgnoreCase(status);
+                                })
+                        .sorted(Comparator.comparing(MealPlanEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                        .limit(5)
+                        .map(
+                                p -> {
+                                    Map<String, Object> row = new LinkedHashMap<>();
+                                    row.put("id", "att-" + p.getId());
+                                    row.put("planId", p.getId());
+                                    row.put("clientId", p.getClientId());
+                                    row.put("client", p.getClientName());
+                                    row.put(
+                                            "reason",
+                                            "Draft".equalsIgnoreCase(p.getStatus())
+                                                    ? "Draft meal plan awaiting assignment"
+                                                    : "Meal plan review due");
+                                    row.put(
+                                            "detail",
+                                            firstNonBlank(p.getCurrentWeek(), p.getGoal(), p.getStatus()));
+                                    return row;
+                                })
+                        .toList();
+
+        List<DietaryRestrictionEntity> assignedRestrictions =
+                dietaryRestrictionRepository.findAll().stream()
+                        .filter(d -> dietaryBelongsToAssignedClients(d, assignedClientUserIds, assignedClientCodes))
+                        .filter(this::isTrackedDietaryRestriction)
+                        .toList();
+
+        List<Map<String, Object>> dietaryUpdates =
+                assignedRestrictions.stream()
+                        .sorted(
+                                Comparator.comparing(
+                                                DietaryRestrictionEntity::getLastReviewed,
+                                                Comparator.nullsLast(Comparator.reverseOrder()))
+                                        .thenComparing(
+                                                DietaryRestrictionEntity::getDateRecorded,
+                                                Comparator.nullsLast(Comparator.reverseOrder())))
+                        .limit(5)
+                        .map(
+                                d -> {
+                                    Map<String, Object> row = new LinkedHashMap<>();
+                                    row.put("id", d.getId());
+                                    row.put("clientId", d.getClientId());
+                                    row.put("client", d.getClientName());
+                                    row.put(
+                                            "update",
+                                            d.getName() != null
+                                                    ? d.getName() + " recorded"
+                                                    : "Dietary preference updated");
+                                    row.put(
+                                            "date",
+                                            d.getLastReviewed() != null
+                                                    ? d.getLastReviewed().toString()
+                                                    : d.getDateRecorded() == null
+                                                            ? null
+                                                            : d.getDateRecorded().toString());
+                                    return row;
+                                })
+                        .toList();
+
+        List<Map<String, Object>> recentActivity = buildNutritionRecentActivity(assignedMealPlans, assignedRestrictions);
+
+        String greetingName =
+                user.getFirstName() == null || user.getFirstName().isBlank() ? null : user.getFirstName().trim();
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("greetingName", greetingName);
+        m.put(
+                "stats",
+                Map.of(
+                        "assignedClients",
+                        Map.of("value", assignedClientUserIds.size(), "hint", "On programmes"),
+                        "plansRequiringReview",
+                        Map.of("value", mealPlanAttention.size(), "hint", "Needs follow-up"),
+                        "todaysAppointments",
+                        Map.of("value", todaysAppointments.size(), "hint", "Scheduled today"),
+                        "dietaryUpdates",
+                        Map.of("value", assignedRestrictions.size(), "hint", "Tracked restrictions")));
+        m.put("todaysAppointments", todaysAppointments);
+        m.put("mealPlanAttention", mealPlanAttention);
+        m.put("dietaryUpdates", dietaryUpdates);
+        m.put("progressTrend", List.of());
+        m.put("recentActivity", recentActivity);
+        return m;
+    }
+
+    private String staffDisplayName(User user) {
+        if (user == null) return "";
+        return ((user.getFirstName() == null ? "" : user.getFirstName())
+                        + " "
+                        + (user.getLastName() == null ? "" : user.getLastName()))
+                .trim();
+    }
+
+    private Set<Long> nutritionAssignedClientUserIds(User nutritionist) {
+        String nutritionistName = staffDisplayName(nutritionist);
+        Set<Long> ids = new LinkedHashSet<>();
+        if (isBlank(nutritionistName)) return ids;
+
+        for (ProgrammeEnrolment enrolment : enrolmentRepository.findAll()) {
+            if (!isActiveProgrammeEnrolment(enrolment)) continue;
+            String assignedNutrition = enrolment.getNutritionName();
+            if (isBlank(assignedNutrition) && enrolment.getProgrammeId() != null) {
+                assignedNutrition =
+                        programmeRepository
+                                .findById(enrolment.getProgrammeId())
+                                .map(WellnessProgramme::getNutritionName)
+                                .orElse(null);
+            }
+            if (!equalsIgnoreCase(assignedNutrition, nutritionistName)) continue;
+            if (enrolment.getClientUserId() != null) {
+                ids.add(enrolment.getClientUserId());
+            }
+        }
+        return ids;
+    }
+
+    private Set<String> nutritionAssignedClientCodes(User nutritionist, Set<Long> assignedClientUserIds) {
+        String nutritionistName = staffDisplayName(nutritionist);
+        Set<String> codes = new LinkedHashSet<>();
+        for (ProgrammeEnrolment enrolment : enrolmentRepository.findAll()) {
+            if (!isActiveProgrammeEnrolment(enrolment)) continue;
+            String assignedNutrition = enrolment.getNutritionName();
+            if (isBlank(assignedNutrition) && enrolment.getProgrammeId() != null) {
+                assignedNutrition =
+                        programmeRepository
+                                .findById(enrolment.getProgrammeId())
+                                .map(WellnessProgramme::getNutritionName)
+                                .orElse(null);
+            }
+            if (!equalsIgnoreCase(assignedNutrition, nutritionistName)) continue;
+            if (!isBlank(enrolment.getClientId())) {
+                codes.add(enrolment.getClientId());
+            }
+        }
+        for (Long clientUserId : assignedClientUserIds) {
+            codes.add("BF-C" + clientUserId);
+        }
+        return codes;
+    }
+
+    private static boolean isActiveProgrammeEnrolment(ProgrammeEnrolment enrolment) {
+        if (enrolment == null) return false;
+        String status = enrolment.getStatus();
+        if (isBlank(status)) return true;
+        return !"Cancelled".equalsIgnoreCase(status)
+                && !"Withdrawn".equalsIgnoreCase(status)
+                && !"Completed".equalsIgnoreCase(status);
+    }
+
+    private boolean isNutritionAppointmentForProfessional(
+            Appointment appointment, Long nutritionistUserId, String nutritionistName) {
+        if (appointment == null) return false;
+        String role = appointment.getProfessionalRole();
+        if (!containsIgnoreCase(role, "Nutrition")) return false;
+        if (nutritionistUserId != null
+                && appointment.getProfessionalUserId() != null
+                && nutritionistUserId.equals(appointment.getProfessionalUserId())) {
+            return true;
+        }
+        return !isBlank(nutritionistName) && equalsIgnoreCase(appointment.getProfessional(), nutritionistName);
+    }
+
+    private static boolean mealPlanBelongsToAssignedClients(
+            MealPlanEntity plan, Set<Long> clientUserIds, Set<String> clientCodes) {
+        if (plan == null) return false;
+        if (plan.getClientUserId() != null && clientUserIds.contains(plan.getClientUserId())) return true;
+        return !isBlank(plan.getClientId()) && clientCodes.contains(plan.getClientId());
+    }
+
+    private static boolean dietaryBelongsToAssignedClients(
+            DietaryRestrictionEntity restriction, Set<Long> clientUserIds, Set<String> clientCodes) {
+        if (restriction == null) return false;
+        if (restriction.getClientUserId() != null && clientUserIds.contains(restriction.getClientUserId())) {
+            return true;
+        }
+        return !isBlank(restriction.getClientId()) && clientCodes.contains(restriction.getClientId());
+    }
+
+    private boolean isTrackedDietaryRestriction(DietaryRestrictionEntity restriction) {
+        if (restriction == null) return false;
+        String status = restriction.getStatus();
+        if (isBlank(status)) return true;
+        return "Active".equalsIgnoreCase(status) || "Under Review".equalsIgnoreCase(status);
+    }
+
+    private List<Map<String, Object>> buildNutritionRecentActivity(
+            List<MealPlanEntity> mealPlans, List<DietaryRestrictionEntity> restrictions) {
+        List<Map<String, Object>> activity = new ArrayList<>();
+        mealPlans.stream()
+                .filter(p -> p.getUpdatedAt() != null)
+                .sorted(Comparator.comparing(MealPlanEntity::getUpdatedAt).reversed())
+                .limit(3)
+                .forEach(
+                        p -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("id", "mp-" + p.getId());
+                            row.put(
+                                    "text",
+                                    firstNonBlank(p.getName(), "Meal plan")
+                                            + " updated for "
+                                            + firstNonBlank(p.getClientName(), "client"));
+                            row.put("at", p.getUpdatedAt().toString());
+                            activity.add(row);
+                        });
+        restrictions.stream()
+                .sorted(
+                        Comparator.comparing(
+                                        DietaryRestrictionEntity::getLastReviewed,
+                                        Comparator.nullsLast(Comparator.reverseOrder()))
+                                .thenComparing(
+                                        DietaryRestrictionEntity::getDateRecorded,
+                                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(3)
+                .forEach(
+                        d -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("id", "dr-" + d.getId());
+                            row.put(
+                                    "text",
+                                    firstNonBlank(d.getName(), "Dietary restriction")
+                                            + " tracked for "
+                                            + firstNonBlank(d.getClientName(), "client"));
+                            row.put(
+                                    "at",
+                                    d.getLastReviewed() != null
+                                            ? d.getLastReviewed().toString()
+                                            : d.getDateRecorded() == null
+                                                    ? ""
+                                                    : d.getDateRecorded().toString());
+                            activity.add(row);
+                        });
+        return activity.stream().limit(6).toList();
+    }
+
+    public Map<String, Object> medicalDashboard(Long userId) {
+        User user = userRepository.findById(userId).orElseThrow();
+
+        Set<Long> clientIds =
+                medicalRequestRepository
+                        .findByMedicalAdvisorIdAndStatusInOrderByRequestedAtDesc(
+                                userId, MedicalRequest.CLINICAL_ACCESS)
+                        .stream()
+                        .map(MedicalRequest::getClientId)
+                        .filter(id -> id != null)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<Map<String, Object>> todaysAppointments = List.of();
 
         List<HealthAssessment> clientAssessments =
                 clientIds.isEmpty()
@@ -2000,23 +2549,68 @@ public class DomainService {
                                     programmeRepository
                                             .findById(e.getProgrammeId())
                                             .map(WellnessProgramme::getName)
-                                            .orElse("Programme"));
+                                            .orElse(""));
                             MealPlanEntity plan =
                                     mealPlanRepository.findByClientUserId(e.getClientUserId()).stream()
                                             .findFirst()
                                             .orElse(null);
+                            List<DietaryRestrictionEntity> restrictions =
+                                    e.getClientUserId() == null
+                                            ? List.of()
+                                            : dietaryRestrictionRepository.findByClientUserId(e.getClientUserId());
+                            long activeRestrictions =
+                                    restrictions.stream()
+                                            .filter(
+                                                    d ->
+                                                            d.getStatus() == null
+                                                                    || "Active".equalsIgnoreCase(d.getStatus())
+                                                                    || "Under Review"
+                                                                            .equalsIgnoreCase(d.getStatus()))
+                                            .count();
+                            boolean reviewDue =
+                                    plan != null
+                                            && ("Review Due".equalsIgnoreCase(plan.getStatus())
+                                                    || "Draft".equalsIgnoreCase(plan.getStatus()));
                             m.put("mealPlanId", plan == null ? null : plan.getId());
-                            m.put("mealPlan", plan == null ? "â€”" : plan.getName());
+                            m.put("mealPlan", plan == null ? "" : plan.getName());
                             m.put("planStatus", plan == null ? "None" : plan.getStatus());
-                            m.put("dietaryStatus", "Reviewed");
-                            m.put("reviewStatus", "Current");
-                            m.put("lastReview", "2026-09-02");
-                            m.put("nextConsultation", "2026-09-18");
+                            m.put(
+                                    "dietaryStatus",
+                                    activeRestrictions == 0
+                                            ? "None"
+                                            : restrictions.stream()
+                                                            .anyMatch(
+                                                                    d ->
+                                                                            "Under Review"
+                                                                                    .equalsIgnoreCase(
+                                                                                            d.getStatus()))
+                                                    ? "Under Review"
+                                                    : "Active");
+                            m.put("reviewStatus", reviewDue ? "Review Due" : "Current");
+                            m.put(
+                                    "lastReview",
+                                    plan == null || plan.getUpdatedAt() == null
+                                            ? null
+                                            : plan.getUpdatedAt().toString());
+                            m.put("nextConsultation", null);
                             m.put("status", e.getStatus());
-                            m.put("goals", List.of("Balanced meals", "Hydration"));
-                            m.put("preferences", List.of("Warm breakfasts"));
-                            m.put("currentPlan", plan == null ? Map.of() : mapper.mealPlanListItem(plan));
-                            m.put("progressMetrics", List.of(Map.of("label", "Participation", "value", plan == null || plan.getProgress() == null ? 0 : plan.getProgress())));
+                            m.put("goals", List.of());
+                            m.put("preferences", List.of());
+                            m.put("mealPattern", "");
+                            m.put("guidance", "");
+                            m.put("reviewRequired", activeRestrictions > 0 && reviewDue);
+                            m.put("consultations", List.of());
+                            m.put("currentPlan", plan == null ? null : mapper.mealPlanListItem(plan));
+                            m.put(
+                                    "progressMetrics",
+                                    List.of(
+                                            Map.of(
+                                                    "label",
+                                                    "Participation",
+                                                    "value",
+                                                    plan == null || plan.getProgress() == null
+                                                            ? 0
+                                                            : plan.getProgress())));
                             return m;
                         })
                 .toList();
@@ -2052,17 +2646,14 @@ public class DomainService {
                             m.put("mealPlan", p.getName());
                             m.put("mealPlanId", p.getId());
                             m.put("currentWeek", p.getCurrentWeek());
-                            m.put("participation", p.getProgress());
-                            m.put("lastUpdate", p.getUpdatedAt() == null ? null : p.getUpdatedAt().toString());
-                            m.put("lastConsultation", "2026-09-02");
-                            m.put("nextReview", "2026-09-18");
-                            m.put("status", "On track");
+                            m.put("participation", p.getProgress() == null ? 0 : p.getProgress());
                             m.put(
-                                    "weeklyParticipation",
-                                    List.of(
-                                            Map.of("label", "Mon", "value", 100),
-                                            Map.of("label", "Wed", "value", 75),
-                                            Map.of("label", "Fri", "value", p.getProgress())));
+                                    "lastUpdate",
+                                    p.getUpdatedAt() == null ? null : p.getUpdatedAt().toString());
+                            m.put("lastConsultation", null);
+                            m.put("nextReview", p.getEndDate() == null ? null : p.getEndDate().toString());
+                            m.put("status", p.getStatus() == null ? "" : p.getStatus());
+                            m.put("weeklyParticipation", List.of());
                             return m;
                         })
                 .toList();
@@ -2115,6 +2706,57 @@ public class DomainService {
             throw new ApiException(
                     "VALIDATION_ERROR",
                     "Appointment date cannot be in the past.",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void writeAudit(
+            Long userId, String action, String entityType, String entityId, String details) {
+        AuditLog log = new AuditLog();
+        log.setUserId(userId);
+        log.setAction(action);
+        log.setEntityType(entityType);
+        log.setEntityId(entityId);
+        log.setResultStatus("SUCCESS");
+        log.setDetails(details == null ? null : details.length() > 1000 ? details.substring(0, 1000) : details);
+        auditLogRepository.save(log);
+    }
+
+    private Long resolveLinkedClientUserId(Map<String, Object> payload) {
+        Long fromPayload = asLong(payload.get("clientUserId"));
+        if (fromPayload != null && userRepository.existsById(fromPayload)) {
+            return fromPayload;
+        }
+        String clientId = str(payload.get("clientId"));
+        if (!isBlank(clientId)) {
+            String digits = clientId.replaceAll("\\D+", "");
+            Long fromCode = asLong(digits);
+            if (fromCode != null && userRepository.existsById(fromCode)) {
+                return fromCode;
+            }
+        }
+        return null;
+    }
+
+    private static void assertUnusedDraftPlan(
+            String status, Long clientUserId, String clientId, String clientName, Integer progress) {
+        if (status == null || !status.equalsIgnoreCase("Draft")) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Only unused Draft plans can be permanently deleted. Archive assigned or used plans instead.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        boolean assigned = clientUserId != null || !isBlank(clientId);
+        if (assigned) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "This plan is assigned to a client and cannot be permanently deleted. Archive it instead.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (progress != null && progress > 0) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "This plan has progress history and cannot be permanently deleted.",
                     HttpStatus.BAD_REQUEST);
         }
     }
@@ -2179,59 +2821,12 @@ public class DomainService {
     }
 
     /**
-     * Creates at most one TODAY_APPOINTMENTS notification per medical advisor for the given day
-     * (Asia/Colombo). Skips advisors with no eligible appointments and skips if already notified today.
+     * Medical Advisors no longer manage appointments, so this reminder is not sent.
+     * Coach, nutrition, support, and client appointment flows are unchanged.
      */
     @Transactional
     public int sendTodayMedicalAppointmentReminders() {
-        ZoneId zone = ZoneId.of("Asia/Colombo");
-        LocalDate today = LocalDate.now(zone);
-        Instant dayStart = today.atStartOfDay(zone).toInstant();
-        Instant dayEnd = today.plusDays(1).atStartOfDay(zone).toInstant();
-
-        List<Appointment> todays =
-                appointmentRepository.findByAppointmentDateAndProfessionalUserIdIsNotNull(today);
-        Map<Long, List<Appointment>> byAdvisor = new LinkedHashMap<>();
-        for (Appointment a : todays) {
-            if (!isEligibleForTodayReminder(a)) continue;
-            Long advisorId = a.getProfessionalUserId();
-            if (!isMedicalAdvisorUser(advisorId)) continue;
-            byAdvisor.computeIfAbsent(advisorId, k -> new ArrayList<>()).add(a);
-        }
-
-        int created = 0;
-        for (Map.Entry<Long, List<Appointment>> entry : byAdvisor.entrySet()) {
-            Long advisorId = entry.getKey();
-            if (notificationRepository
-                    .existsByUserIdAndTypeIgnoreCaseAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-                            advisorId, "TODAY_APPOINTMENTS", dayStart, dayEnd)) {
-                continue;
-            }
-            List<Appointment> list = new ArrayList<>(entry.getValue());
-            list.sort(
-                    Comparator.comparing(
-                            (Appointment a) ->
-                                    BookingAvailabilityService.parseMinutes(a.getAppointmentTime()),
-                            Comparator.nullsLast(Integer::compareTo)));
-
-            int n = list.size();
-            String title = "You have " + n + " appointment" + (n == 1 ? "" : "s") + " today";
-            String body =
-                    list.stream()
-                            .map(
-                                    a ->
-                                            firstNonBlank(a.getAppointmentTime(), "—")
-                                                    + " – "
-                                                    + firstNonBlank(a.getClientName(), "Client")
-                                                    + " ("
-                                                    + firstNonBlank(a.getServiceType(), "Appointment")
-                                                    + ")")
-                            .collect(Collectors.joining("\n"));
-            createNotification(
-                    advisorId, "MEDICAL", "TODAY_APPOINTMENTS", title, body, "/medical/appointments");
-            created++;
-        }
-        return created;
+        return 0;
     }
 
     private static boolean isEligibleForTodayReminder(Appointment a) {

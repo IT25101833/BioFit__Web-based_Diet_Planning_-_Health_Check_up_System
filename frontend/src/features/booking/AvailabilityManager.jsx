@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -7,14 +7,8 @@ import SectionCard from '../../components/ui/SectionCard'
 import Select from '../../components/ui/Select'
 import Toast from '../../components/ui/Toast'
 import { defaultWeeklyHours, formatMinutesToLabel, parseTimeToMinutes } from './bookingEngine'
-import {
-  BOOKABLE_PROFESSIONALS,
-  addAvailabilityBlock,
-  getAvailabilityProfile,
-  removeAvailabilityBlock,
-  saveWeeklyHours,
-} from './bookingStore'
-import { apiRequest, USE_MOCK } from '../../api/client'
+import { apiRequest } from '../../api/client'
+import { fetchBookingCatalog } from '../client/appointments/data/appointmentData'
 
 const DAY_LABELS = [
   { value: '0', label: 'Sunday' },
@@ -27,14 +21,10 @@ const DAY_LABELS = [
 ]
 
 async function fetchProfile(professionalId) {
-  if (USE_MOCK) {
-    return getAvailabilityProfile(professionalId)
-  }
   return apiRequest(`/api/staff/availability?professionalId=${encodeURIComponent(professionalId)}`)
 }
 
 async function persistWeekly(professionalId, weeklyHours) {
-  if (USE_MOCK) return saveWeeklyHours(professionalId, weeklyHours)
   return apiRequest('/api/staff/availability/hours', {
     method: 'PUT',
     body: JSON.stringify({ professionalId, weeklyHours }),
@@ -42,7 +32,6 @@ async function persistWeekly(professionalId, weeklyHours) {
 }
 
 async function persistBlock(block) {
-  if (USE_MOCK) return addAvailabilityBlock(block)
   return apiRequest('/api/staff/availability/blocks', {
     method: 'POST',
     body: JSON.stringify(block),
@@ -50,7 +39,6 @@ async function persistBlock(block) {
 }
 
 async function deleteBlock(id) {
-  if (USE_MOCK) return removeAvailabilityBlock(id)
   return apiRequest(`/api/staff/availability/blocks/${id}`, { method: 'DELETE' })
 }
 
@@ -60,18 +48,8 @@ export default function AvailabilityManager({
   description = 'Set the hours you accept bookings, and block times when you are unavailable.',
   allowProfessionalPick = false,
 }) {
-  const pickOptions = useMemo(
-    () =>
-      BOOKABLE_PROFESSIONALS.map((p) => ({
-        value: p.id,
-        label: `${p.name} · ${p.role}`,
-      })),
-    [],
-  )
-
-  const [professionalId, setProfessionalId] = useState(
-    forcedId || pickOptions[0]?.value || 'coach-daniel',
-  )
+  const [pickOptions, setPickOptions] = useState([])
+  const [professionalId, setProfessionalId] = useState(forcedId || '')
   const [weeklyHours, setWeeklyHours] = useState(defaultWeeklyHours())
   const [blocks, setBlocks] = useState([])
   const [toast, setToast] = useState('')
@@ -83,16 +61,45 @@ export default function AvailabilityManager({
   })
 
   useEffect(() => {
-    if (forcedId) setProfessionalId(forcedId)
+    if (forcedId) {
+      setProfessionalId(forcedId)
+      return
+    }
+    let cancelled = false
+    fetchBookingCatalog('STAFF')
+      .then((catalog) => {
+        if (cancelled) return
+        const pros = Array.isArray(catalog?.professionals) ? catalog.professionals : []
+        const options = pros.map((p) => ({
+          value: p.id || p.professionalId || (p.userId != null ? `user-${p.userId}` : ''),
+          label: `${p.name || 'Staff'}${p.role ? ` · ${p.role}` : ''}`,
+        })).filter((o) => o.value)
+        setPickOptions(options)
+        setProfessionalId((prev) => prev || options[0]?.value || '')
+      })
+      .catch(() => {
+        if (!cancelled) setPickOptions([])
+      })
+    return () => {
+      cancelled = true
+    }
   }, [forcedId])
 
   useEffect(() => {
+    if (!professionalId) return undefined
     let cancelled = false
-    fetchProfile(professionalId).then((profile) => {
-      if (cancelled) return
-      setWeeklyHours(profile.weeklyHours || defaultWeeklyHours())
-      setBlocks(profile.blocks || [])
-    })
+    fetchProfile(professionalId)
+      .then((profile) => {
+        if (cancelled) return
+        setWeeklyHours(profile.weeklyHours || defaultWeeklyHours())
+        setBlocks(profile.blocks || [])
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWeeklyHours(defaultWeeklyHours())
+          setBlocks([])
+        }
+      })
     return () => {
       cancelled = true
     }
@@ -117,11 +124,19 @@ export default function AvailabilityManager({
   }
 
   async function handleSaveHours() {
+    if (!professionalId) {
+      setToast('Select a staff member first.')
+      return
+    }
     await persistWeekly(professionalId, weeklyHours)
     setToast('Availability hours saved. Booking slots update automatically.')
   }
 
   async function handleAddBlock() {
+    if (!professionalId) {
+      setToast('Select a staff member first.')
+      return
+    }
     const start = parseTimeToMinutes(blockForm.start)
     const end = parseTimeToMinutes(blockForm.end)
     if (!blockForm.date || start == null || end == null || end <= start) {
@@ -156,6 +171,7 @@ export default function AvailabilityManager({
             value={professionalId}
             onChange={(e) => setProfessionalId(e.target.value)}
             options={pickOptions}
+            placeholder={pickOptions.length ? 'Select staff' : 'No staff found'}
           />
         </SectionCard>
       ) : null}
@@ -197,28 +213,18 @@ export default function AvailabilityManager({
                   placeholder="5:00 PM"
                 />
                 <div className="flex items-end text-xs text-[var(--bf-muted)]">
-                  {open ? 'Bookable' : 'Closed'}
+                  {open ? 'Open' : 'Closed'}
                 </div>
               </div>
             )
           })}
         </div>
         <div className="mt-4">
-          <Button onClick={handleSaveHours} className="!bg-[var(--bf-primary)] !text-white">
-            Save hours
-          </Button>
+          <Button onClick={handleSaveHours}>Save weekly hours</Button>
         </div>
       </SectionCard>
 
-      <SectionCard>
-        <h3 className="mb-1 font-display text-base font-semibold text-[var(--bf-ink)]">
-          Unavailable blocks
-        </h3>
-        <p className="mb-4 text-sm text-[var(--bf-muted)]">
-          Example: block 2:00 PM–3:00 PM on a specific day. Clients will see that window as
-          unavailable and cannot book over it.
-        </p>
-
+      <SectionCard title="Unavailable blocks">
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Input
             label="Date"
@@ -227,16 +233,14 @@ export default function AvailabilityManager({
             onChange={(e) => setBlockForm((f) => ({ ...f, date: e.target.value }))}
           />
           <Input
-            label="From"
+            label="Start"
             value={blockForm.start}
             onChange={(e) => setBlockForm((f) => ({ ...f, start: e.target.value }))}
-            placeholder="2:00 PM"
           />
           <Input
-            label="To"
+            label="End"
             value={blockForm.end}
             onChange={(e) => setBlockForm((f) => ({ ...f, end: e.target.value }))}
-            placeholder="3:00 PM"
           />
           <Input
             label="Reason"
@@ -244,39 +248,31 @@ export default function AvailabilityManager({
             onChange={(e) => setBlockForm((f) => ({ ...f, reason: e.target.value }))}
           />
         </div>
-
-        <Button onClick={handleAddBlock} className="mb-6 !bg-[var(--bf-primary)] !text-white">
+        <Button onClick={handleAddBlock}>
           <Plus className="h-4 w-4" />
-          Add unavailable block
+          Add block
         </Button>
-
-        <div className="space-y-2">
-          {blocks.length === 0 ? (
-            <p className="text-sm text-[var(--bf-muted)]">No unavailable blocks yet.</p>
-          ) : (
-            blocks.map((block) => (
-              <div
-                key={block.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--bf-border)] px-4 py-3"
+        <ul className="mt-4 space-y-2">
+          {blocks.map((block) => (
+            <li
+              key={block.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-[var(--bf-border)] px-3 py-2 text-sm"
+            >
+              <span>
+                {block.date} · {block.start}–{block.end}
+                {block.reason ? ` · ${block.reason}` : ''}
+              </span>
+              <button
+                type="button"
+                className="text-[var(--bf-muted)] hover:text-[#b45309]"
+                onClick={() => handleRemoveBlock(block.id)}
+                aria-label="Remove block"
               >
-                <div>
-                  <p className="text-sm font-semibold text-[var(--bf-ink)]">
-                    {block.date} · {block.start || block.startTime}–{block.end || block.endTime}
-                  </p>
-                  <p className="text-xs text-[var(--bf-muted)]">{block.reason}</p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => handleRemoveBlock(block.id)}
-                  className="!border-[var(--bf-border)] !text-[var(--bf-muted)]"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Remove
-                </Button>
-              </div>
-            ))
-          )}
-        </div>
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
       </SectionCard>
 
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />

@@ -1,8 +1,6 @@
 import {
   Bell,
-  CalendarClock,
-  CalendarDays,
-  CalendarPlus,
+  ClipboardList,
   ClipboardPlus,
   FileHeart,
   LayoutDashboard,
@@ -19,14 +17,12 @@ import Avatar from '../ui/Avatar'
 
 const navItems = [
   { label: 'Dashboard', to: '/medical/dashboard', icon: LayoutDashboard },
-  { label: 'Client Health Records', to: '/medical/health-records', icon: FileHeart },
-  { label: 'Medical History', to: '/medical/medical-history', icon: FileHeart },
+  { label: 'Medical Requests', to: '/medical/requests', icon: ClipboardList },
+  { label: 'Medical Records', to: '/medical/health-records', icon: FileHeart },
   { label: 'Health Assessments', to: '/medical/assessments', icon: ClipboardPlus },
+  { label: 'Medical History', to: '/medical/medical-history', icon: FileHeart },
   { label: 'Health Risk Alerts', to: '/medical/health-alerts', icon: ShieldAlert },
   { label: 'Safety Validation', to: '/medical/safety-validation', icon: ShieldCheck },
-  { label: 'Appointments', to: '/medical/appointments', icon: CalendarDays },
-  { label: 'My Availability', to: '/medical/availability', icon: CalendarClock },
-  { label: 'Book Manager', to: '/medical/book-appointment', icon: CalendarPlus },
   { label: 'Notifications', to: '/medical/notifications', icon: Bell },
 ]
 
@@ -75,7 +71,7 @@ export default function MedicalSidebar({ mobileOpen, onClose }) {
               to === '/medical/assessments' ||
               to === '/medical/health-alerts' ||
               to === '/medical/safety-validation' ||
-              to === '/medical/appointments'
+              to === '/medical/requests'
             }
             onClick={onClose}
             className={({ isActive }) =>

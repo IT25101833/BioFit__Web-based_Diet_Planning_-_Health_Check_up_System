@@ -39,70 +39,88 @@ export default function ClientNutritionProgress() {
     )
   }
 
+  const weekly = Array.isArray(data.weeklyConsistency) ? data.weeklyConsistency : []
+  const trends = Array.isArray(data.trends) ? data.trends : []
+  const reviews = Array.isArray(data.reviews) ? data.reviews : []
+
   return (
     <div>
       <PageHeader
         title="Nutrition Progress"
         description="Positive trends around consistency, not restriction."
-        actions={<StatusBadge status={data.planStatus} />}
+        actions={<StatusBadge status={data.planStatus || 'Not assigned'} />}
       />
 
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
         <SectionCard>
           <div className="flex justify-center py-2">
             <ProgressRing
-              value={data.participation}
+              value={data.participation ?? 0}
               label="Meal-plan participation"
             />
           </div>
         </SectionCard>
 
         <SectionCard title="Weekly consistency" className="lg:col-span-2">
-          <div className="flex h-36 items-end gap-2 pt-2">
-            {data.weeklyConsistency.map((day) => (
-              <div key={day.label} className="flex flex-1 flex-col items-center gap-2">
-                <div
-                  className="w-full rounded-t-md bg-[#0f766e]/80"
-                  style={{ height: `${day.value}%` }}
-                  title={`${day.label}: ${day.value}%`}
-                />
-                <span className="text-[11px] font-medium text-[#6b7280]">
-                  {day.label}
-                </span>
-              </div>
-            ))}
-          </div>
+          {weekly.length === 0 ? (
+            <p className="py-6 text-sm text-[#6b7280]">No weekly consistency data yet.</p>
+          ) : (
+            <div className="flex h-36 items-end gap-2 pt-2">
+              {weekly.map((day) => (
+                <div key={day.label} className="flex flex-1 flex-col items-center gap-2">
+                  <div
+                    className="w-full rounded-t-md bg-[#0f766e]/80"
+                    style={{ height: `${day.value}%` }}
+                    title={`${day.label}: ${day.value}%`}
+                  />
+                  <span className="text-[11px] font-medium text-[#6b7280]">
+                    {day.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </SectionCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard title="Progress trends">
-          <div className="space-y-4">
-            {data.trends.map((item) => (
-              <ProgressBar key={item.label} value={item.value} label={item.label} />
-            ))}
-          </div>
+          {trends.length === 0 ? (
+            <p className="py-6 text-sm text-[#6b7280]">No nutrition trends recorded yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {trends.map((item) => (
+                <ProgressBar key={item.label} value={item.value} label={item.label} />
+              ))}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard title="Recent consultant reviews">
-          <ul className="space-y-3">
-            {data.reviews.map((review) => (
-              <li
-                key={review.id}
-                className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3"
-              >
-                <p className="text-sm font-semibold text-[#111827]">{review.title}</p>
-                <p className="mt-1 text-[12px] text-[#8b93a1]">
-                  {new Date(`${review.date}T00:00:00`).toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </p>
-                <p className="mt-2 text-sm text-[#4b5563]">{review.note}</p>
-              </li>
-            ))}
-          </ul>
+          {reviews.length === 0 ? (
+            <p className="py-6 text-sm text-[#6b7280]">No consultant reviews recorded yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {reviews.map((review) => (
+                <li
+                  key={review.id}
+                  className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3"
+                >
+                  <p className="text-sm font-semibold text-[#111827]">{review.title}</p>
+                  <p className="mt-1 text-[12px] text-[#8b93a1]">
+                    {review.date
+                      ? new Date(`${review.date}T00:00:00`).toLocaleDateString('en-GB', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric',
+                        })
+                      : '—'}
+                  </p>
+                  <p className="mt-2 text-sm text-[#4b5563]">{review.note}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </SectionCard>
       </div>
     </div>

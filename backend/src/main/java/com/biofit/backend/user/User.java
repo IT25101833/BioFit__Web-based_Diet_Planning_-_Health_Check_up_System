@@ -55,6 +55,18 @@ public class User {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
+    @Column(name = "email_otp_hash")
+    private String emailOtpHash;
+
+    @Column(name = "email_otp_expires_at")
+    private Instant emailOtpExpiresAt;
+
+    @Column(name = "email_otp_attempts", nullable = false)
+    private int emailOtpAttempts = 0;
+
+    @Column(name = "email_otp_last_sent_at")
+    private Instant emailOtpLastSentAt;
+
     @Column(name = "failed_login_attempts", nullable = false)
     private int failedLoginAttempts = 0;
 

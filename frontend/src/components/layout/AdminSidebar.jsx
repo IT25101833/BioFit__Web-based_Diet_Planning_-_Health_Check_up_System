@@ -1,6 +1,7 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   Bell,
+  CalendarDays,
   ClipboardList,
   DatabaseBackup,
   LayoutDashboard,
@@ -12,6 +13,7 @@ import {
   ShieldCheck,
   UserRound,
   UsersRound,
+  Wallet,
 } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
 import Avatar from '../ui/Avatar'
@@ -19,11 +21,21 @@ import Avatar from '../ui/Avatar'
 const navItems = [
   { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard },
   { label: 'User Management', to: '/admin/users', icon: UsersRound },
+  { label: 'Appointments', to: '/admin/appointments', icon: CalendarDays, adminOnly: true },
   { label: 'Roles & Access', to: '/admin/roles-access', icon: ShieldCheck },
+  {
+    label: 'Wallet Management',
+    icon: Wallet,
+    children: [
+      { label: 'Top-Up Requests', to: '/admin/wallet/requests' },
+      { label: 'Client Wallets', to: '/admin/wallet/clients' },
+      { label: 'Transactions', to: '/admin/wallet/transactions' },
+    ],
+  },
   { label: 'System Monitoring', to: '/admin/system-monitoring', icon: MonitorCog },
   { label: 'Audit Logs', to: '/admin/audit-logs', icon: ClipboardList },
   { label: 'Backup Management', to: '/admin/backups', icon: DatabaseBackup },
-  { label: 'Erasure Requests', to: '/admin/erasure-requests', icon: ShieldAlert },
+  { label: 'Erasure Requests', to: '/admin/erasure-requests', icon: ShieldAlert, adminOnly: true },
   { label: 'Notifications', to: '/admin/notifications', icon: Bell },
 ]
 
@@ -31,6 +43,8 @@ export default function AdminSidebar({ mobileOpen, onClose }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const name = user?.fullName || 'Jordan Lee'
+  const isAdmin = String(user?.role || '').toUpperCase() === 'ADMIN'
+  const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin)
 
   return (
     <aside
@@ -53,7 +67,34 @@ export default function AdminSidebar({ mobileOpen, onClose }) {
         </Link>
       </div>
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-5" aria-label="Digital Operations">
-        {navItems.map(({ label, to, icon: Icon }) => (
+        {visibleNav.map(({ label, to, icon: Icon, children }) => children ? (
+          <div key={label} className="space-y-1">
+            <div className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--bf-ink)]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bf-surface)] text-[var(--bf-muted)]">
+                <Icon className="h-4 w-4" />
+              </span>
+              {label}
+            </div>
+            {children.map((child) => (
+              <NavLink
+                key={child.to}
+                to={child.to}
+                end={child.to !== '/admin/wallet/clients'}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  [
+                    'ml-11 block rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-[var(--bf-primary-soft)] text-[#005a40]'
+                      : 'text-[var(--bf-muted)] hover:bg-[var(--bf-surface)] hover:text-[var(--bf-ink)]',
+                  ].join(' ')
+                }
+              >
+                {child.label}
+              </NavLink>
+            ))}
+          </div>
+        ) : (
           <NavLink
             key={to}
             to={to}

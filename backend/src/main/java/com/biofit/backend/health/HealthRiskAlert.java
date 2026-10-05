@@ -50,6 +50,9 @@ public class HealthRiskAlert {
     @Column(length = 40)
     private String priority = "Medium";
 
+    @Column(length = 40)
+    private String category = "General";
+
     @Column(length = 2000)
     private String reason;
 

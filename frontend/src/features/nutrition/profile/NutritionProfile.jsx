@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { USE_MOCK } from '../../../api/client'
 import { useAuth } from '../../../auth/AuthContext'
 import Avatar from '../../../components/ui/Avatar'
 import Button from '../../../components/ui/Button'
@@ -13,6 +12,20 @@ import {
   fetchNutritionProfile,
   updateNutritionProfile,
 } from '../dashboard/data/nutritionDashboardData'
+
+function mapProfile(data, authUser) {
+  return {
+    firstName: data?.firstName || authUser?.firstName || '',
+    lastName: data?.lastName || authUser?.lastName || '',
+    email: data?.email || authUser?.email || '',
+    contactNumber: data?.contactNumber || authUser?.contactNumber || '',
+    specialization: data?.specialization || authUser?.specialization || '',
+    role: data?.role || 'Nutrition Consultant',
+    experience: data?.experience || '',
+    centre: data?.centre || '',
+    title: data?.title || '',
+  }
+}
 
 export default function NutritionProfile() {
   const auth = useAuth()
@@ -28,25 +41,10 @@ export default function NutritionProfile() {
     setLoading(true)
     setError('')
     try {
-      if (!USE_MOCK && auth.user) {
-        const data = {
-          firstName: auth.user.firstName,
-          lastName: auth.user.lastName,
-          email: auth.user.email,
-          contactNumber: auth.user.contactNumber || '',
-          specialization: auth.user.specialization || '',
-          role: 'Nutrition Consultant',
-          experience: '—',
-          centre: 'VitalLife Wellness',
-          title: '',
-        }
-        setProfile(data)
-        setForm(data)
-      } else {
-        const data = await fetchNutritionProfile()
-        setProfile(data)
-        setForm(data)
-      }
+      const data = await fetchNutritionProfile()
+      const mapped = mapProfile(data, auth.user)
+      setProfile(mapped)
+      setForm(mapped)
     } catch {
       setError('We couldn’t load your profile.')
     } finally {
@@ -68,20 +66,11 @@ export default function NutritionProfile() {
         contactNumber: form.contactNumber,
         specialization: form.specialization,
       }
-      const next = !USE_MOCK
-        ? await auth.updateProfile(payload)
-        : await updateNutritionProfile({ ...payload, email: form.email })
-      const mapped = !USE_MOCK
-        ? {
-            ...form,
-            ...payload,
-            email: next.email,
-            firstName: next.firstName,
-            lastName: next.lastName,
-            contactNumber: next.contactNumber || '',
-            specialization: next.specialization || '',
-          }
-        : next
+      const next = await updateNutritionProfile(payload)
+      if (typeof auth.updateProfile === 'function') {
+        await auth.updateProfile(payload).catch(() => null)
+      }
+      const mapped = mapProfile({ ...form, ...payload, ...next }, auth.user)
       setProfile(mapped)
       setForm(mapped)
       setEditing(false)
@@ -96,7 +85,7 @@ export default function NutritionProfile() {
     return <ErrorState title="We couldn’t load your profile." onRetry={load} />
   }
 
-  const fullName = `${profile.title ? `${profile.title} ` : ''}${profile.firstName} ${profile.lastName}`
+  const fullName = `${profile.title ? `${profile.title} ` : ''}${profile.firstName} ${profile.lastName}`.trim()
 
   return (
     <div>
@@ -117,11 +106,11 @@ export default function NutritionProfile() {
 
       <SectionCard>
         <div className="mb-6 flex items-center gap-4">
-          <Avatar name={fullName} size="lg" />
+          <Avatar name={fullName || 'Nutrition Consultant'} size="lg" />
           <div>
-            <h2 className="font-display text-xl font-bold text-[#111827]">{fullName}</h2>
+            <h2 className="font-display text-xl font-bold text-[#111827]">{fullName || '—'}</h2>
             <p className="text-sm text-[#005a40]">{profile.role}</p>
-            <p className="text-[12px] text-[#6b7280]">{profile.centre}</p>
+            {profile.centre ? <p className="text-[12px] text-[#6b7280]">{profile.centre}</p> : null}
           </div>
         </div>
 
@@ -137,12 +126,7 @@ export default function NutritionProfile() {
               value={form.lastName}
               onChange={(e) => setForm((prev) => ({ ...prev, lastName: e.target.value }))}
             />
-            <Input
-              label="Email"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-            />
+            <Input label="Email" type="email" value={form.email} disabled />
             <Input
               label="Contact number"
               value={form.contactNumber}
@@ -180,10 +164,10 @@ export default function NutritionProfile() {
           </form>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Email" value={profile.email} />
-            <Field label="Contact number" value={profile.contactNumber} />
-            <Field label="Specialization" value={profile.specialization} />
-            <Field label="Experience" value={profile.experience} />
+            <Field label="Email" value={profile.email || '—'} />
+            <Field label="Contact number" value={profile.contactNumber || '—'} />
+            <Field label="Specialization" value={profile.specialization || '—'} />
+            <Field label="Experience" value={profile.experience || '—'} />
           </div>
         )}
       </SectionCard>

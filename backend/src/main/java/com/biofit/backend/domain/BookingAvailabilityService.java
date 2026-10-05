@@ -46,8 +46,6 @@ public class BookingAvailabilityService {
         } else {
             services.add(service("fitness", "Fitness Consultation", "Movement guidance and programme check-in.", "45 min", "CLIENT"));
             services.add(service("nutrition", "Nutrition Consultation", "Meal rhythm support and dietary guidance.", "45 min", "CLIENT"));
-            services.add(service("checkup", "Health Check-up", "Scheduled wellness assessment.", "60 min", "CLIENT"));
-            services.add(service("medical", "Medical Review", "Follow-up of authorised health information.", "30 min", "CLIENT"));
             services.add(service("wellness", "Wellness Consultation", "Holistic lifestyle support.", "40 min", "CLIENT"));
             services.add(service("support", "Customer Experience Session", "Help with bookings and centre experience.", "30 min", "CLIENT"));
             services.add(service("ops-support", "Digital Operations Support", "Platform access assistance.", "30 min", "CLIENT"));
@@ -57,7 +55,9 @@ public class BookingAvailabilityService {
         for (User user : userRepository.findAll()) {
             if (user.getDeletedAt() != null) continue;
             RoleName role = primaryRole(user);
-            if (role == null || role == RoleName.CLIENT || role == RoleName.ADMIN) continue;
+            if (role == null || role == RoleName.CLIENT || role == RoleName.ADMIN || role == RoleName.MEDICAL_ADVISOR) {
+                continue;
+            }
             if (staffAudience && role != RoleName.WELLNESS_CENTRE_MANAGER) continue;
             if (!staffAudience && role == RoleName.WELLNESS_CENTRE_MANAGER) continue;
 
@@ -86,6 +86,7 @@ public class BookingAvailabilityService {
 
     public Map<String, Object> dayAvailability(
             String professionalId, String dateIso, String durationLabel, String excludeAppointmentId) {
+        assertNotMedicalAdvisor(professionalId);
         LocalDate date = LocalDate.parse(dateIso);
         int duration = parseDuration(durationLabel);
         // Java DayOfWeek Mon=1..Sun=7 → JS-style Sun=0
@@ -383,6 +384,20 @@ public class BookingAvailabilityService {
         }
         free.sort(Comparator.comparingInt(a -> a[0]));
         return free;
+    }
+
+    private void assertNotMedicalAdvisor(String professionalId) {
+        User user = resolveUser(professionalId);
+        boolean medical =
+                user != null
+                        && user.getRoles() != null
+                        && user.getRoles().stream().anyMatch(role -> role.getName() == RoleName.MEDICAL_ADVISOR);
+        if (medical) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Medical Advisors are not available for appointment booking.",
+                    HttpStatus.BAD_REQUEST);
+        }
     }
 
     private User resolveUser(String professionalId) {

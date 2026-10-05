@@ -43,6 +43,7 @@ public class MedicalAdvisorService {
     private final HealthRiskAlertRepository healthRiskAlertRepository;
     private final HealthAssessmentRepository healthAssessmentRepository;
     private final AppointmentRepository appointmentRepository;
+    private final MedicalRequestRepository medicalRequestRepository;
     private final UserRepository userRepository;
     private final DomainMapper mapper;
     private final AuditService auditService;
@@ -103,7 +104,14 @@ public class MedicalAdvisorService {
             throw new ApiException("CONFLICT", "Inactive records cannot be edited. Reactivate via admin if needed.", HttpStatus.CONFLICT);
         }
         validateHistoryPayload(body, false);
-        applyHistoryFields(entry, body, entry.getUserId(), false);
+        if (entry.getSourceHealthRecordId() != null) {
+            Map<String, Object> editable = new LinkedHashMap<>();
+            if (body.containsKey("severity")) editable.put("severity", body.get("severity"));
+            if (body.containsKey("recordedDate")) editable.put("recordedDate", body.get("recordedDate"));
+            applyHistoryFields(entry, editable, entry.getUserId(), false);
+        } else {
+            applyHistoryFields(entry, body, entry.getUserId(), false);
+        }
         medicalHistoryEntryRepository.save(entry);
         audit(principal, "MEDICAL_HISTORY_UPDATE", "MedicalHistoryEntry", String.valueOf(entry.getId()),
                 "Updated " + entry.getRecordType());
@@ -124,6 +132,252 @@ public class MedicalAdvisorService {
         audit(principal, "MEDICAL_HISTORY_DEACTIVATE", "MedicalHistoryEntry", String.valueOf(entry.getId()),
                 "Marked inactive");
         return mapHistory(entry);
+    }
+
+    /**
+     * Creates, updates, or deactivates medical history rows so they match one health record's
+     * {@code medicalHistory} payload. Legacy rows with no source record id are left untouched.
+     * The same text updates the existing row. A removed item is marked Inactive.
+     * Replacing the only value in a field updates that row instead of adding a second one.
+     */
+    @Transactional
+    public void syncMedicalHistoryFromHealthRecord(
+            Long healthRecordId,
+            Long userId,
+            String clientCode,
+            String clientName,
+            Map<?, ?> medicalHistory,
+            Long advisorUserId) {
+        if (healthRecordId == null || userId == null) {
+            throw new ApiException("VALIDATION_ERROR", "Client is required", HttpStatus.BAD_REQUEST);
+        }
+        String resolvedClientCode = clip(isBlank(clientCode) ? "BF-C" + userId : clientCode.trim(), 40);
+        String resolvedClientName = clip(isBlank(clientName) ? clientName(userId) : clientName.trim(), 120);
+        String advisorName = advisorDisplayName(advisorUserId);
+
+        syncHistoryField(
+                healthRecordId,
+                userId,
+                resolvedClientCode,
+                resolvedClientName,
+                advisorUserId,
+                advisorName,
+                "conditions",
+                "Condition",
+                historyItems(medicalHistory, "conditions", false));
+        syncHistoryField(
+                healthRecordId,
+                userId,
+                resolvedClientCode,
+                resolvedClientName,
+                advisorUserId,
+                advisorName,
+                "allergies",
+                "Allergy",
+                historyItems(medicalHistory, "allergies", false));
+        syncHistoryField(
+                healthRecordId,
+                userId,
+                resolvedClientCode,
+                resolvedClientName,
+                advisorUserId,
+                advisorName,
+                "healthConsiderations",
+                "Other",
+                historyItems(medicalHistory, "healthConsiderations", false));
+        syncHistoryField(
+                healthRecordId,
+                userId,
+                resolvedClientCode,
+                resolvedClientName,
+                advisorUserId,
+                advisorName,
+                "previousNotes",
+                "History",
+                historyItems(medicalHistory, "previousNotes", false));
+        syncHistoryField(
+                healthRecordId,
+                userId,
+                resolvedClientCode,
+                resolvedClientName,
+                advisorUserId,
+                advisorName,
+                "summary",
+                "History",
+                historyItems(medicalHistory, "summary", true));
+
+        if (advisorUserId != null) {
+            auditService.log(
+                    advisorUserId,
+                    "MEDICAL_HISTORY_SYNC",
+                    "HealthProfile",
+                    String.valueOf(healthRecordId),
+                    "SUCCESS",
+                    null,
+                    null,
+                    "Synchronized medical history for client user " + userId);
+        }
+    }
+
+    private void syncHistoryField(
+            Long healthRecordId,
+            Long userId,
+            String clientCode,
+            String clientName,
+            Long advisorUserId,
+            String advisorName,
+            String sourceField,
+            String recordType,
+            List<String> desired) {
+        List<MedicalHistoryEntry> existing =
+                medicalHistoryEntryRepository
+                        .findBySourceHealthRecordIdAndSourceFieldOrderBySourceIndexAscIdAsc(
+                                healthRecordId, sourceField);
+        boolean[] used = new boolean[existing.size()];
+        MedicalHistoryEntry[] assigned = new MedicalHistoryEntry[desired.size()];
+
+        for (int i = 0; i < desired.size(); i++) {
+            int match = indexOfUnusedTextMatch(existing, used, desired.get(i), true);
+            if (match < 0) {
+                match = indexOfUnusedTextMatch(existing, used, desired.get(i), false);
+            }
+            if (match >= 0) {
+                used[match] = true;
+                assigned[i] = existing.get(match);
+            }
+        }
+
+        // A one-item field whose text changed is an edit of that entry.
+        // Removing one item and adding a different one deactivates the old row and creates a new one.
+        if (desired.size() == 1 && assigned[0] == null) {
+            int onlyActive = -1;
+            int activeCount = 0;
+            for (int i = 0; i < existing.size(); i++) {
+                if (!isActiveStatus(existing.get(i).getStatus())) continue;
+                activeCount++;
+                onlyActive = i;
+            }
+            if (activeCount == 1 && onlyActive >= 0) {
+                used[onlyActive] = true;
+                assigned[0] = existing.get(onlyActive);
+            }
+        }
+
+        for (int i = 0; i < desired.size(); i++) {
+            MedicalHistoryEntry entry = assigned[i];
+            boolean creating = entry == null;
+            if (creating) {
+                entry = new MedicalHistoryEntry();
+                entry.setRecordedDate(LocalDate.now(java.time.ZoneId.systemDefault()));
+                entry.setCreatedByUserId(advisorUserId);
+                entry.setCreatedByName(advisorName);
+            }
+            entry.setUserId(userId);
+            entry.setClientCode(clientCode);
+            entry.setClientName(clientName);
+            entry.setRecordType(recordType);
+            entry.setSourceHealthRecordId(healthRecordId);
+            entry.setSourceField(sourceField);
+            entry.setSourceIndex(i);
+            String text = desired.get(i);
+            if ("Allergy".equals(recordType)) {
+                entry.setAllergyInfo(clip(text, 500));
+                entry.setConditionName(null);
+            } else {
+                entry.setConditionName(clip(text, 200));
+                entry.setAllergyInfo(null);
+            }
+            entry.setDescription(clip(text, 2000));
+            if (!isActiveStatus(entry.getStatus())) {
+                entry.setStatus("Active");
+                entry.setDeactivatedAt(null);
+                entry.setDeactivatedByUserId(null);
+            }
+            medicalHistoryEntryRepository.save(entry);
+        }
+
+        for (int i = 0; i < existing.size(); i++) {
+            if (used[i]) continue;
+            MedicalHistoryEntry entry = existing.get(i);
+            if (!isActiveStatus(entry.getStatus())) continue;
+            entry.setStatus("Inactive");
+            entry.setDeactivatedAt(Instant.now());
+            entry.setDeactivatedByUserId(advisorUserId);
+            medicalHistoryEntryRepository.save(entry);
+        }
+    }
+
+    private int indexOfUnusedTextMatch(
+            List<MedicalHistoryEntry> existing, boolean[] used, String text, boolean activeOnly) {
+        String needle = normalizeHistoryText(text);
+        for (int i = 0; i < existing.size(); i++) {
+            if (used[i]) continue;
+            if (isActiveStatus(existing.get(i).getStatus()) != activeOnly) continue;
+            if (needle.equals(normalizeHistoryText(syncedEntryText(existing.get(i))))) return i;
+        }
+        return -1;
+    }
+
+    private List<String> historyItems(Map<?, ?> medicalHistory, String key, boolean singleValue) {
+        if (medicalHistory == null || key == null) return List.of();
+        Object raw = medicalHistory.get(key);
+        if (singleValue) {
+            if (raw instanceof List<?> list) {
+                String joined =
+                        list.stream()
+                                .map(MedicalAdvisorService::str)
+                                .filter(s -> !isBlank(s))
+                                .map(String::trim)
+                                .collect(Collectors.joining(" "));
+                return joined.isBlank() ? List.of() : List.of(clip(joined, 2000));
+            }
+            String text = str(raw);
+            if (isBlank(text)) return List.of();
+            return List.of(text.trim());
+        }
+        if (raw instanceof List<?> list) {
+            List<String> items = new ArrayList<>();
+            for (Object item : list) {
+                String text = str(item);
+                if (!isBlank(text)) items.add(text.trim());
+            }
+            return items;
+        }
+        if (!isBlank(raw)) {
+            List<String> items = new ArrayList<>();
+            for (String line : str(raw).split("\\R")) {
+                if (!line.isBlank()) items.add(line.trim());
+            }
+            return items;
+        }
+        return List.of();
+    }
+
+    private static String syncedEntryText(MedicalHistoryEntry entry) {
+        return firstNonBlank(entry.getDescription(), entry.getConditionName(), entry.getAllergyInfo());
+    }
+
+    private static String normalizeHistoryText(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean isActiveStatus(String status) {
+        return status != null && status.equalsIgnoreCase("Active");
+    }
+
+    private static String clip(String value, int max) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
+    }
+
+    private String advisorDisplayName(Long advisorUserId) {
+        if (advisorUserId == null) return null;
+        return userRepository
+                .findById(advisorUserId)
+                .map(User::getFullName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse(null);
     }
 
     /* ---------- Risk alert status ---------- */
@@ -323,57 +577,45 @@ public class MedicalAdvisorService {
         return mapValidation(validation);
     }
 
-    /* ---------- Clients for medical forms (from appointments) ---------- */
+    /* ---------- Clients for medical forms (accepted medical requests) ---------- */
 
     /**
      * Clients the Medical Advisor may pick in Select Client forms.
-     * Source of truth: appointments where attendance is ATTENDED (set by Attend).
-     * Deduplicated by client user id. Does not return all registered patients.
+     * Source of truth: a Medical Request this advisor has accepted, started, or completed.
      */
     public List<Map<String, Object>> medicalClientsForAdvisor(UserPrincipal principal) {
         if (principal == null) {
             throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
         }
-        List<Appointment> appointments =
+        List<MedicalRequest> requests =
                 principal.hasRole(RoleName.ADMIN)
-                        ? appointmentRepository.findByProfessionalRoleContainingIgnoreCaseOrderByAppointmentDateAsc(
-                                "Medical")
-                        : appointmentRepository.findByProfessionalUserIdOrderByAppointmentDateDesc(principal.getId());
+                        ? medicalRequestRepository.findByStatusInOrderByRequestedAtDesc(MedicalRequest.CLINICAL_ACCESS)
+                        : medicalRequestRepository.findByMedicalAdvisorIdAndStatusInOrderByRequestedAtDesc(
+                                principal.getId(), MedicalRequest.CLINICAL_ACCESS);
 
         LinkedHashMap<Long, Map<String, Object>> byClient = new LinkedHashMap<>();
-        for (Appointment appointment : appointments) {
-            if (appointment.getClientUserId() == null) continue;
-            if (!"ATTENDED".equalsIgnoreCase(appointment.getAttendance())) continue;
-            Long clientUserId = appointment.getClientUserId();
-            if (byClient.containsKey(clientUserId)) continue;
-
-            User client = userRepository.findById(clientUserId).orElse(null);
+        for (MedicalRequest request : requests) {
+            if (request.getClientId() == null || byClient.containsKey(request.getClientId())) continue;
+            User client = userRepository.findById(request.getClientId()).orElse(null);
             if (client == null || client.getDeletedAt() != null) continue;
 
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", clientUserId);
-            row.put("userId", clientUserId);
-            row.put(
-                    "clientId",
-                    firstNonBlank(appointment.getClientId(), "BF-C" + clientUserId));
-            row.put(
-                    "name",
-                    firstNonBlank(
-                            appointment.getClientName(),
-                            (client.getFirstName() + " " + client.getLastName()).trim()));
+            row.put("id", request.getClientId());
+            row.put("userId", request.getClientId());
+            row.put("clientId", firstNonBlank(request.getClientCode(), "BF-C" + request.getClientId()));
+            row.put("name", firstNonBlank(request.getClientName(), client.getFullName()));
             row.put("clientName", row.get("name"));
             row.put("email", client.getEmail());
-            row.put("programme", appointment.getProgramme());
-            row.put("appointmentId", appointment.getId());
-            row.put("attendance", appointment.getAttendance());
-            byClient.put(clientUserId, row);
+            row.put("medicalRequestId", request.getId());
+            row.put("requestStatus", request.getStatus());
+            byClient.put(request.getClientId(), row);
         }
         return new ArrayList<>(byClient.values());
     }
 
     /**
      * Client user ids this advisor may access clinically. {@code null} means unrestricted (ADMIN).
-     * Same source of truth as Select Client: attendance ATTENDED.
+     * Same source of truth as Select Client: an accepted medical request.
      */
     public Set<Long> accessibleClientUserIds(UserPrincipal principal) {
         if (principal == null) {
@@ -406,26 +648,14 @@ public class MedicalAdvisorService {
         if (principal.hasRole(RoleName.ADMIN)) {
             return;
         }
-        boolean attended =
-                appointmentRepository.existsByProfessionalUserIdAndClientUserIdAndAttendanceIgnoreCase(
-                        principal.getId(), clientUserId, "ATTENDED");
-        if (!attended) {
-            // Fallback for any legacy casing / stream check
-            boolean hasAttended =
-                    appointmentRepository
-                            .findByProfessionalUserIdOrderByAppointmentDateDesc(principal.getId())
-                            .stream()
-                            .anyMatch(
-                                    a ->
-                                            clientUserId.equals(a.getClientUserId())
-                                                    && a.getAttendance() != null
-                                                    && "ATTENDED".equalsIgnoreCase(a.getAttendance().trim()));
-            if (!hasAttended) {
-                throw new ApiException(
-                        "FORBIDDEN",
-                        "Attend this client from Appointments before accessing their medical information.",
-                        HttpStatus.FORBIDDEN);
-            }
+        boolean accepted =
+                medicalRequestRepository.existsByMedicalAdvisorIdAndClientIdAndStatusIn(
+                        principal.getId(), clientUserId, MedicalRequest.CLINICAL_ACCESS);
+        if (!accepted) {
+            throw new ApiException(
+                    "FORBIDDEN",
+                    "Attend the Medical Request first.",
+                    HttpStatus.FORBIDDEN);
         }
     }
 
@@ -572,6 +802,9 @@ public class MedicalAdvisorService {
         m.put("createdAt", e.getCreatedAt() == null ? null : e.getCreatedAt().toString());
         m.put("updatedAt", e.getUpdatedAt() == null ? null : e.getUpdatedAt().toString());
         m.put("deactivatedAt", e.getDeactivatedAt() == null ? null : e.getDeactivatedAt().toString());
+        m.put("sourceHealthRecordId", e.getSourceHealthRecordId());
+        m.put("sourceField", e.getSourceField());
+        m.put("syncedFromRecord", e.getSourceHealthRecordId() != null);
         return m;
     }
 
@@ -666,6 +899,22 @@ public class MedicalAdvisorService {
             appointment.setStatus("Completed");
             appointment.setUpdatedAt(now);
             appointmentRepository.save(appointment);
+
+            if (appointment.getClientUserId() != null) {
+                String typeLabel = firstNonBlank(appointment.getServiceType(), "Medical Review");
+                NotificationEntity n = new NotificationEntity();
+                n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+                n.setUserId(appointment.getClientUserId());
+                n.setAudience("CLIENT");
+                n.setType("appointment");
+                n.setTitle("Appointment Completed");
+                n.setBody("Your " + typeLabel + " appointment has been completed.");
+                n.setLink("/client/appointments");
+                n.setReadFlag(false);
+                n.setCreatedAt(now);
+                notificationRepository.save(n);
+            }
+
             audit(
                     principal,
                     "MEDICAL_APPOINTMENT_ATTENDED",

@@ -2,7 +2,6 @@ package com.biofit.backend.domain;
 
 import com.biofit.backend.common.ApiResponse;
 import com.biofit.backend.security.UserPrincipal;
-import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import java.util.List;
@@ -17,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,6 +28,8 @@ public class MedicalDomainController {
     private final DomainService domainService;
     private final CompletionService completionService;
     private final MedicalAdvisorService medicalAdvisorService;
+    private final PlanAccessService planAccessService;
+    private final MedicalRequestService medicalRequestService;
     private final UserRepository userRepository;
 
     @GetMapping("/dashboard")
@@ -61,21 +63,43 @@ public class MedicalDomainController {
         return ApiResponse.ok(domainService.updateClientProfile(principal.getId(), body));
     }
 
-    @GetMapping("/appointments")
-    public ApiResponse<List<Map<String, Object>>> appointments(
+    @GetMapping("/requests")
+    public ApiResponse<List<Map<String, Object>>> medicalRequests(
             @AuthenticationPrincipal UserPrincipal principal) {
-        if (principal.hasRole(RoleName.ADMIN)) {
-            return ApiResponse.ok(domainService.appointmentsForRole("Medical"));
-        }
-        return ApiResponse.ok(domainService.appointmentsForProfessional(principal.getId()));
+        return ApiResponse.ok(medicalRequestService.listForAdvisor(principal));
     }
 
-    @PatchMapping("/appointments/{id}/attendance")
-    public ApiResponse<Map<String, Object>> markAttendance(
+    @GetMapping("/requests/{id}")
+    public ApiResponse<Map<String, Object>> medicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(medicalRequestService.getForAdvisor(principal, id));
+    }
+
+    @PostMapping("/requests/{id}/accept")
+    public ApiResponse<Map<String, Object>> acceptMedicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(medicalRequestService.accept(principal, id));
+    }
+
+    @PostMapping("/requests/{id}/reject")
+    public ApiResponse<Map<String, Object>> rejectMedicalRequest(
             @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable String id,
-            @RequestBody Map<String, Object> body) {
-        return ApiResponse.ok(medicalAdvisorService.markAppointmentAttendance(principal, id, body));
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        String reason = body == null || body.get("rejectionReason") == null ? null : String.valueOf(body.get("rejectionReason"));
+        return ApiResponse.ok(medicalRequestService.reject(principal, id, reason));
+    }
+
+    @PostMapping("/requests/{id}/start")
+    public ApiResponse<Map<String, Object>> startMedicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(medicalRequestService.start(principal, id));
+    }
+
+    @PostMapping("/requests/{id}/complete")
+    public ApiResponse<Map<String, Object>> completeMedicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(medicalRequestService.complete(principal, id));
     }
 
     @GetMapping("/assessments")
@@ -103,6 +127,7 @@ public class MedicalDomainController {
         Long clientUserId = medicalAdvisorService.resolveClientUserId(body);
         medicalAdvisorService.assertAdvisorCanAccessClient(principal, clientUserId);
         body.put("userId", clientUserId);
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveMedicalAssessment(null, body));
     }
 
@@ -118,6 +143,7 @@ public class MedicalDomainController {
             medicalAdvisorService.assertAdvisorCanAccessClient(principal, clientUserId);
             body.put("userId", clientUserId);
         }
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveMedicalAssessment(id, body));
     }
 
@@ -142,6 +168,7 @@ public class MedicalDomainController {
         medicalAdvisorService.assertAdvisorCanAccessClient(principal, clientUserId);
         body.put("userId", clientUserId);
         medicalAdvisorService.assertRelatedAssessmentBelongsToClient(clientUserId, body.get("relatedAssessmentId"));
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveHealthAlert(null, body));
     }
 
@@ -159,6 +186,7 @@ public class MedicalDomainController {
             medicalAdvisorService.assertRelatedAssessmentBelongsToClient(
                     clientUserId, body.get("relatedAssessmentId"));
         }
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveHealthAlert(id, body));
     }
 
@@ -169,6 +197,7 @@ public class MedicalDomainController {
             @RequestBody Map<String, Object> body) {
         Map<String, Object> existing = completionService.healthAlert(id);
         medicalAdvisorService.assertAdvisorCanAccessClient(principal, asLong(existing.get("userId")));
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.patchHealthAlert(id, body));
     }
 
@@ -193,6 +222,7 @@ public class MedicalDomainController {
         Long clientUserId = medicalAdvisorService.resolveClientUserId(body);
         medicalAdvisorService.assertAdvisorCanAccessClient(principal, clientUserId);
         body.put("userId", clientUserId);
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveHealthRecord(null, body));
     }
 
@@ -207,6 +237,7 @@ public class MedicalDomainController {
         Long clientUserId = medicalAdvisorService.resolveClientUserId(body);
         medicalAdvisorService.assertAdvisorCanAccessClient(principal, clientUserId);
         body.put("userId", clientUserId);
+        body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveHealthRecord(Long.parseLong(numeric), body));
     }
 
@@ -326,6 +357,43 @@ public class MedicalDomainController {
     @PatchMapping("/notifications/read-all")
     public ApiResponse<Map<String, Object>> markAll(@AuthenticationPrincipal UserPrincipal principal) {
         return ApiResponse.ok(domainService.markMedicalNotificationsRead(principal.getId()));
+    }
+
+    @GetMapping("/plan-access")
+    public ApiResponse<Map<String, Object>> planAccessStatus(
+            @AuthenticationPrincipal UserPrincipal principal, @RequestParam Long clientUserId) {
+        return ApiResponse.ok(planAccessService.statusForClient(principal, clientUserId));
+    }
+
+    @PostMapping("/plan-access")
+    public ApiResponse<Map<String, Object>> requestPlanAccess(
+            @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
+        Long clientUserId = asLong(body.get("clientUserId"));
+        if (clientUserId == null) clientUserId = asLong(body.get("userId"));
+        return ApiResponse.ok(
+                planAccessService.requestAccess(
+                        principal,
+                        clientUserId,
+                        String.valueOf(body.get("resourceType") != null ? body.get("resourceType") : body.get("planType")),
+                        body.get("reason") == null ? null : String.valueOf(body.get("reason"))));
+    }
+
+    @PatchMapping("/plan-access/{id}/cancel")
+    public ApiResponse<Map<String, Object>> cancelPlanAccess(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(planAccessService.cancel(principal, id));
+    }
+
+    @GetMapping({"/plan-access/workout-plan", "/plan-access/fitness-plan"})
+    public ApiResponse<Map<String, Object>> workoutPlan(
+            @AuthenticationPrincipal UserPrincipal principal, @RequestParam Long clientUserId) {
+        return ApiResponse.ok(planAccessService.viewWorkoutPlan(principal, clientUserId));
+    }
+
+    @GetMapping("/plan-access/nutrition-plan")
+    public ApiResponse<Map<String, Object>> nutritionPlan(
+            @AuthenticationPrincipal UserPrincipal principal, @RequestParam Long clientUserId) {
+        return ApiResponse.ok(planAccessService.viewNutritionPlan(principal, clientUserId));
     }
 
     private static Long asLong(Object value) {

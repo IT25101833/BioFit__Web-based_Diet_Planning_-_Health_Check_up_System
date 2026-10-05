@@ -65,6 +65,17 @@ public class MedicalHistoryEntry {
     @Column(name = "deactivated_by_user_id")
     private Long deactivatedByUserId;
 
+    /** Health profile id this entry was generated from. Null for legacy manual entries. */
+    @Column(name = "source_health_record_id")
+    private Long sourceHealthRecordId;
+
+    /** medicalHistory field name: conditions, allergies, healthConsiderations, previousNotes, summary. */
+    @Column(name = "source_field", length = 40)
+    private String sourceField;
+
+    @Column(name = "source_index")
+    private Integer sourceIndex;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

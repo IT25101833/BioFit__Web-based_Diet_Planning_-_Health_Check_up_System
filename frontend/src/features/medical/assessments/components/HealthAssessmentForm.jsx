@@ -173,7 +173,7 @@ export default function HealthAssessmentForm({
           {mode === 'create' ? (
             options.length === 0 ? (
               <p className="sm:col-span-3 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
-                No attended clients available. Attend a patient from Appointments first to select a
+                No attended clients available. Mark a Medical Request as attended first to select a
                 client.
               </p>
             ) : (

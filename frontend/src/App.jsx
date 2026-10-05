@@ -10,6 +10,12 @@ import ClientCreateSupportPage from './pages/client/ClientCreateSupportPage'
 import ClientFitnessProgressPage from './pages/client/ClientFitnessProgressPage'
 import ClientHealthAlertsPage from './pages/client/ClientHealthAlertsPage'
 import ClientHealthPage from './pages/client/ClientHealthPage'
+import ClientPlanAccessPage from './pages/client/ClientPlanAccessPage'
+import ClientMedicalRequestPage from './pages/client/ClientMedicalRequestPage'
+import ClientWalletPage from './pages/client/ClientWalletPage'
+import ClientWalletRequestsPage from './pages/client/ClientWalletRequestsPage'
+import ClientWalletTopUpPage from './pages/client/ClientWalletTopUpPage'
+import ClientWalletTransactionsPage from './pages/client/ClientWalletTransactionsPage'
 import ClientMealPlanPage from './pages/client/ClientMealPlanPage'
 import ClientNotificationsPage from './pages/client/ClientNotificationsPage'
 import ClientNutritionProgressPage from './pages/client/ClientNutritionProgressPage'
@@ -46,7 +52,6 @@ import FitnessPage from './pages/marketing/FitnessPage'
 import HealthCheckupsPage from './pages/marketing/HealthCheckupsPage'
 import NutritionPage from './pages/marketing/NutritionPage'
 import ServicesPage from './pages/marketing/ServicesPage'
-import MedicalAppointmentsPage from './pages/medical/MedicalAppointmentsPage'
 import MedicalAssessmentDetailsPage from './pages/medical/MedicalAssessmentDetailsPage'
 import MedicalAssessmentsPage from './pages/medical/MedicalAssessmentsPage'
 import MedicalCreateAssessmentPage from './pages/medical/MedicalCreateAssessmentPage'
@@ -61,8 +66,10 @@ import MedicalHealthRecordsPage from './pages/medical/MedicalHealthRecordsPage'
 import MedicalHistoryPage from './pages/medical/MedicalHistoryPage'
 import MedicalNotificationsPage from './pages/medical/MedicalNotificationsPage'
 import MedicalProfilePage from './pages/medical/MedicalProfilePage'
+import MedicalRequestsPage from './pages/medical/MedicalRequestsPage'
 import MedicalSafetyValidationPage from './pages/medical/MedicalSafetyValidationPage'
 import NutritionAppointmentsPage from './pages/nutrition/NutritionAppointmentsPage'
+import NutritionAccessRequestsPage from './pages/nutrition/NutritionAccessRequestsPage'
 import NutritionClientProfilePage from './pages/nutrition/NutritionClientProfilePage'
 import NutritionClientProgressPage from './pages/nutrition/NutritionClientProgressPage'
 import NutritionClientsPage from './pages/nutrition/NutritionClientsPage'
@@ -87,9 +94,8 @@ import ManagerReportsPage from './pages/manager/ManagerReportsPage'
 import ManagerStaffSchedulingPage from './pages/manager/ManagerStaffSchedulingPage'
 import ManagerAvailabilityPage from './pages/manager/ManagerAvailabilityPage'
 import CoachAvailabilityPage from './pages/coach/CoachAvailabilityPage'
+import CoachAccessRequestsPage from './pages/coach/CoachAccessRequestsPage'
 import CoachBookAppointmentPage from './pages/coach/CoachBookAppointmentPage'
-import MedicalAvailabilityPage from './pages/medical/MedicalAvailabilityPage'
-import MedicalBookAppointmentPage from './pages/medical/MedicalBookAppointmentPage'
 import NutritionAvailabilityPage from './pages/nutrition/NutritionAvailabilityPage'
 import NutritionBookAppointmentPage from './pages/nutrition/NutritionBookAppointmentPage'
 import SupportAvailabilityPage from './pages/support/SupportAvailabilityPage'
@@ -112,10 +118,16 @@ import {
   AdminCreateUserPage,
   AdminDashboardPage,
   AdminEditUserPage,
+  AdminAppointmentsPage,
   AdminErasurePage,
   AdminMonitoringPage,
   AdminNotificationsPage,
   AdminProfilePage,
+  AdminClientWalletPage,
+  AdminClientWalletsPage,
+  AdminTopUpRequestPage,
+  AdminWalletPage,
+  AdminWalletTransactionsPage,
   AdminRolesPage,
   AdminSettingsPage,
   AdminUserDetailsPage,
@@ -143,6 +155,7 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/register/contact" element={<RegisterPage />} />
         <Route path="/register/review" element={<RegisterPage />} />
+        <Route path="/register/verify" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/forbidden" element={<ForbiddenPage />} />
@@ -164,6 +177,12 @@ function App() {
         <Route path="/client/nutrition-progress" element={guard(['CLIENT'], <ClientNutritionProgressPage />)} />
         <Route path="/client/health" element={guard(['CLIENT'], <ClientHealthPage />)} />
         <Route path="/client/health-alerts" element={guard(['CLIENT'], <ClientHealthAlertsPage />)} />
+        <Route path="/client/plan-access" element={guard(['CLIENT'], <ClientPlanAccessPage />)} />
+        <Route path="/client/medical-requests" element={guard(['CLIENT'], <ClientMedicalRequestPage />)} />
+        <Route path="/client/wallet" element={guard(['CLIENT'], <ClientWalletPage />)} />
+        <Route path="/client/wallet/top-up" element={guard(['CLIENT'], <ClientWalletTopUpPage />)} />
+        <Route path="/client/wallet/requests" element={guard(['CLIENT'], <ClientWalletRequestsPage />)} />
+        <Route path="/client/wallet/transactions" element={guard(['CLIENT'], <ClientWalletTransactionsPage />)} />
         <Route path="/client/support" element={guard(['CLIENT'], <ClientSupportPage />)} />
         <Route path="/client/support/create" element={guard(['CLIENT'], <ClientCreateSupportPage />)} />
         <Route path="/client/support/:id" element={guard(['CLIENT'], <ClientSupportDetailsPage />)} />
@@ -193,6 +212,7 @@ function App() {
         <Route path="/coach/workout-plans/create" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachCreateWorkoutPlanPage />)} />
         <Route path="/coach/workout-plans/:id/edit" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachEditWorkoutPlanPage />)} />
         <Route path="/coach/workout-plans/:id" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachWorkoutPlanDetailsPage />)} />
+        <Route path="/coach/access-requests" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAccessRequestsPage />)} />
         <Route path="/coach/assessments" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAssessmentsPage />)} />
         <Route path="/coach/assessments/create" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachCreateAssessmentPage />)} />
         <Route path="/coach/assessments/:id" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAssessmentDetailsPage />)} />
@@ -211,6 +231,7 @@ function App() {
         <Route path="/nutrition/meal-plans/create" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionCreateMealPlanPage />)} />
         <Route path="/nutrition/meal-plans/:id/edit" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionEditMealPlanPage />)} />
         <Route path="/nutrition/meal-plans/:id" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionMealPlanDetailsPage />)} />
+        <Route path="/nutrition/access-requests" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionAccessRequestsPage />)} />
         <Route path="/nutrition/dietary-restrictions" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionDietaryRestrictionsPage />)} />
         <Route path="/nutrition/progress" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionProgressPage />)} />
         <Route path="/nutrition/progress/:clientId" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionClientProgressPage />)} />
@@ -234,9 +255,7 @@ function App() {
         <Route path="/medical/health-alerts/create" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalCreateHealthAlertPage />)} />
         <Route path="/medical/health-alerts/:id" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalHealthAlertDetailsPage />)} />
         <Route path="/medical/safety-validation" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalSafetyValidationPage />)} />
-        <Route path="/medical/appointments" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalAppointmentsPage />)} />
-        <Route path="/medical/availability" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalAvailabilityPage />)} />
-        <Route path="/medical/book-appointment" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalBookAppointmentPage />)} />
+        <Route path="/medical/requests" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalRequestsPage />)} />
         <Route path="/medical/notifications" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalNotificationsPage />)} />
         <Route path="/medical/profile" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalProfilePage />)} />
 
@@ -264,6 +283,13 @@ function App() {
         <Route path="/admin/audit-logs" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminAuditPage />)} />
         <Route path="/admin/backups" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminBackupsPage />)} />
         <Route path="/admin/erasure-requests" element={guard(['ADMIN'], <AdminErasurePage />)} />
+        <Route path="/admin/appointments" element={guard(['ADMIN'], <AdminAppointmentsPage />)} />
+        <Route path="/admin/wallet" element={<Navigate to="/admin/wallet/requests" replace />} />
+        <Route path="/admin/wallet/requests" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminWalletPage />)} />
+        <Route path="/admin/wallet/topups/:id" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminTopUpRequestPage />)} />
+        <Route path="/admin/wallet/clients" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminClientWalletsPage />)} />
+        <Route path="/admin/wallet/clients/:clientId" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminClientWalletPage />)} />
+        <Route path="/admin/wallet/transactions" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminWalletTransactionsPage />)} />
         <Route path="/admin/notifications" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminNotificationsPage />)} />
         <Route path="/admin/profile" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminProfilePage />)} />
         <Route path="/admin/settings" element={guard(['ADMIN', 'DIGITAL_OPERATIONS_EXECUTIVE'], <AdminSettingsPage />)} />

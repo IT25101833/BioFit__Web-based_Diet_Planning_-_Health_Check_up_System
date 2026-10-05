@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Eye, EyeOff, Lock, LogIn, Mail } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
-import { homeForRole } from '../../api/authApi'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { homeForRole, setPendingVerificationEmail } from '../../api/authApi'
 import { useAuth } from '../../auth/AuthContext'
 import Button from '../ui/Button'
 import Checkbox from '../ui/Checkbox'
@@ -22,12 +22,17 @@ function validatePassword(value) {
 
 export default function LoginForm() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [errors, setErrors] = useState({ email: '', password: '', form: '' })
+  const [successMessage, setSuccessMessage] = useState(
+    () => location.state?.message || '',
+  )
+  const [needsVerification, setNeedsVerification] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(event) {
@@ -40,6 +45,8 @@ export default function LoginForm() {
     }
 
     setErrors(nextErrors)
+    setNeedsVerification(false)
+    setSuccessMessage('')
     if (nextErrors.email || nextErrors.password) return
 
     setSubmitting(true)
@@ -48,6 +55,13 @@ export default function LoginForm() {
       const role = result.user.primaryRole || result.user.roles?.[0]
       navigate(homeForRole(role), { replace: true })
     } catch (err) {
+      const code = err.code || ''
+      const unverified =
+        code === 'EMAIL_NOT_VERIFIED' || /verify your email/i.test(err.message || '')
+      setNeedsVerification(unverified)
+      if (unverified) {
+        setPendingVerificationEmail(email.trim().toLowerCase())
+      }
       setErrors((prev) => ({
         ...prev,
         form: err.message || 'Unable to sign in. Please try again.',
@@ -90,6 +104,7 @@ export default function LoginForm() {
               setEmail(e.target.value)
               if (errors.email || errors.form) {
                 setErrors((prev) => ({ ...prev, email: '', form: '' }))
+                setNeedsVerification(false)
               }
             }}
             error={errors.email}
@@ -110,6 +125,7 @@ export default function LoginForm() {
               setPassword(e.target.value)
               if (errors.password || errors.form) {
                 setErrors((prev) => ({ ...prev, password: '', form: '' }))
+                setNeedsVerification(false)
               }
             }}
             error={errors.password}
@@ -146,12 +162,29 @@ export default function LoginForm() {
             </Link>
           </div>
 
+          {successMessage ? (
+            <div
+              className="rounded-xl border border-[#d1fae5] bg-[#ecfdf5] px-3.5 py-3 text-sm text-[#065f46]"
+              role="status"
+            >
+              {successMessage}
+            </div>
+          ) : null}
+
           {errors.form ? (
             <div
               className="rounded-xl border border-error/20 bg-error-container px-3.5 py-3 text-sm text-error"
               role="alert"
             >
-              {errors.form}
+              <p>{errors.form}</p>
+              {needsVerification ? (
+                <Link
+                  to="/register/verify"
+                  className="mt-2 inline-block font-semibold text-[#005a40] hover:underline"
+                >
+                  Complete email verification
+                </Link>
+              ) : null}
             </div>
           ) : null}
 
@@ -178,9 +211,29 @@ export default function LoginForm() {
 
         <div className="bf-neo-inset mt-6 rounded-xl px-3.5 py-3.5">
           <p className="text-[12px] leading-relaxed text-[var(--bf-muted)]">
-            <span className="font-semibold text-[var(--bf-ink)]">Demo:</span>{' '}
-            client@biofit.demo / Demo123! — role routing opens the matching portal.
+            <span className="font-semibold text-[var(--bf-ink)]">Demo login</span>{' '}
+            (password is case-sensitive — capital{' '}
+            <span className="font-mono text-[var(--bf-ink)]">D</span> and{' '}
+            <span className="font-mono text-[var(--bf-ink)]">!</span> at the end):
           </p>
+          <button
+            type="button"
+            className="mt-2 w-full rounded-lg bg-[var(--bf-surface)] px-3 py-2 text-left transition-colors hover:bg-[var(--bf-surface-2,rgba(0,0,0,0.04))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            onClick={() => {
+              setEmail('client@biofit.demo')
+              setPassword('Demo123!')
+              setErrors({ email: '', password: '', form: '' })
+              setNeedsVerification(false)
+            }}
+          >
+            <p className="font-mono text-[12px] text-[var(--bf-ink)]">
+              client@biofit.demo
+            </p>
+            <p className="font-mono text-[12px] text-[var(--bf-ink)]">Demo123!</p>
+            <p className="mt-1 text-[11px] text-[var(--bf-muted)]">
+              Click to fill, then Sign In
+            </p>
+          </button>
         </div>
       </div>
     </div>

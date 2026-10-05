@@ -31,10 +31,10 @@ export default function MedicalHistoryFormModal({
   open,
   onClose,
   onSave,
-  clients = [],
   initial = null,
 }) {
   const editing = Boolean(initial?.id)
+  const synced = Boolean(initial?.syncedFromRecord || initial?.sourceHealthRecordId)
   const today = localTodayIso()
   const [form, setForm] = useState({
     clientId: '',
@@ -101,7 +101,7 @@ export default function MedicalHistoryFormModal({
 
   function validate() {
     const next = {}
-    if (!editing && !form.clientId) next.clientId = 'Please select a client.'
+    if (!editing) return false
     if (!form.recordType) next.recordType = 'Record type is required.'
     if (form.recordType === 'Condition' && !form.conditionName.trim()) {
       next.conditionName = 'Condition name is required.'
@@ -145,11 +145,11 @@ export default function MedicalHistoryFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? 'Update Medical History' : 'Add Medical History'}
+      title="Update Medical History"
       description={
-        editing
-          ? 'Update condition or allergy details. Patient ownership and created fields stay protected.'
-          : 'Create a medical history entry for the selected client.'
+        synced
+          ? 'Condition, allergy, and history details come from the client’s medical record. You can update severity and the recorded date.'
+          : 'Update condition or allergy details. Patient ownership and created fields stay protected.'
       }
       size="lg"
       footer={
@@ -162,46 +162,18 @@ export default function MedicalHistoryFormModal({
             disabled={submitting}
             className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
           >
-            {submitting ? 'Saving…' : editing ? 'Save Changes' : 'Create Entry'}
+            {submitting ? 'Saving…' : 'Save Changes'}
           </Button>
         </>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {!editing ? (
-          !clients.length ? (
-            <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
-              No attended clients available. Attend a patient from Appointments first to select a
-              client.
-            </p>
-          ) : (
-            <Select
-              label="Client"
-              required
-              value={form.clientId}
-              onChange={(e) => {
-                const value = e.target.value
-                const client = clients.find((c) => c.clientId === value)
-                update('clientId', value)
-                update('clientName', client?.clientName || '')
-                update('userId', client?.userId || '')
-              }}
-              options={clients.map((c) => ({
-                value: c.clientId,
-                label: `${c.clientName} (${c.clientId})`,
-              }))}
-              placeholder="Select client"
-              error={errors.clientId}
-            />
-          )
-        ) : (
-          <div className="rounded-xl border border-[#e8ecf1] bg-[#f8faf9] px-4 py-3 text-sm">
-            <p className="text-[12px] text-[#6b7280]">Client</p>
-            <p className="font-semibold text-[#111827]">
-              {form.clientName} · {form.clientId}
-            </p>
-          </div>
-        )}
+        <div className="rounded-xl border border-[#e8ecf1] bg-[#f8faf9] px-4 py-3 text-sm">
+          <p className="text-[12px] text-[#6b7280]">Client</p>
+          <p className="font-semibold text-[#111827]">
+            {form.clientName} · {form.clientId}
+          </p>
+        </div>
 
         <Select
           label="Record type"
@@ -210,6 +182,7 @@ export default function MedicalHistoryFormModal({
           onChange={(e) => update('recordType', e.target.value)}
           options={recordTypes}
           error={errors.recordType}
+          disabled={synced}
         />
 
         {form.recordType === 'Allergy' ? (
@@ -220,6 +193,7 @@ export default function MedicalHistoryFormModal({
             onChange={(e) => update('allergyInfo', e.target.value)}
             error={errors.allergyInfo}
             placeholder="e.g. Peanuts"
+            disabled={synced}
           />
         ) : (
           <Input
@@ -229,6 +203,7 @@ export default function MedicalHistoryFormModal({
             onChange={(e) => update('conditionName', e.target.value)}
             error={errors.conditionName}
             placeholder="e.g. Hypertension"
+            disabled={synced}
           />
         )}
 
@@ -239,6 +214,7 @@ export default function MedicalHistoryFormModal({
           onChange={(e) => update('description', e.target.value)}
           error={errors.description}
           placeholder="Clinical notes relevant to this entry"
+          disabled={synced}
         />
 
         <div className="grid gap-4 sm:grid-cols-2">

@@ -5,9 +5,13 @@ import com.biofit.backend.auth.dto.AuthDtos.ChangePasswordRequest;
 import com.biofit.backend.auth.dto.AuthDtos.ForgotPasswordRequest;
 import com.biofit.backend.auth.dto.AuthDtos.LoginRequest;
 import com.biofit.backend.auth.dto.AuthDtos.RefreshRequest;
+import com.biofit.backend.auth.dto.AuthDtos.RegisterPendingResponse;
 import com.biofit.backend.auth.dto.AuthDtos.RegisterRequest;
+import com.biofit.backend.auth.dto.AuthDtos.ResendVerificationRequest;
 import com.biofit.backend.auth.dto.AuthDtos.ResetPasswordRequest;
 import com.biofit.backend.auth.dto.AuthDtos.TokenResponse;
+import com.biofit.backend.auth.dto.AuthDtos.VerifyEmailRequest;
+import com.biofit.backend.auth.dto.AuthDtos.VerifyEmailResponse;
 import com.biofit.backend.common.ApiResponse;
 import com.biofit.backend.security.UserPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,9 +37,23 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<TokenResponse> register(
+    public ApiResponse<RegisterPendingResponse> register(
             @Valid @RequestBody RegisterRequest request, HttpServletRequest http) {
         return ApiResponse.ok(authService.register(request, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PostMapping("/verify-email")
+    public ApiResponse<VerifyEmailResponse> verifyEmail(
+            @Valid @RequestBody VerifyEmailRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(
+                authService.verifyEmail(request, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PostMapping("/resend-verification")
+    public ApiResponse<RegisterPendingResponse> resendVerification(
+            @Valid @RequestBody ResendVerificationRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(
+                authService.resendVerification(request, clientIp(http), http.getHeader("User-Agent")));
     }
 
     @PostMapping("/login")

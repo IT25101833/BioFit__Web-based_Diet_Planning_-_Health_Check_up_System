@@ -7,6 +7,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +25,7 @@ public class NutritionDomainController {
 
     private final DomainService domainService;
     private final CompletionService completionService;
+    private final PlanAccessService planAccessService;
 
     @GetMapping("/dashboard")
     public ApiResponse<Map<String, Object>> dashboard(@AuthenticationPrincipal UserPrincipal principal) {
@@ -42,17 +44,15 @@ public class NutritionDomainController {
     }
 
     @GetMapping("/clients")
-    public ApiResponse<List<Map<String, Object>>> clients() {
-        return ApiResponse.ok(domainService.nutritionClients());
+    public ApiResponse<List<Map<String, Object>>> clients(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.nutritionClientsForConsultant(principal));
     }
 
     @GetMapping("/clients/{id}")
-    public ApiResponse<Map<String, Object>> client(@PathVariable String id) {
-        return ApiResponse.ok(
-                domainService.nutritionClients().stream()
-                        .filter(c -> id.equals(c.get("id")))
-                        .findFirst()
-                        .orElseThrow());
+    public ApiResponse<Map<String, Object>> client(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.nutritionClientForConsultant(principal, id));
     }
 
     @GetMapping("/meal-plans")
@@ -80,11 +80,19 @@ public class NutritionDomainController {
         return ApiResponse.ok(domainService.archiveMealPlan(id));
     }
 
+    @DeleteMapping("/meal-plans/{id}")
+    public ApiResponse<Map<String, Object>> hardDeleteDraft(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.hardDeleteUnusedDraftMealPlan(principal.getId(), id));
+    }
+
     @PostMapping("/meal-plans/{id}/duplicate")
     public ApiResponse<Map<String, Object>> duplicate(@PathVariable String id) {
         Map<String, Object> existing = domainService.mealPlan(id);
         existing.remove("id");
         existing.put("name", existing.get("name") + " (copy)");
+        existing.put("status", "Draft");
+        existing.put("progress", 0);
         return ApiResponse.ok(domainService.saveMealPlan(null, existing));
     }
 
@@ -115,8 +123,17 @@ public class NutritionDomainController {
     }
 
     @GetMapping("/appointments")
-    public ApiResponse<List<Map<String, Object>>> appointments() {
-        return ApiResponse.ok(domainService.appointmentsForRole("Nutrition"));
+    public ApiResponse<List<Map<String, Object>>> appointments(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.nutritionAppointmentsForProfessional(principal.getId()));
+    }
+
+    @PatchMapping("/appointments/{id}/attendance")
+    public ApiResponse<Map<String, Object>> markAttendance(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        return ApiResponse.ok(domainService.markNutritionAppointmentAttendance(principal, id, body));
     }
 
     @GetMapping("/progress")
@@ -158,12 +175,18 @@ public class NutritionDomainController {
     }
 
     @PatchMapping("/notifications/{id}/read")
-    public ApiResponse<Map<String, Object>> markRead(@PathVariable String id) {
-        return ApiResponse.ok(domainService.markNotificationRead(id));
+    public ApiResponse<Map<String, Object>> markRead(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.markNotificationRead(principal.getId(), id));
     }
 
     @PatchMapping("/notifications/read-all")
     public ApiResponse<Map<String, Object>> markAll() {
         return ApiResponse.ok(domainService.markAudienceNotificationsRead("NUTRITION"));
+    }
+
+    @GetMapping("/health-risk-alerts")
+    public ApiResponse<List<Map<String, Object>>> nutritionAlerts() {
+        return ApiResponse.ok(planAccessService.alertsForCategory("Nutrition"));
     }
 }

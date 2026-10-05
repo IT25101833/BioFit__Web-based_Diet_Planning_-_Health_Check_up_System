@@ -10,4 +10,6 @@ public interface HealthRiskAlertRepository extends JpaRepository<HealthRiskAlert
     List<HealthRiskAlert> findByUserIdInAndActiveTrueOrderByDateRaisedDesc(Collection<Long> userIds);
 
     long countByUserIdAndStatusIgnoreCase(Long userId, String status);
+
+    List<HealthRiskAlert> findByCategoryIgnoreCaseAndActiveTrueOrderByDateRaisedDesc(String category);
 }
