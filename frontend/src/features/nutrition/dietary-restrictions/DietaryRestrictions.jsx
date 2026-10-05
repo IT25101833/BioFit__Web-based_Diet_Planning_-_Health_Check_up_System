@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { useAuth } from '../../../auth/AuthContext'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
@@ -15,6 +16,7 @@ import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
+import { hardDeleteAdminDietaryRestriction } from '../../admin/data/adminData'
 import { formatNutritionDate, getNutritionClientOptions } from '../clients/data/nutritionClientData'
 import {
   createDietaryRestriction,
@@ -28,13 +30,15 @@ const emptyForm = {
   name: '',
   type: '',
   status: 'Active',
-  dateRecorded: '2026-09-09',
+  dateRecorded: new Date().toISOString().slice(0, 10),
   notes: '',
   mealPlanImpact: '',
   mealPlan: '',
 }
 
 export default function DietaryRestrictions() {
+  const { user } = useAuth()
+  const isAdmin = String(user?.role || '').toUpperCase() === 'ADMIN'
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -45,8 +49,9 @@ export default function DietaryRestrictions() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [deactivateId, setDeactivateId] = useState('')
+  const [hardDeleteId, setHardDeleteId] = useState('')
   const [toast, setToast] = useState('')
-  const clients = useMemo(() => getNutritionClientOptions(), [])
+  const [clients, setClients] = useState([])
 
   async function load() {
     setLoading(true)
@@ -62,6 +67,7 @@ export default function DietaryRestrictions() {
 
   useEffect(() => {
     load()
+    getNutritionClientOptions().then(setClients).catch(() => setClients([]))
   }, [])
 
   const filtered = useMemo(() => {
@@ -74,7 +80,11 @@ export default function DietaryRestrictions() {
       )
         return false
       if (type && item.type !== type) return false
-      if (status && item.status !== status) return false
+      if (status) {
+        if (item.status !== status) return false
+      } else if (String(item.status || '').toLowerCase() === 'inactive') {
+        return false
+      }
       return true
     })
   }, [items, search, type, status])
@@ -193,7 +203,12 @@ export default function DietaryRestrictions() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((item) => (
+                {filtered.map((item) => {
+                  const canHardDelete =
+                    isAdmin &&
+                    String(item.status || '').toLowerCase() === 'inactive' &&
+                    !item.protected
+                  return (
                   <tr key={item.id} className="border-t border-[#eef2f0]">
                     <td className="px-4 py-3.5 font-semibold text-[#111827]">{item.clientName}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">
@@ -219,11 +234,21 @@ export default function DietaryRestrictions() {
                             disabled: item.status === 'Inactive',
                             onClick: () => setDeactivateId(item.id),
                           },
+                          ...(canHardDelete
+                            ? [
+                                {
+                                  label: 'Delete permanently',
+                                  tone: 'danger',
+                                  onClick: () => setHardDeleteId(item.id),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -323,6 +348,24 @@ export default function DietaryRestrictions() {
         title="Deactivate this restriction?"
         description="Historical information remains available. This does not hard-delete the record."
         confirmLabel="Deactivate"
+        tone="danger"
+      />
+      <ConfirmDialog
+        open={Boolean(hardDeleteId)}
+        onClose={() => setHardDeleteId('')}
+        onConfirm={async () => {
+          try {
+            await hardDeleteAdminDietaryRestriction(hardDeleteId)
+            setHardDeleteId('')
+            setToast('Dietary record permanently deleted.')
+            await load()
+          } catch (err) {
+            setToast(err?.message || 'Unable to permanently delete this record.')
+          }
+        }}
+        title="Permanently delete this record?"
+        description="This action permanently deletes this record and cannot be undone. Only inactive test/junk records may be deleted."
+        confirmLabel="Delete permanently"
         tone="danger"
       />
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />

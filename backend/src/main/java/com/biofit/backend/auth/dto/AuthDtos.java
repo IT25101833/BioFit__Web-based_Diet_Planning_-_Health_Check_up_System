@@ -2,6 +2,7 @@ package com.biofit.backend.auth.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class AuthDtos {
@@ -31,6 +32,19 @@ public class AuthDtos {
             @NotBlank @Size(min = 8, message = "Password must be at least 8 characters")
                     String newPassword) {}
 
+    public record VerifyEmailRequest(
+            @NotBlank @Email String email,
+            @NotBlank
+                    @Pattern(regexp = "^\\d{6}$", message = "Verification code must be 6 digits")
+                    String otp) {}
+
+    public record ResendVerificationRequest(@NotBlank @Email String email) {}
+
+    public record RegisterPendingResponse(
+            String email, String message, boolean verificationRequired, String devOtp) {}
+
+    public record VerifyEmailResponse(String email, String message, boolean verified) {}
+
     public record AuthUserResponse(
             Long id,
             String email,
@@ -40,6 +54,7 @@ public class AuthDtos {
             String contactNumber,
             String specialization,
             String status,
+            boolean emailVerified,
             java.util.List<String> roles,
             String primaryRole) {}
 

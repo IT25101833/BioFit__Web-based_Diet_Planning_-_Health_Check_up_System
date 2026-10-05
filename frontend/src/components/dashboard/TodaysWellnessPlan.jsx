@@ -1,7 +1,14 @@
 import { ArrowRight, Dumbbell, Leaf } from 'lucide-react'
 import Button from '../ui/Button'
 
-export default function TodaysWellnessPlan() {
+export default function TodaysWellnessPlan({ todayFocus }) {
+  const workoutName = todayFocus?.workoutName ?? '-'
+  const workoutMeta = todayFocus?.workoutMeta ?? '-'
+  const workoutStatus = todayFocus?.workoutStatus ?? '-'
+  const mealName = todayFocus?.mealName ?? '-'
+  const mealMeta = todayFocus?.mealMeta ?? '-'
+  const mealStatus = todayFocus?.mealStatus ?? '-'
+
   return (
     <section id="todays-plan" className="scroll-mt-8">
       <div className="mb-4">
@@ -19,8 +26,15 @@ export default function TodaysWellnessPlan() {
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e6f5f0] text-[#005a40]">
               <Dumbbell className="h-5 w-5" strokeWidth={2.1} />
             </span>
-            <span className="rounded-full bg-[#fff7ed] px-2.5 py-1 text-[10px] font-bold text-[#b45309] uppercase">
-              Not Started
+            <span
+              className={[
+                'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase',
+                todayFocus?.workoutStatus
+                  ? 'bg-[#fff7ed] text-[#b45309]'
+                  : 'bg-[#f4f6fb] text-[#8b93a1]',
+              ].join(' ')}
+            >
+              {workoutStatus}
             </span>
           </div>
 
@@ -28,9 +42,9 @@ export default function TodaysWellnessPlan() {
             Today&apos;s Workout
           </p>
           <h3 className="mt-1 font-display text-xl font-bold tracking-tight text-[#111827]">
-            Upper Body Strength
+            {workoutName}
           </h3>
-          <p className="mt-2 text-sm text-[#6b7280]">6 exercises · ~45 min</p>
+          <p className="mt-2 text-sm text-[#6b7280]">{workoutMeta}</p>
 
           <Button
             href="#todays-plan"
@@ -47,8 +61,15 @@ export default function TodaysWellnessPlan() {
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ccfbf1] text-[#0f766e]">
               <Leaf className="h-5 w-5" strokeWidth={2.1} />
             </span>
-            <span className="rounded-full bg-[#e6f5f0] px-2.5 py-1 text-[10px] font-bold text-[#005a40] uppercase">
-              On Track
+            <span
+              className={[
+                'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase',
+                todayFocus?.mealStatus
+                  ? 'bg-[#e6f5f0] text-[#005a40]'
+                  : 'bg-[#f4f6fb] text-[#8b93a1]',
+              ].join(' ')}
+            >
+              {mealStatus}
             </span>
           </div>
 
@@ -56,9 +77,9 @@ export default function TodaysWellnessPlan() {
             Today&apos;s Meal Plan
           </p>
           <h3 className="mt-1 font-display text-xl font-bold tracking-tight text-[#111827]">
-            5 Meals Planned
+            {mealName}
           </h3>
-          <p className="mt-2 text-sm text-[#6b7280]">3 recorded so far today</p>
+          <p className="mt-2 text-sm text-[#6b7280]">{mealMeta}</p>
 
           <Button
             href="#todays-plan"

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/dashboard/DashboardShell'
+import MedicalReviewRequestCard from '../components/dashboard/MedicalReviewRequestCard'
 import ProgrammeAppointment from '../components/dashboard/ProgrammeAppointment'
 import ProgressAndHealth from '../components/dashboard/ProgressAndHealth'
 import QuickActions from '../components/dashboard/QuickActions'
@@ -15,6 +17,7 @@ import { fetchClientDashboard } from '../features/client/dashboard/data/clientDa
 
 export default function ClientDashboardPage() {
   const { user } = useAuth()
+  const location = useLocation()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -33,7 +36,7 @@ export default function ClientDashboardPage() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [location.key])
 
   return (
     <DashboardShell title="Dashboard">
@@ -44,12 +47,21 @@ export default function ClientDashboardPage() {
       ) : (
         <div className="space-y-8 lg:space-y-10">
           <WelcomeHero name={user?.firstName || data.greetingName || 'there'} />
+          {data.pendingReview ? (
+            <MedicalReviewRequestCard review={data.pendingReview} />
+          ) : null}
           <SummaryMetrics cards={data.summary} />
-          <ProgrammeAppointment />
-          <TodaysWellnessPlan />
+          <ProgrammeAppointment
+            programme={data.programme}
+            appointment={data.appointment}
+          />
+          <TodaysWellnessPlan todayFocus={data.todayFocus} />
           <ProgressAndHealth progressItems={data.progress} healthItems={data.health} />
           <QuickActions />
-          <UpcomingAndNotifications />
+          <UpcomingAndNotifications
+            upcoming={data.upcoming}
+            notifications={data.notifications}
+          />
           <SupportCard />
         </div>
       )}

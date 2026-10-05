@@ -15,6 +15,7 @@ import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
+import PlanAccessPanel from '../plan-access/PlanAccessPanel'
 import { readClientUserIdParam } from '../shared/medicalNav'
 import { fetchClientOptions, formatMedicalDate } from '../health-records/data/healthRecordData'
 import { deactivateHealthAlert, fetchHealthAlerts } from './data/healthAlertData'
@@ -27,7 +28,7 @@ const tabs = [
   { value: 'Resolved', label: 'Resolved' },
 ]
 
-const priorityRank = { High: 3, Moderate: 2, Low: 1 }
+const priorityRank = { Critical: 4, High: 3, Moderate: 2, Low: 1 }
 
 export default function HealthAlerts() {
   const navigate = useNavigate()
@@ -38,6 +39,7 @@ export default function HealthAlerts() {
   const [error, setError] = useState('')
   const [tab, setTab] = useState('all')
   const clientUserIdFilter = readClientUserIdParam(searchParams)
+  const [selectedClientId, setSelectedClientId] = useState(clientUserIdFilter || '')
   const [search, setSearch] = useState(searchParams.get('client') || '')
   const [priority, setPriority] = useState('')
   const [programme, setProgramme] = useState('')
@@ -208,6 +210,25 @@ export default function HealthAlerts() {
 
       <PrivacyBanner />
 
+      <div className="mb-4 max-w-md">
+        <Select
+          label="Client"
+          value={selectedClientId}
+          onChange={(event) => setSelectedClientId(event.target.value)}
+          options={clients
+            .filter((client) => client.userId)
+            .map((client) => ({ value: String(client.userId), label: client.label }))}
+          placeholder="Select client"
+        />
+      </div>
+
+      <PlanAccessPanel
+        clientUserId={selectedClientId}
+        clientName={
+          clients.find((client) => String(client.userId) === String(selectedClientId))?.clientName
+        }
+      />
+
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Open Alerts" value={summary.open} />
         <StatCard label="Under Review" value={summary.underReview} />
@@ -233,6 +254,7 @@ export default function HealthAlerts() {
             { value: 'Low', label: 'Low' },
             { value: 'Moderate', label: 'Moderate' },
             { value: 'High', label: 'High' },
+            { value: 'Critical', label: 'Critical' },
           ]}
           placeholder="Priority"
         />
@@ -305,7 +327,9 @@ export default function HealthAlerts() {
                     </td>
                     <td className="px-4 py-3.5">
                       <p className="font-semibold text-[#111827]">{item.title}</p>
-                      <p className="text-[12px] text-[#8b93a1]">{item.id}</p>
+                      <p className="text-[12px] text-[#8b93a1]">
+                        {item.category || 'General'} · {item.id}
+                      </p>
                     </td>
                     <td className="px-4 py-3.5 text-[#4b5563]">
                       {formatMedicalDate(item.dateRaised)}

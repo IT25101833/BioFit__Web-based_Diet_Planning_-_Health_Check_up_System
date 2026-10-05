@@ -116,8 +116,9 @@ public class ManagerDomainController {
     }
 
     @PatchMapping("/notifications/{id}/read")
-    public ApiResponse<Map<String, Object>> markRead(@PathVariable String id) {
-        return ApiResponse.ok(domainService.markNotificationRead(id));
+    public ApiResponse<Map<String, Object>> markRead(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.markNotificationRead(principal.getId(), id));
     }
 
     @PatchMapping("/notifications/read-all")

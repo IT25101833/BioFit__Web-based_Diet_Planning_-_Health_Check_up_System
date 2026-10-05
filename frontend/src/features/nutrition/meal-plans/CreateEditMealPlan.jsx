@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ErrorState from '../../../components/ui/ErrorState'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import PageHeader from '../../../components/ui/PageHeader'
@@ -10,11 +10,21 @@ import { createMealPlan, fetchMealPlanById, updateMealPlan } from './data/mealPl
 export default function CreateEditMealPlan({ mode = 'create' }) {
   const navigate = useNavigate()
   const { id } = useParams()
-  const [initial, setInitial] = useState(null)
+  const [searchParams] = useSearchParams()
+  const preselectedClientId = searchParams.get('clientId') || ''
+  const [initial, setInitial] = useState(
+    mode === 'create' && preselectedClientId ? { clientId: preselectedClientId } : null,
+  )
   const [loading, setLoading] = useState(mode === 'edit')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState('')
+
+  useEffect(() => {
+    if (mode === 'create' && preselectedClientId) {
+      setInitial((prev) => ({ ...(prev || {}), clientId: preselectedClientId }))
+    }
+  }, [mode, preselectedClientId])
 
   useEffect(() => {
     if (mode !== 'edit') return

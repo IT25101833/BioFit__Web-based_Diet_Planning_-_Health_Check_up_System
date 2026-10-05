@@ -77,7 +77,9 @@ export default function ClientNutritionProfile() {
               <StatusBadge status={client.status} />
               <StatusBadge status={client.planStatus} />
             </div>
-            <p className="mt-1 text-sm text-[#6b7280]">Nutrition consultant: Maya Fernando</p>
+            <p className="mt-1 text-sm text-[#6b7280]">
+              {client.programme || 'Nutrition client'}
+            </p>
           </div>
         </div>
       </SectionCard>
@@ -85,26 +87,36 @@ export default function ClientNutritionProfile() {
       <div className="mb-4 grid gap-4 md:grid-cols-3">
         <SectionCard title="Nutrition goals">
           <ul className="space-y-2">
-            {client.goals.map((goal) => (
-              <li key={goal} className="rounded-xl bg-[#f8faf9] px-3 py-2 text-sm text-[#4b5563]">{goal}</li>
-            ))}
+            {(client.goals || []).length === 0 ? (
+              <li className="text-sm text-[#6b7280]">No goals recorded.</li>
+            ) : (
+              (client.goals || []).map((goal) => (
+                <li key={goal} className="rounded-xl bg-[#f8faf9] px-3 py-2 text-sm text-[#4b5563]">{goal}</li>
+              ))
+            )}
           </ul>
         </SectionCard>
         <SectionCard title="Dietary preferences">
           <ul className="space-y-2">
-            {client.preferences.map((item) => (
-              <li key={item} className="text-sm text-[#4b5563]">{item}</li>
-            ))}
+            {(client.preferences || []).length === 0 ? (
+              <li className="text-sm text-[#6b7280]">No preferences recorded.</li>
+            ) : (
+              (client.preferences || []).map((item) => (
+                <li key={item} className="text-sm text-[#4b5563]">{item}</li>
+              ))
+            )}
           </ul>
         </SectionCard>
         <SectionCard title="Meal pattern">
-          <p className="text-sm font-semibold text-[#111827]">{client.mealPattern}</p>
+          <p className="text-sm font-semibold text-[#111827]">
+            {client.mealPattern || 'No meal pattern recorded.'}
+          </p>
         </SectionCard>
       </div>
 
       <SectionCard className="mb-4" icon={ShieldAlert} title="Dietary Restrictions & Allergies">
         {restrictions.length === 0 ? (
-          <p className="text-sm text-[#6b7280]">No dietary restrictions found.</p>
+          <p className="text-sm text-[#6b7280]">No dietary restrictions recorded.</p>
         ) : (
           <div className="space-y-3">
             {restrictions.map((item) => (
@@ -126,7 +138,9 @@ export default function ClientNutritionProfile() {
       </SectionCard>
 
       <SectionCard className="mb-4" icon={ShieldAlert} title="Health & Nutrition Safety Guidance">
-        <p className="text-sm leading-relaxed text-[#4b5563]">{client.guidance}</p>
+        <p className="text-sm leading-relaxed text-[#4b5563]">
+          {client.guidance || 'No additional nutrition safety guidance recorded.'}
+        </p>
         {client.reviewRequired ? (
           <p className="mt-3 rounded-2xl bg-[#fff7ed] px-4 py-3 text-sm text-[#b45309]">
             Professional review recommended before significant dietary-plan changes.
@@ -136,14 +150,14 @@ export default function ClientNutritionProfile() {
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <SectionCard title="Current meal plan">
-          {client.currentPlan ? (
+          {client.currentPlan?.id || client.currentPlan?.name ? (
             <>
               <p className="font-semibold text-[#111827]">{client.currentPlan.name}</p>
               <p className="mt-1 text-sm text-[#6b7280]">
                 {formatNutritionDate(client.currentPlan.startDate)} – {formatNutritionDate(client.currentPlan.endDate)}
               </p>
               <p className="mt-1 text-sm text-[#6b7280]">Week {client.currentPlan.currentWeek}</p>
-              <div className="mt-3"><ProgressBar value={client.currentPlan.progress} /></div>
+              <div className="mt-3"><ProgressBar value={client.currentPlan.progress || 0} /></div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <StatusBadge status={client.currentPlan.status} />
                 <Button to={`/nutrition/meal-plans/${client.currentPlan.id}`} size="sm" variant="outline" className="!text-[#005a40]">View Plan</Button>
@@ -151,25 +165,29 @@ export default function ClientNutritionProfile() {
               </div>
             </>
           ) : (
-            <p className="text-sm text-[#6b7280]">No active meal plan assigned yet.</p>
+            <p className="text-sm text-[#6b7280]">No meal plan has been assigned yet.</p>
           )}
         </SectionCard>
 
         <SectionCard title="Nutrition progress summary">
           <div className="space-y-4">
-            {client.progressMetrics.map((metric) => (
-              <ProgressBar key={metric.label} value={metric.value} label={metric.label} />
-            ))}
+            {(client.progressMetrics || []).length === 0 ? (
+              <p className="text-sm text-[#6b7280]">No progress metrics recorded yet.</p>
+            ) : (
+              (client.progressMetrics || []).map((metric) => (
+                <ProgressBar key={metric.label} value={metric.value} label={metric.label} />
+              ))
+            )}
           </div>
         </SectionCard>
       </div>
 
       <SectionCard title="Recent consultations">
-        {client.consultations.length === 0 ? (
+        {(client.consultations || []).length === 0 ? (
           <p className="text-sm text-[#6b7280]">No consultations recorded yet.</p>
         ) : (
           <div className="space-y-3">
-            {client.consultations.map((item) => (
+            {(client.consultations || []).map((item) => (
               <div key={item.id} className="rounded-2xl border border-[#eef2f0] px-4 py-3">
                 <p className="text-sm font-semibold text-[#111827]">{item.type}</p>
                 <p className="mt-1 text-[12px] text-[#6b7280]">

@@ -28,6 +28,7 @@ const emptyForm = {
   clientId: '',
   title: '',
   priority: 'Moderate',
+  category: 'Medical',
   relatedAssessmentId: '',
   reason: '',
   followUpRequired: false,
@@ -169,6 +170,7 @@ export default function CreateHealthAlert() {
       clientName: selected?.label?.split(' (')[0] || selected?.label || '',
       title: form.title.trim(),
       priority: form.priority,
+      category: form.category || 'Medical',
       relatedAssessmentId: form.relatedAssessmentId || null,
       reason: form.reason.trim(),
       status: form.status || 'Open',
@@ -231,7 +233,7 @@ export default function CreateHealthAlert() {
 
       <PageHeader
         title="Create Health Risk Alert"
-        description="Raise a tracked wellness safety alert for care-team awareness and follow-up."
+        description="Share medical and safety guidance that may affect fitness, nutrition, or general wellness. Creating an alert does not grant access to a fitness or nutrition plan."
       />
       <PrivacyBanner />
       {clientWarning ? (
@@ -283,6 +285,18 @@ export default function CreateHealthAlert() {
                 { value: 'Low', label: 'Low' },
                 { value: 'Moderate', label: 'Moderate' },
                 { value: 'High', label: 'High' },
+                { value: 'Critical', label: 'Critical' },
+              ]}
+            />
+            <Select
+              label="Category"
+              value={form.category}
+              onChange={(e) => update('category', e.target.value)}
+              options={[
+                { value: 'Fitness', label: 'Fitness' },
+                { value: 'Nutrition', label: 'Nutrition' },
+                { value: 'Medical', label: 'Medical' },
+                { value: 'General', label: 'General' },
               ]}
             />
             <Input

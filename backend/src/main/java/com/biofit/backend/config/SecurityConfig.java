@@ -3,6 +3,7 @@ package com.biofit.backend.config;
 import com.biofit.backend.security.JwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +32,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Value("${biofit.mail.dev-fallback:false}")
+    private boolean mailDevFallback;
+
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -48,45 +52,50 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
-                        auth ->
-                                auth.requestMatchers(
-                                                "/api/auth/login",
-                                                "/api/auth/register",
-                                                "/api/auth/refresh",
-                                                "/api/auth/forgot-password",
-                                                "/api/auth/reset-password")
-                                        .permitAll()
-                                        .requestMatchers("/h2-console/**")
-                                        .permitAll()
-                                        .requestMatchers(HttpMethod.OPTIONS, "/**")
-                                        .permitAll()
-                                        .requestMatchers("/api/client/**")
-                                        .hasAnyRole("CLIENT", "ADMIN")
-                                        .requestMatchers("/api/admin/**")
-                                        .hasAnyRole("ADMIN", "DIGITAL_OPERATIONS_EXECUTIVE")
-                                        .requestMatchers("/api/medical/**")
-                                        .hasAnyRole("MEDICAL_ADVISOR", "ADMIN")
-                                        .requestMatchers("/api/manager/**")
-                                        .hasAnyRole("WELLNESS_CENTRE_MANAGER", "ADMIN")
-                                        .requestMatchers("/api/coach/**")
-                                        .hasAnyRole("FITNESS_COACH", "ADMIN")
-                                        .requestMatchers("/api/nutrition/**")
-                                        .hasAnyRole("NUTRITION_CONSULTANT", "ADMIN")
-                                        .requestMatchers("/api/support/**")
-                                        .hasAnyRole("CUSTOMER_EXPERIENCE_OFFICER", "ADMIN")
-                                        .requestMatchers("/api/staff/**")
-                                        .hasAnyRole(
-                                                "WELLNESS_CENTRE_MANAGER",
-                                                "FITNESS_COACH",
-                                                "NUTRITION_CONSULTANT",
-                                                "MEDICAL_ADVISOR",
-                                                "CUSTOMER_EXPERIENCE_OFFICER",
-                                                "DIGITAL_OPERATIONS_EXECUTIVE",
-                                                "ADMIN")
-                                        .requestMatchers("/api/**")
-                                        .authenticated()
-                                        .anyRequest()
-                                        .permitAll())
+                        auth -> {
+                            auth.requestMatchers(
+                                            "/api/auth/login",
+                                            "/api/auth/register",
+                                            "/api/auth/verify-email",
+                                            "/api/auth/resend-verification",
+                                            "/api/auth/refresh",
+                                            "/api/auth/forgot-password",
+                                            "/api/auth/reset-password")
+                                    .permitAll();
+                            if (mailDevFallback) {
+                                auth.requestMatchers("/api/dev/**").permitAll();
+                            }
+                            auth.requestMatchers("/h2-console/**")
+                                    .permitAll()
+                                    .requestMatchers(HttpMethod.OPTIONS, "/**")
+                                    .permitAll()
+                                    .requestMatchers("/api/client/**")
+                                    .hasAnyRole("CLIENT", "ADMIN")
+                                    .requestMatchers("/api/admin/**")
+                                    .hasAnyRole("ADMIN", "DIGITAL_OPERATIONS_EXECUTIVE")
+                                    .requestMatchers("/api/medical/**")
+                                    .hasAnyRole("MEDICAL_ADVISOR", "ADMIN")
+                                    .requestMatchers("/api/manager/**")
+                                    .hasAnyRole("WELLNESS_CENTRE_MANAGER", "ADMIN")
+                                    .requestMatchers("/api/coach/**")
+                                    .hasAnyRole("FITNESS_COACH", "ADMIN")
+                                    .requestMatchers("/api/nutrition/**")
+                                    .hasAnyRole("NUTRITION_CONSULTANT", "ADMIN")
+                                    .requestMatchers("/api/support/**")
+                                    .hasAnyRole("CUSTOMER_EXPERIENCE_OFFICER", "ADMIN")
+                                    .requestMatchers("/api/staff/**")
+                                    .hasAnyRole(
+                                            "WELLNESS_CENTRE_MANAGER",
+                                            "FITNESS_COACH",
+                                            "NUTRITION_CONSULTANT",
+                                            "CUSTOMER_EXPERIENCE_OFFICER",
+                                            "DIGITAL_OPERATIONS_EXECUTIVE",
+                                            "ADMIN")
+                                    .requestMatchers("/api/**")
+                                    .authenticated()
+                                    .anyRequest()
+                                    .permitAll();
+                        })
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -96,7 +105,6 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Allow any local Vite port (5173, 5174, …)
         config.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));

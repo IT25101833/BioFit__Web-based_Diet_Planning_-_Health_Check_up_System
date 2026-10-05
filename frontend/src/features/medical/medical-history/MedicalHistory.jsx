@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileHeart, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { FileHeart } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import ActionMenu from '../../../components/ui/ActionMenu'
 import Button from '../../../components/ui/Button'
@@ -8,13 +8,13 @@ import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
 import FilterTabs from '../../../components/ui/FilterTabs'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
+import Modal from '../../../components/ui/Modal'
 import PageHeader from '../../../components/ui/PageHeader'
 import SearchBar from '../../../components/ui/SearchBar'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
 import {
-  findClientOption,
   healthRecordHref,
   indexHealthRecordsByClient,
   readClientUserIdParam,
@@ -22,7 +22,6 @@ import {
 import { fetchHealthRecords, formatMedicalDate } from '../health-records/data/healthRecordData'
 import MedicalHistoryFormModal from './components/MedicalHistoryFormModal'
 import {
-  createMedicalHistory,
   deactivateMedicalHistory,
   fetchMedicalClients,
   fetchMedicalHistory,
@@ -33,6 +32,13 @@ const tabs = [
   { value: 'Active', label: 'Active' },
   { value: 'Inactive', label: 'Inactive' },
   { value: 'all', label: 'All' },
+]
+
+const categories = [
+  { type: 'Condition', card: 'Condition', detail: 'Conditions' },
+  { type: 'Allergy', card: 'Allergy', detail: 'Allergies' },
+  { type: 'History', card: 'History', detail: 'Previous History' },
+  { type: 'Other', card: 'Other', detail: 'Other' },
 ]
 
 export default function MedicalHistory() {
@@ -47,46 +53,25 @@ export default function MedicalHistory() {
   const [search, setSearch] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
-  const [prefillClient, setPrefillClient] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [detailKey, setDetailKey] = useState(null)
   const [toast, setToast] = useState('')
-  const openedForParam = useRef('')
-
-  function prefillFromClients(clientList, userId) {
-    const match = findClientOption(clientList, userId)
-    if (!match) return null
-    return {
-      clientId: match.clientId,
-      clientName: match.clientName || match.name,
-      userId: match.userId || match.id,
-    }
-  }
 
   async function load() {
     setLoading(true)
     setError('')
     try {
-      const [history, clientList, records] = await Promise.all([
+      const [history, records, attendedClients] = await Promise.all([
         fetchMedicalHistory({
           status: tab === 'all' ? undefined : tab,
           clientUserId: clientUserIdParam || undefined,
         }),
-        fetchMedicalClients(),
         fetchHealthRecords().catch(() => []),
+        fetchMedicalClients().catch(() => []),
       ])
-      setItems(history)
-      setClients(clientList)
+      setItems(Array.isArray(history) ? history : [])
+      setClients(Array.isArray(attendedClients) ? attendedClients : [])
       setRecordIndex(indexHealthRecordsByClient(records))
-
-      if (clientUserIdParam && openedForParam.current !== clientUserIdParam) {
-        const prefill = prefillFromClients(clientList, clientUserIdParam)
-        if (prefill) {
-          setPrefillClient(prefill)
-          setEditTarget(null)
-          setFormOpen(true)
-          openedForParam.current = clientUserIdParam
-        }
-      }
     } catch {
       setError('We couldn’t load medical history.')
     } finally {
@@ -98,38 +83,61 @@ export default function MedicalHistory() {
     load()
   }, [tab, clientUserIdParam])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return items
-    return items.filter(
-      (item) =>
-        item.clientName?.toLowerCase().includes(q) ||
-        item.clientId?.toLowerCase().includes(q) ||
-        item.conditionName?.toLowerCase().includes(q) ||
-        item.allergyInfo?.toLowerCase().includes(q) ||
-        item.recordType?.toLowerCase().includes(q),
-    )
-  }, [items, search])
+  const groups = useMemo(() => {
+    const grouped = groupHistory(items)
+    if (tab === 'Inactive') return grouped
+    const seen = new Set(grouped.map((group) => String(group.userId ?? '')))
+    clients.forEach((client) => {
+      const userId = client.userId ?? client.id
+      if (userId == null || seen.has(String(userId))) return
+      if (clientUserIdParam && String(userId) !== String(clientUserIdParam)) return
+      const buckets = {}
+      categories.forEach((category) => {
+        buckets[category.type] = []
+      })
+      grouped.push({
+        key: String(userId),
+        userId,
+        clientId: client.clientId || `BF-C${userId}`,
+        clientName: client.name || client.clientName || 'Client',
+        entries: [],
+        buckets,
+        recorded: '',
+        statuses: [],
+      })
+    })
+    return grouped.sort((a, b) => a.clientName.localeCompare(b.clientName))
+  }, [items, clients, tab, clientUserIdParam])
 
-  function clientRecordHref(item) {
-    const userId =
-      item.userId != null
-        ? item.userId
-        : String(item.clientId || '').replace(/\D+/g, '') || undefined
+  const visibleGroups = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return groups
+    return groups.filter(
+      (group) =>
+        group.clientName.toLowerCase().includes(q) ||
+        group.clientId.toLowerCase().includes(q) ||
+        group.entries.some((item) => entrySearchText(item).includes(q)),
+    )
+  }, [groups, search])
+
+  const detailGroup = visibleGroups.find((group) => group.key === detailKey) || null
+
+  function clientRecordHref(group) {
     return healthRecordHref(recordIndex, {
-      userId,
-      clientId: item.clientId,
+      userId: group.userId,
+      clientId: group.clientId,
     })
   }
 
+  function openEdit(item) {
+    setEditTarget(item)
+    setFormOpen(true)
+  }
+
   async function handleSave(payload) {
-    if (editTarget?.id) {
-      await updateMedicalHistory(editTarget.id, payload)
-      setToast('Medical history entry updated.')
-    } else {
-      await createMedicalHistory(payload)
-      setToast('Medical history entry created.')
-    }
+    if (!editTarget?.id) return
+    await updateMedicalHistory(editTarget.id, payload)
+    setToast('Medical history entry updated.')
     await load()
   }
 
@@ -155,23 +163,7 @@ export default function MedicalHistory() {
 
       <PageHeader
         title="Medical History"
-        description="Add, review, update, and deactivate client condition and allergy records."
-        actions={
-          <Button
-            type="button"
-            onClick={() => {
-              setEditTarget(null)
-              setPrefillClient(
-                clientUserIdParam ? prefillFromClients(clients, clientUserIdParam) : null,
-              )
-              setFormOpen(true)
-            }}
-            className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
-          >
-            <Plus className="h-4 w-4" />
-            Add Medical History
-          </Button>
-        }
+        description="Review client medical history recorded through their health records."
       />
 
       <PrivacyBanner className="mb-5" />
@@ -186,93 +178,54 @@ export default function MedicalHistory() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {visibleGroups.length === 0 ? (
         <EmptyState
           icon={FileHeart}
           title="No medical history entries"
-          description="Add a condition or allergy record for a client to get started."
+          description="Entries appear here after they are saved on the client’s health record."
         />
       ) : (
-        <div className="overflow-hidden rounded-[1.25rem] border border-[#e8ecf1] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          <div className="overflow-x-auto">
-            <table className="min-w-[960px] w-full text-left text-sm">
-              <thead className="bg-[#f8faf9] text-[11px] font-bold tracking-wide text-[#8b93a1] uppercase">
-                <tr>
-                  <th className="px-4 py-3">Client</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Details</th>
-                  <th className="px-4 py-3">Severity</th>
-                  <th className="px-4 py-3">Recorded</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item) => (
-                  <tr key={item.id} className="border-t border-[#eef2f0]">
-                    <td className="px-4 py-3.5">
-                      <Link
-                        to={clientRecordHref(item)}
-                        className="font-semibold text-[#005a40] hover:underline"
-                      >
-                        {item.clientName}
-                      </Link>
-                      <p className="text-[12px] text-[#6b7280]">{item.clientId}</p>
-                    </td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">{item.recordType}</td>
-                    <td className="max-w-[280px] px-4 py-3.5 text-[#4b5563]">
-                      <p className="font-medium text-[#111827]">
-                        {item.conditionName || item.allergyInfo || '—'}
-                      </p>
-                      <p className="mt-0.5 line-clamp-2 text-[12px]">{item.description}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      {item.severity ? <StatusBadge status={item.severity} /> : '—'}
-                    </td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">
-                      {formatMedicalDate(item.recordedDate)}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <StatusBadge status={item.status} />
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <ActionMenu
-                        items={[
-                          ...(item.status === 'Active'
-                            ? [
-                                {
-                                  label: 'Edit',
-                                  onClick: () => {
-                                    setPrefillClient(null)
-                                    setEditTarget(item)
-                                    setFormOpen(true)
-                                  },
-                                },
-                                {
-                                  label: 'Mark Inactive',
-                                  onClick: () => setDeactivateTarget(item),
-                                },
-                              ]
-                            : []),
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {visibleGroups.map((group) => (
+            <HistoryCard
+              key={group.key}
+              group={group}
+              recordHref={clientRecordHref(group)}
+              onView={() => setDetailKey(group.key)}
+              onEdit={openEdit}
+              onDeactivate={setDeactivateTarget}
+            />
+          ))}
         </div>
       )}
 
+      <Modal
+        open={Boolean(detailGroup)}
+        onClose={() => setDetailKey(null)}
+        title="Medical History"
+        description={detailGroup ? `${detailGroup.clientName} · ${detailGroup.clientId}` : ''}
+        size="lg"
+        footer={
+          <Button type="button" variant="outline" onClick={() => setDetailKey(null)}>
+            Close
+          </Button>
+        }
+      >
+        {detailGroup ? (
+          <HistoryDetails
+            group={detailGroup}
+            onEdit={openEdit}
+            onDeactivate={setDeactivateTarget}
+          />
+        ) : null}
+      </Modal>
+
       <MedicalHistoryFormModal
         open={formOpen}
-        initial={editTarget || prefillClient}
-        clients={clients}
+        initial={editTarget}
         onClose={() => {
           setFormOpen(false)
           setEditTarget(null)
-          setPrefillClient(null)
         }}
         onSave={handleSave}
       />
@@ -290,4 +243,229 @@ export default function MedicalHistory() {
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
+}
+
+function HistoryCard({ group, recordHref, onView, onEdit, onDeactivate }) {
+  const activeEntries = group.entries.filter((item) => item.status === 'Active')
+  const singleActive = activeEntries.length === 1 ? activeEntries[0] : null
+  const lines = categories
+    .map((category) => {
+      const entries = group.buckets[category.type] || []
+      if (entries.length === 0) return null
+      return { label: category.card, value: compactValue(entries) }
+    })
+    .filter(Boolean)
+
+  return (
+    <article className="flex flex-col rounded-[1.25rem] border border-[#e8ecf1] bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link to={recordHref} className="block truncate font-semibold text-[#005a40] hover:underline">
+            {group.clientName}
+          </Link>
+          <p className="text-[12px] text-[#6b7280]">{group.clientId}</p>
+        </div>
+        <ActionMenu
+          label={`Actions for ${group.clientName}`}
+          items={[
+            { label: 'View Details', onClick: onView },
+            ...(singleActive
+              ? [
+                  { label: 'Edit', onClick: () => onEdit(singleActive) },
+                  { label: 'Mark Inactive', onClick: () => onDeactivate(singleActive) },
+                ]
+              : []),
+          ]}
+        />
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="mt-2 text-sm text-[#6b7280]">None recorded</p>
+      ) : (
+        <dl className="mt-2 space-y-1">
+          {lines.map((line) => (
+            <div key={line.label} className="grid grid-cols-[5.5rem_1fr] gap-2 text-sm">
+              <dt className="text-[#8b93a1]">{line.label}</dt>
+              <dd className="truncate text-[#111827]">{line.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {group.statuses.map((status) => (
+            <StatusBadge key={status} status={status} />
+          ))}
+          {group.recorded ? (
+            <span className="text-[11px] text-[#8b93a1]">{formatMedicalDate(group.recorded)}</span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={onView}
+          className="shrink-0 text-sm font-semibold text-[#005a40] hover:underline"
+        >
+          View Details
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function HistoryDetails({ group, onEdit, onDeactivate }) {
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DetailField label="Patient" value={group.clientName} />
+        <DetailField label="Client ID" value={group.clientId} />
+        <DetailField label="Recorded" value={group.recorded ? formatLongDate(group.recorded) : '—'} />
+        <div>
+          <p className="text-[11px] font-medium text-[#8b93a1]">Status</p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {group.statuses.map((status) => (
+              <StatusBadge key={status} status={status} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {categories.map((category) => {
+        const entries = group.buckets[category.type] || []
+        return (
+          <section key={category.type}>
+            <h3 className="text-[11px] font-bold tracking-wide text-[#8b93a1] uppercase">
+              {category.detail}
+            </h3>
+            {entries.length === 0 ? (
+              <p className="mt-1 text-[#6b7280]">None recorded</p>
+            ) : (
+              <ul className="mt-1 space-y-2">
+                {entries.map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-xl bg-[#f8faf9] px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="whitespace-pre-wrap text-[#111827]">{entryLabel(item)}</p>
+                      {item.status === 'Active' ? (
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            className="text-[12px] font-semibold text-[#005a40] hover:underline"
+                            onClick={() => onEdit(item)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[12px] font-semibold text-[#b45309] hover:underline"
+                            onClick={() => onDeactivate(item)}
+                          >
+                            Mark Inactive
+                          </button>
+                        </div>
+                      ) : (
+                        <StatusBadge status={item.status} />
+                      )}
+                    </div>
+                    <p className="mt-1 text-[12px] text-[#6b7280]">
+                      {formatMedicalDate(item.recordedDate)}
+                      {item.severity ? ` · ${item.severity}` : ''}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+function DetailField({ label, value }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-[#8b93a1]">{label}</p>
+      <p className="mt-1 font-semibold text-[#111827]">{value || '—'}</p>
+    </div>
+  )
+}
+
+function groupHistory(items) {
+  const map = new Map()
+  items.forEach((item) => {
+    const key = String(item.userId ?? item.clientId ?? item.clientName ?? item.id)
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        userId: item.userId,
+        clientId: item.clientId || '—',
+        clientName: item.clientName || 'Client',
+        entries: [],
+      })
+    }
+    map.get(key).entries.push(item)
+  })
+
+  return Array.from(map.values())
+    .map((group) => {
+      const buckets = {}
+      categories.forEach((category) => {
+        buckets[category.type] = []
+      })
+      group.entries.forEach((item) => {
+        const type = categories.some((category) => category.type === item.recordType)
+          ? item.recordType
+          : 'Other'
+        buckets[type].push(item)
+      })
+      const dates = group.entries
+        .map((item) => item.recordedDate)
+        .filter(Boolean)
+        .sort()
+      const statuses = [...new Set(group.entries.map((item) => item.status).filter(Boolean))]
+      return {
+        ...group,
+        buckets,
+        recorded: dates.at(-1) || '',
+        statuses: statuses.length ? statuses : ['Active'],
+      }
+    })
+    .sort((a, b) => a.clientName.localeCompare(b.clientName))
+}
+
+function entryLabel(item) {
+  const title = (item.conditionName || item.allergyInfo || '').trim()
+  const description = (item.description || '').trim()
+  if (description && description !== title) return description
+  return title || description || 'Recorded entry'
+}
+
+function entrySearchText(item) {
+  return [item.conditionName, item.allergyInfo, item.description, item.recordType, item.severity]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function compactValue(entries) {
+  if (entries.length > 1) {
+    return `${entries.length} entries`
+  }
+  return clip(entryLabel(entries[0]), 42)
+}
+
+function clip(text, max) {
+  const value = String(text).replace(/\s+/g, ' ').trim()
+  if (value.length <= max) return value
+  return `${value.slice(0, max - 1).trim()}…`
+}
+
+function formatLongDate(value) {
+  if (!value) return '—'
+  const date = new Date(String(value).includes('T') ? value : `${value}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return formatMedicalDate(value)
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }

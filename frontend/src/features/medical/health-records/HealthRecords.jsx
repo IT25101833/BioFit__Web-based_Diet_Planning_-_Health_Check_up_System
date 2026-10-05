@@ -14,7 +14,12 @@ import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import Toast from '../../../components/ui/Toast'
 import PrivacyBanner from '../shared/PrivacyBanner'
-import { deactivateHealthRecord, fetchHealthRecords, formatMedicalDate } from './data/healthRecordData'
+import {
+  deactivateHealthRecord,
+  fetchClientOptions,
+  fetchHealthRecords,
+  formatMedicalDate,
+} from './data/healthRecordData'
 
 export default function HealthRecords() {
   const navigate = useNavigate()
@@ -34,7 +39,26 @@ export default function HealthRecords() {
     setLoading(true)
     setError('')
     try {
-      setRecords(await fetchHealthRecords())
+      const [recordRows, clientRows] = await Promise.all([
+        fetchHealthRecords(),
+        fetchClientOptions().catch(() => []),
+      ])
+      const saved = Array.isArray(recordRows) ? recordRows : []
+      const known = new Set(saved.map((record) => String(record.userId ?? '')))
+      const awaitingRecord = (Array.isArray(clientRows) ? clientRows : [])
+        .filter((client) => client.userId != null && !known.has(String(client.userId)))
+        .map((client) => ({
+          id: `attended-${client.userId}`,
+          userId: client.userId,
+          clientName: client.clientName || client.name || 'Client',
+          clientId: client.value || `BF-C${client.userId}`,
+          programme: client.programme || '',
+          recordStatus: 'No record',
+          reviewStatus: '',
+          activeRiskAlerts: 0,
+          awaitingRecord: true,
+        }))
+      setRecords([...awaitingRecord, ...saved])
     } catch {
       setError('We couldn’t load client health records.')
     } finally {
@@ -220,11 +244,21 @@ export default function HealthRecords() {
                   <tr
                     key={record.id}
                     className="cursor-pointer border-t border-[#eef2f0] hover:bg-[#f8faf9]"
-                    onClick={() => navigate(`/medical/health-records/${record.id}`)}
+                    onClick={() =>
+                      navigate(
+                        record.awaitingRecord
+                          ? `/medical/health-records/create?clientUserId=${record.userId}`
+                          : `/medical/health-records/${record.id}`,
+                      )
+                    }
                   >
                     <td className="px-4 py-3.5 font-semibold text-[#111827]">
                       <Link
-                        to={`/medical/health-records/${record.id}`}
+                        to={
+                          record.awaitingRecord
+                            ? `/medical/health-records/create?clientUserId=${record.userId}`
+                            : `/medical/health-records/${record.id}`
+                        }
                         className="text-[#005a40] hover:underline"
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -249,10 +283,18 @@ export default function HealthRecords() {
                     <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <ActionMenu
                         items={[
-                          {
-                            label: 'View Record',
-                            onClick: () => navigate(`/medical/health-records/${record.id}`),
-                          },
+                          record.awaitingRecord
+                            ? {
+                                label: 'Create Record',
+                                onClick: () =>
+                                  navigate(
+                                    `/medical/health-records/create?clientUserId=${record.userId}`,
+                                  ),
+                              }
+                            : {
+                                label: 'View Record',
+                                onClick: () => navigate(`/medical/health-records/${record.id}`),
+                              },
                           {
                             label: 'View Assessment',
                             onClick: () => navigate(assessmentHref(record)),
@@ -271,10 +313,14 @@ export default function HealthRecords() {
                               )
                             },
                           },
-                          {
-                            label: 'Mark Inactive',
-                            onClick: () => setDeactivateTarget(record),
-                          },
+                          ...(record.awaitingRecord
+                            ? []
+                            : [
+                                {
+                                  label: 'Mark Inactive',
+                                  onClick: () => setDeactivateTarget(record),
+                                },
+                              ]),
                         ]}
                       />
                     </td>

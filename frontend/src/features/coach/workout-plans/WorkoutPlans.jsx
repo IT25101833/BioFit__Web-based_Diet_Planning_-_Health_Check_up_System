@@ -16,8 +16,10 @@ import Toast from '../../../components/ui/Toast'
 import { formatCoachDate } from '../clients/data/clientFitnessData'
 import {
   archiveWorkoutPlan,
+  canHardDeleteWorkoutPlan,
   duplicateWorkoutPlan,
   fetchWorkoutPlans,
+  hardDeleteWorkoutPlan,
 } from './data/workoutPlanData'
 
 export default function WorkoutPlans() {
@@ -28,6 +30,7 @@ export default function WorkoutPlans() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [archiveId, setArchiveId] = useState('')
+  const [hardDeleteId, setHardDeleteId] = useState('')
   const [toast, setToast] = useState('')
 
   async function load() {
@@ -51,11 +54,19 @@ export default function WorkoutPlans() {
     return plans.filter((plan) => {
       if (
         q &&
-        !plan.name.toLowerCase().includes(q) &&
-        !plan.clientName.toLowerCase().includes(q)
+        !String(plan.name || '')
+          .toLowerCase()
+          .includes(q) &&
+        !String(plan.clientName || '')
+          .toLowerCase()
+          .includes(q)
       )
         return false
-      if (status && plan.status !== status) return false
+      if (status) {
+        if (plan.status !== status) return false
+      } else if (String(plan.status || '').toLowerCase() === 'archived') {
+        return false
+      }
       return true
     })
   }, [plans, search, status])
@@ -112,6 +123,7 @@ export default function WorkoutPlans() {
             { value: 'Completed', label: 'Completed' },
             { value: 'Paused', label: 'Paused' },
             { value: 'Expired', label: 'Expired' },
+            { value: 'Archived', label: 'Archived' },
           ]}
           placeholder="Status"
         />
@@ -183,8 +195,18 @@ export default function WorkoutPlans() {
                           {
                             label: 'Archive',
                             tone: 'danger',
+                            disabled: String(plan.status || '').toLowerCase() === 'archived',
                             onClick: () => setArchiveId(plan.id),
                           },
+                          ...(canHardDeleteWorkoutPlan(plan)
+                            ? [
+                                {
+                                  label: 'Delete permanently',
+                                  tone: 'danger',
+                                  onClick: () => setHardDeleteId(plan.id),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>
@@ -208,6 +230,24 @@ export default function WorkoutPlans() {
         title="Archive this workout plan?"
         description="Historical plan information will remain available."
         confirmLabel="Archive"
+        tone="danger"
+      />
+      <ConfirmDialog
+        open={Boolean(hardDeleteId)}
+        onClose={() => setHardDeleteId('')}
+        onConfirm={async () => {
+          try {
+            await hardDeleteWorkoutPlan(hardDeleteId)
+            setHardDeleteId('')
+            setToast('Draft workout plan permanently deleted.')
+            await load()
+          } catch (err) {
+            setToast(err?.message || 'Unable to permanently delete this plan.')
+          }
+        }}
+        title="Permanently delete this draft?"
+        description="This action permanently deletes this record and cannot be undone. Only unused draft plans can be deleted."
+        confirmLabel="Delete permanently"
         tone="danger"
       />
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />

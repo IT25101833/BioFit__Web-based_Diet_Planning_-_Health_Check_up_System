@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import Button from '../../../../components/ui/Button'
 import Input from '../../../../components/ui/Input'
@@ -10,7 +10,7 @@ import { getClientOptions } from '../data/workoutPlanData'
 
 function newDay() {
   return {
-    id: `d-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: `d-${Date.now()}`,
     day: 'Monday',
     title: 'New session',
     exercises: [],
@@ -49,11 +49,12 @@ export default function WorkoutPlanForm({
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState({})
   const [exercises, setExercises] = useState([])
-  const clientOptions = useMemo(() => getClientOptions(), [])
+  const [clientOptions, setClientOptions] = useState([])
   const selectedClient = clientOptions.find((c) => c.value === form.clientId)?.client
 
   useEffect(() => {
-    fetchExercises().then(setExercises)
+    fetchExercises().then(setExercises).catch(() => setExercises([]))
+    getClientOptions().then(setClientOptions).catch(() => setClientOptions([]))
   }, [])
 
   useEffect(() => {
@@ -78,6 +79,9 @@ export default function WorkoutPlanForm({
     if (!form.goal.trim()) next.goal = 'Goal is required.'
     if (!form.startDate) next.startDate = 'Start date is required.'
     if (!form.endDate) next.endDate = 'End date is required.'
+    if (status === 'Active' && !form.weeks?.some((w) => w.days?.length)) {
+      next.weeks = 'Add at least one session before activating.'
+    }
     if (status === 'Active' && selectedClient?.safety?.reviewRequired) {
       next.safety =
         'This client has health considerations that may require review before assigning this workout plan.'

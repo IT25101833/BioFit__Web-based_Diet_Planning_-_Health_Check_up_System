@@ -11,7 +11,9 @@ import {
   loginRequest,
   logoutRequest,
   registerRequest,
+  resendVerificationRequest,
   updateMe,
+  verifyEmailRequest,
 } from './../api/authApi'
 
 const AuthContext = createContext(null)
@@ -68,9 +70,14 @@ export function AuthProvider({ children }) {
       return result
     },
     async register(payload) {
-      const result = await registerRequest(payload)
-      setUser(result.user)
-      return result
+      // Registration no longer signs the user in — email OTP must succeed first.
+      return registerRequest(payload)
+    },
+    async verifyEmail(email, otp) {
+      return verifyEmailRequest(email, otp)
+    },
+    async resendVerification(email) {
+      return resendVerificationRequest(email)
     },
     async logout() {
       await logoutRequest()

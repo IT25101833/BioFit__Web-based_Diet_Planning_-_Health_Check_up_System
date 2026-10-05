@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  CalendarDays,
+  ClipboardList,
   ClipboardPlus,
   FileHeart,
   Plus,
@@ -15,12 +15,9 @@ import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import SectionCard from '../../../components/ui/SectionCard'
 import StatCard from '../../../components/ui/StatCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
-import { fetchHealthRecords, formatMedicalDate } from '../health-records/data/healthRecordData'
-import {
-  healthRecordHref,
-  indexHealthRecordsByClient,
-  reviewItemHref,
-} from '../shared/medicalNav'
+import { formatMedicalDate } from '../health-records/data/healthRecordData'
+import { reviewItemHref } from '../shared/medicalNav'
+import { fetchAdvisorMedicalRequests } from '../requests/data/medicalRequestData'
 import { fetchMedicalDashboard } from './data/medicalDashboardData'
 
 function ViewAllLink({ to }) {
@@ -37,7 +34,7 @@ function EmptySectionMessage({ message }) {
 
 export default function MedicalDashboard() {
   const [data, setData] = useState(null)
-  const [recordIndex, setRecordIndex] = useState({})
+  const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -45,12 +42,12 @@ export default function MedicalDashboard() {
     setLoading(true)
     setError('')
     try {
-      const [dashboard, records] = await Promise.all([
+      const [dashboard, requestRows] = await Promise.all([
         fetchMedicalDashboard(),
-        fetchHealthRecords().catch(() => []),
+        fetchAdvisorMedicalRequests().catch(() => []),
       ])
       setData(dashboard)
-      setRecordIndex(indexHealthRecordsByClient(records))
+      setRequests(Array.isArray(requestRows) ? requestRows : [])
     } catch {
       setError('We couldn’t load your medical dashboard.')
     } finally {
@@ -72,7 +69,7 @@ export default function MedicalDashboard() {
   }
 
   const stats = data.stats || {}
-  const todaysAppointments = Array.isArray(data.todaysAppointments) ? data.todaysAppointments : []
+  const pendingRequests = requests.filter((request) => request.status === 'PENDING')
   const clientsRequiringReview = Array.isArray(data.clientsRequiringReview)
     ? data.clientsRequiringReview
     : []
@@ -106,39 +103,33 @@ export default function MedicalDashboard() {
           {data.greetingName ? `Good morning, ${data.greetingName}` : 'Good morning'}
         </h1>
         <p className="mt-1.5 text-sm text-[#6b7280]">
-          Here’s an overview of client reviews, appointments and health alerts requiring attention.
+          Here’s an overview of medical requests, client reviews and health alerts requiring attention.
         </p>
       </div>
 
-      {todaysAppointments.length > 0 ? (
+      {pendingRequests.length > 0 ? (
         <Link
-          to="/medical/appointments"
+          to="/medical/requests"
           className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-[#005a40]/20 bg-[#f0faf6] px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.03)] transition-colors hover:border-[#005a40]/40"
         >
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#e6f5f0] text-[#005a40]">
-              <CalendarDays className="h-5 w-5" strokeWidth={2.1} />
+              <ClipboardList className="h-5 w-5" strokeWidth={2.1} />
             </span>
             <div>
               <p className="text-sm font-semibold text-[#111827]">
-                Today · {todaysAppointments.length} appointment
-                {todaysAppointments.length === 1 ? '' : 's'}
+                {pendingRequests.length} pending medical request
+                {pendingRequests.length === 1 ? '' : 's'}
               </p>
               <p className="text-[12px] text-[#6b7280]">
-                {todaysAppointments
+                {pendingRequests
                   .slice(0, 2)
-                  .map(
-                    (a) =>
-                      `${a.time || '—'} ${a.client || a.clientName || 'Client'}`,
-                  )
+                  .map((request) => `${request.clientName || 'Client'} · ${request.reason || 'Request'}`)
                   .join(' · ')}
-                {todaysAppointments.length > 2
-                  ? ` · +${todaysAppointments.length - 2} more`
-                  : ''}
               </p>
             </div>
           </div>
-          <span className="text-sm font-semibold text-[#005a40]">View appointments</span>
+          <span className="text-sm font-semibold text-[#005a40]">View requests</span>
         </Link>
       ) : null}
 
@@ -170,81 +161,42 @@ export default function MedicalDashboard() {
             hint={stat('activeAlerts').hint || undefined}
           />
         </Link>
-        <Link to="/medical/appointments" className="block transition-opacity hover:opacity-90">
+        <Link to="/medical/requests" className="block transition-opacity hover:opacity-90">
           <StatCard
-            icon={CalendarDays}
-            label="Today’s Medical Appointments"
-            value={stat('todaysAppointments').value}
-            hint={stat('todaysAppointments').hint || undefined}
+            icon={ClipboardList}
+            label="Pending Medical Requests"
+            value={pendingRequests.length}
+            hint={pendingRequests.length === 1 ? 'Waiting for your response' : 'Waiting for your response'}
           />
         </Link>
       </div>
 
       <div className="mb-5 grid gap-4 lg:grid-cols-3">
         <SectionCard
-          title="Today’s Appointments"
+          title="Medical Requests"
           className="lg:col-span-2"
-          actions={<ViewAllLink to="/medical/appointments" />}
+          actions={<ViewAllLink to="/medical/requests" />}
         >
-          {todaysAppointments.length === 0 ? (
-            <EmptySectionMessage message="No appointments scheduled for today." />
+          {requests.length === 0 ? (
+            <EmptySectionMessage message="No medical requests yet." />
           ) : (
             <div className="space-y-3">
-              {todaysAppointments.map((item) => {
-                const typeLabel = item.type || item.serviceType || item.service
-                const metaParts = [typeLabel, item.programme, item.duration].filter(Boolean)
-                const clientUserId =
-                  item.clientUserId ??
-                  (item.clientId ? String(item.clientId).replace(/\D+/g, '') : null)
-                const recordTarget = healthRecordHref(recordIndex, {
-                  userId: clientUserId,
-                  clientId: item.clientId,
-                })
-                const clientLabel = item.client || item.clientName
-                return (
-                  <div
-                    key={item.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-[#111827]">
-                        {[item.time].filter(Boolean).join(' · ')}
-                        {item.time && clientLabel ? ' · ' : ''}
-                        {clientLabel ? (
-                          <Link
-                            to={recordTarget}
-                            className="text-[#005a40] hover:underline"
-                          >
-                            {clientLabel}
-                          </Link>
-                        ) : null}
-                      </p>
-                      {metaParts.length ? (
-                        <p className="mt-1 text-[12px] text-[#6b7280]">{metaParts.join(' · ')}</p>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {item.status ? <StatusBadge status={item.status} /> : null}
-                      <Button
-                        to="/medical/appointments"
-                        size="sm"
-                        variant="outline"
-                        className="!text-[#005a40]"
-                      >
-                        View Appointment
-                      </Button>
-                      <Button
-                        to={recordTarget}
-                        size="sm"
-                        variant="outline"
-                        className="!text-[#005a40]"
-                      >
-                        View Health Record
-                      </Button>
-                    </div>
+              {requests.slice(0, 5).map((request) => (
+                <div
+                  key={request.id}
+                  className="flex flex-col gap-3 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-[#111827]">
+                      {request.clientName || 'Client'} · {request.reason || 'Medical request'}
+                    </p>
+                    <p className="mt-1 text-[12px] text-[#6b7280]">{request.status}</p>
                   </div>
-                )
-              })}
+                  <Button to="/medical/requests" size="sm" variant="outline" className="!text-[#005a40]">
+                    View Request
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
         </SectionCard>
@@ -410,7 +362,7 @@ export default function MedicalDashboard() {
           { label: 'Review Health Records', to: '/medical/health-records', icon: FileHeart },
           { label: 'Review Assessments', to: '/medical/assessments', icon: ClipboardPlus },
           { label: 'Open Health Risk Alerts', to: '/medical/health-alerts', icon: ShieldAlert },
-          { label: 'View Today’s Appointments', to: '/medical/appointments', icon: CalendarDays },
+          { label: 'Open Medical Requests', to: '/medical/requests', icon: ClipboardList },
         ].map(({ label, to, icon: Icon }) => (
           <Link
             key={label}

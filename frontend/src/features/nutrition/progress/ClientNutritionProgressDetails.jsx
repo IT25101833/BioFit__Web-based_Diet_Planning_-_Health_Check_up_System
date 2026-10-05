@@ -29,7 +29,7 @@ export default function ClientNutritionProgressDetails() {
   const [open, setOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [form, setForm] = useState({
-    date: '2026-09-09',
+    date: new Date().toISOString().slice(0, 10),
     participation: '',
     feedback: '',
     observation: '',
@@ -66,6 +66,7 @@ export default function ClientNutritionProgressDetails() {
     await saveNutritionProgress({ clientId, mealPlan: progress.mealPlan, ...form })
     setOpen(false)
     setToast('Progress saved.')
+    await load()
   }
 
   if (loading) return <LoadingSkeleton rows={5} />
@@ -75,16 +76,21 @@ export default function ClientNutritionProgressDetails() {
     )
   }
 
-  const max = Math.max(...progress.weeklyParticipation, 1)
+  const weekly = Array.isArray(progress.weeklyParticipation)
+    ? progress.weeklyParticipation.map((entry) =>
+        typeof entry === 'number' ? entry : Number(entry?.value) || 0,
+      )
+    : []
+  const max = Math.max(...weekly, 1)
 
   return (
     <div>
       <PageHeader
         title={`${client.name} · Nutrition Progress`}
-        description={`${client.programme} · ${progress.mealPlan}`}
+        description={`${client.programme || ''} · ${progress.mealPlan || 'No meal plan'}`}
         actions={
           <div className="flex flex-wrap gap-2.5">
-            <StatusBadge status={progress.status} />
+            <StatusBadge status={progress.status || 'None'} />
             <Button onClick={() => setOpen(true)} className="!bg-[#005a40] !text-white hover:!bg-[#004833]">
               Record Progress
             </Button>
@@ -94,31 +100,35 @@ export default function ClientNutritionProgressDetails() {
 
       <div className="mb-5 grid gap-4 sm:grid-cols-3">
         <SectionCard title="Meal-plan participation">
-          <ProgressBar value={progress.participation} />
+          <ProgressBar value={progress.participation || 0} />
         </SectionCard>
         <SectionCard title="Current week">
-          <p className="text-sm font-semibold text-[#111827]">{progress.currentWeek}</p>
+          <p className="text-sm font-semibold text-[#111827]">{progress.currentWeek || '—'}</p>
         </SectionCard>
         <SectionCard title="Next review">
-          <p className="text-sm font-semibold text-[#111827]">{progress.nextReview}</p>
+          <p className="text-sm font-semibold text-[#111827]">{progress.nextReview || '—'}</p>
         </SectionCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard title="Weekly participation">
-          <div className="flex h-40 items-end gap-2 pt-2">
-            {progress.weeklyParticipation.map((value, index) => (
-              <div key={index} className="flex flex-1 flex-col items-center gap-2">
-                <div className="w-full rounded-t-md bg-[#005a40]/85" style={{ height: `${(value / max) * 100}%` }} />
-                <span className="text-[10px] text-[#6b7280]">W{index + 1}</span>
-              </div>
-            ))}
-          </div>
+          {weekly.length === 0 ? (
+            <p className="py-6 text-sm text-[#6b7280]">No weekly participation data yet.</p>
+          ) : (
+            <div className="flex h-40 items-end gap-2 pt-2">
+              {weekly.map((value, index) => (
+                <div key={index} className="flex flex-1 flex-col items-center gap-2">
+                  <div className="w-full rounded-t-md bg-[#005a40]/85" style={{ height: `${(value / max) * 100}%` }} />
+                  <span className="text-[10px] text-[#6b7280]">W{index + 1}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard title="Dietary update history">
           {updates.length === 0 ? (
-            <p className="text-sm text-[#6b7280]">No dietary updates yet.</p>
+            <p className="text-sm text-[#6b7280]">No dietary restrictions recorded.</p>
           ) : (
             <ul className="space-y-2">
               {updates.map((item) => (
@@ -133,11 +143,11 @@ export default function ClientNutritionProgressDetails() {
       </div>
 
       <SectionCard className="mt-4" title="Consultation history">
-        {client.consultations.length === 0 ? (
+        {(client.consultations || []).length === 0 ? (
           <p className="text-sm text-[#6b7280]">No consultations yet.</p>
         ) : (
           <ul className="space-y-2">
-            {client.consultations.map((item) => (
+            {(client.consultations || []).map((item) => (
               <li key={item.id} className="rounded-xl bg-[#f8faf9] px-4 py-3 text-sm">
                 <p className="font-semibold text-[#111827]">{item.type}</p>
                 <p className="mt-1 text-[#6b7280]">{item.summary}</p>

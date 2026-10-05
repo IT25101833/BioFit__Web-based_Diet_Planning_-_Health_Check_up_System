@@ -1,7 +1,15 @@
 import { ArrowRight, ShieldCheck } from 'lucide-react'
 import Button from '../ui/Button'
 
+const emptyProgress = [
+  { label: 'Programme consistency', value: null, detail: null },
+  { label: 'Meal participation', value: null, detail: null },
+  { label: 'Workout completion', value: null, detail: null },
+]
+
 export default function ProgressAndHealth({ progressItems = [], healthItems = [] }) {
+  const progressRows = progressItems.length > 0 ? progressItems : emptyProgress
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section>
@@ -15,21 +23,21 @@ export default function ProgressAndHealth({ progressItems = [], healthItems = []
         </div>
 
         <div className="space-y-4 rounded-[1.25rem] border border-[#e8ecf1] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-          {progressItems.map(({ label, value, detail }) => (
+          {progressRows.map(({ label, value, detail }) => (
             <div key={label}>
               <div className="mb-2 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-[13px] font-medium text-[#6b7280]">{label}</p>
-                  <p className="mt-0.5 text-[13px] text-[#8b93a1]">{detail}</p>
+                  <p className="mt-0.5 text-[13px] text-[#8b93a1]">{detail ?? '-'}</p>
                 </div>
                 <p className="font-display text-[1.65rem] font-bold tracking-tight text-[#111827]">
-                  {value}%
+                  {value != null ? `${value}%` : '-'}
                 </p>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-[#eef2f0]">
                 <div
                   className="bf-progress-fill h-full rounded-full bg-[#005a40]"
-                  style={{ width: `${value}%` }}
+                  style={{ width: `${value != null ? value : 0}%` }}
                 />
               </div>
             </div>
@@ -62,7 +70,7 @@ export default function ProgressAndHealth({ progressItems = [], healthItems = []
             {healthItems.map(({ label, value }) => (
               <div key={label} className="rounded-2xl bg-[#f8faf9] px-4 py-3">
                 <dt className="text-[12px] font-medium text-[#8b93a1]">{label}</dt>
-                <dd className="mt-1 text-sm font-semibold text-[#111827]">{value}</dd>
+                <dd className="mt-1 text-sm font-semibold text-[#111827]">{value ?? '-'}</dd>
               </div>
             ))}
           </dl>

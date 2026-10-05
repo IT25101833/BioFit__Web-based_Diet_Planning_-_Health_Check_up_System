@@ -76,6 +76,11 @@ const statusMap = {
   'attention required': { label: 'Attention Required', tone: 'amber' },
   locked: { label: 'Locked', tone: 'amber' },
   suspended: { label: 'Suspended', tone: 'amber' },
+  accepted: { label: 'Attended', tone: 'green' },
+  attended: { label: 'Attended', tone: 'green' },
+  rejected: { label: 'Rejected', tone: 'amber' },
+  success: { label: 'Success', tone: 'green' },
+  in_progress: { label: 'In Progress', tone: 'teal' },
 }
 
 export default function StatusBadge({ status, className = '' }) {

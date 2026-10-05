@@ -16,13 +16,6 @@ export async function fetchMedicalHistoryById(id) {
   return apiRequest(`/api/medical/medical-history/${id}`)
 }
 
-export async function createMedicalHistory(payload) {
-  return apiRequest('/api/medical/medical-history', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
 export async function updateMedicalHistory(id, payload) {
   return apiRequest(`/api/medical/medical-history/${id}`, {
     method: 'PUT',

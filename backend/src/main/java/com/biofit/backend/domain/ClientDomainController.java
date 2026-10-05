@@ -27,6 +27,9 @@ public class ClientDomainController {
     private final DomainService domainService;
     private final CompletionService completionService;
     private final BookingAvailabilityService bookingAvailabilityService;
+    private final MedicalReviewRequestService medicalReviewRequestService;
+    private final PlanAccessService planAccessService;
+    private final MedicalRequestService medicalRequestService;
 
     @GetMapping("/booking/catalog")
     public ApiResponse<Map<String, Object>> bookingCatalog(
@@ -112,9 +115,37 @@ public class ClientDomainController {
         return ApiResponse.ok(domainService.clientNotifications(principal.getId()));
     }
 
+    @GetMapping("/review-requests/pending")
+    public ApiResponse<List<Map<String, Object>>> pendingReviewRequests(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(medicalReviewRequestService.pendingForClient(principal.getId()));
+    }
+
+    @GetMapping("/review-requests/{id}")
+    public ApiResponse<Map<String, Object>> reviewRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(medicalReviewRequestService.getForClient(principal.getId(), id));
+    }
+
+    @PostMapping("/review-requests/{id}/book")
+    public ApiResponse<Map<String, Object>> bookReviewRequest(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        return ApiResponse.ok(medicalReviewRequestService.bookTime(principal.getId(), id, body));
+    }
+
+    @GetMapping("/notifications/unread-count")
+    public ApiResponse<Map<String, Object>> unreadNotificationCount(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(
+                Map.of("count", domainService.clientUnreadNotificationCount(principal.getId())));
+    }
+
     @PatchMapping("/notifications/{id}/read")
-    public ApiResponse<Map<String, Object>> markRead(@PathVariable String id) {
-        return ApiResponse.ok(domainService.markNotificationRead(id));
+    public ApiResponse<Map<String, Object>> markRead(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.markNotificationRead(principal.getId(), id));
     }
 
     @PatchMapping("/notifications/read-all")
@@ -178,5 +209,62 @@ public class ClientDomainController {
     public ApiResponse<Map<String, Object>> updateProfile(
             @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
         return ApiResponse.ok(domainService.updateClientProfile(principal.getId(), body));
+    }
+
+    @GetMapping("/plan-access-requests")
+    public ApiResponse<List<Map<String, Object>>> planAccessRequests(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(planAccessService.listForClient(principal));
+    }
+
+    @PostMapping("/plan-access-requests/{id}/decide")
+    public ApiResponse<Map<String, Object>> decidePlanAccess(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body) {
+        String decision =
+                body.get("status") != null ? String.valueOf(body.get("status")) : String.valueOf(body.get("decision"));
+        String reason = body.get("rejectionReason") == null ? null : String.valueOf(body.get("rejectionReason"));
+        return ApiResponse.ok(planAccessService.decide(principal, id, decision, reason));
+    }
+
+    @PostMapping("/plan-access-requests/{id}/revoke")
+    public ApiResponse<Map<String, Object>> revokePlanAccess(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(planAccessService.revoke(principal, id));
+    }
+
+    @GetMapping("/medical-advisors")
+    public ApiResponse<List<Map<String, Object>>> medicalAdvisors() {
+        return ApiResponse.ok(medicalRequestService.listAdvisors());
+    }
+
+    @GetMapping("/medical-requests/time-slots")
+    public ApiResponse<List<String>> medicalRequestTimeSlots() {
+        return ApiResponse.ok(medicalRequestService.preferredTimeSlots());
+    }
+
+    @GetMapping("/medical-requests")
+    public ApiResponse<List<Map<String, Object>>> medicalRequests(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(medicalRequestService.listForClient(principal));
+    }
+
+    @PostMapping("/medical-requests")
+    public ApiResponse<Map<String, Object>> createMedicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
+        return ApiResponse.ok(medicalRequestService.submit(principal, body));
+    }
+
+    @GetMapping("/medical-requests/{id}")
+    public ApiResponse<Map<String, Object>> medicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(medicalRequestService.getForClient(principal, id));
+    }
+
+    @PostMapping("/medical-requests/{id}/cancel")
+    public ApiResponse<Map<String, Object>> cancelMedicalRequest(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.ok(medicalRequestService.cancel(principal, id));
     }
 }

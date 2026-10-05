@@ -8,6 +8,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -50,6 +51,26 @@ public class AdminDomainController {
     @GetMapping("/audit-logs")
     public ApiResponse<List<Map<String, Object>>> auditLogs() {
         return ApiResponse.ok(completionService.adminAuditLogs());
+    }
+
+    @GetMapping("/appointments")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<List<Map<String, Object>>> appointments() {
+        return ApiResponse.ok(domainService.adminAppointments());
+    }
+
+    @DeleteMapping("/appointments/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> hardDeleteAppointment(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.hardDeleteAppointment(principal.getId(), id));
+    }
+
+    @DeleteMapping("/dietary-restrictions/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> hardDeleteDietary(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.hardDeleteInactiveDietary(principal.getId(), id));
     }
 
     @GetMapping("/payments")

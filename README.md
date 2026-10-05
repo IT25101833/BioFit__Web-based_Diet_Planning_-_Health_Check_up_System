@@ -58,24 +58,11 @@ App: `http://localhost:5173`
 | Variable | Meaning |
 |----------|---------|
 | `VITE_API_URL` | Backend base URL (default `http://localhost:8080`) |
-| `VITE_USE_MOCK` | `true` = mock adapters; `false` = call real API for wired domains |
+| `VITE_USE_MOCK` | Leave unset or `false`. The app uses the live API. |
 
-## Demo accounts
+## Accounts
 
-Password for all: **`Demo123!`**
-
-| Email | Role | Portal |
-|-------|------|--------|
-| `client@biofit.demo` | CLIENT | `/dashboard` |
-| `manager@biofit.demo` | WELLNESS_CENTRE_MANAGER | `/manager/dashboard` |
-| `coach@biofit.demo` | FITNESS_COACH | `/coach/dashboard` |
-| `nutrition@biofit.demo` | NUTRITION_CONSULTANT | `/nutrition/dashboard` |
-| `operations@biofit.demo` | DIGITAL_OPERATIONS_EXECUTIVE | `/admin/dashboard` |
-| `support@biofit.demo` | CUSTOMER_EXPERIENCE_OFFICER | `/support/dashboard` |
-| `medical@biofit.demo` | MEDICAL_ADVISOR | `/medical/dashboard` |
-| `admin@biofit.demo` | ADMIN | `/admin/dashboard` |
-
-Stakeholder interview names are **not** used as application users.
+The app does not create demo users on startup. Register a client from the sign-up page, or enable local bootstrap only on your machine (`BIOFIT_BOOTSTRAP_ACCOUNTS=true` and `BIOFIT_BOOTSTRAP_PASSWORD` in `backend/.env`). Roles are created by Flyway `V2__seed_roles.sql`.
 
 ## Auth API (current)
 
@@ -98,7 +85,7 @@ Stakeholder interview names are **not** used as application users.
 - `POST /api/client/health/goals`
 - `PATCH /api/client/health/goals/{id}`
 
-Set `VITE_USE_MOCK=false` in `frontend/.env` to use these live endpoints.
+These endpoints are used by the live app.
 
 Response envelope:
 
@@ -108,7 +95,7 @@ Response envelope:
 
 ## Development approach
 
-Portals remain available under existing routes. Domains are wired from mock → API incrementally (`VITE_USE_MOCK`). Do not hard-code stakeholder personas.
+Portals remain available under existing routes and read the live API. Do not hard-code stakeholder personas.
 
 ## License
 

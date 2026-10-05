@@ -5,7 +5,7 @@ import {
   validateBookingSlot,
 } from './bookingEngine'
 
-const STORAGE_KEY = 'biofit.booking.v1'
+const STORAGE_KEY = 'biofit.booking.v2'
 
 const ROLE_LABELS = {
   WELLNESS_CENTRE_MANAGER: 'Wellness Centre Manager',
@@ -151,62 +151,10 @@ function seedState() {
     }
   }
 
-  const today = new Date()
-  const sampleDate = new Date(today)
-  sampleDate.setDate(today.getDate() + 2)
-  while (sampleDate.getDay() === 0) sampleDate.setDate(sampleDate.getDate() + 1)
-  const sampleIso = sampleDate.toISOString().slice(0, 10)
-
   return {
     weeklyHours,
-    blocks: [
-      {
-        id: 'blk-1',
-        professionalId: 'med-elena',
-        date: sampleIso,
-        start: '2:00 PM',
-        end: '3:00 PM',
-        reason: 'Unavailable',
-      },
-    ],
-    bookings: [
-      {
-        id: 'apt-seed-1',
-        professionalId: 'coach-daniel',
-        professional: 'Daniel Perera',
-        professionalRole: 'Fitness Coach',
-        professionalUserId: 3,
-        service: 'Fitness Consultation',
-        serviceId: 'fitness',
-        date: sampleIso,
-        time: '10:00 AM',
-        duration: '45 min',
-        status: 'Upcoming',
-        clientName: 'Alex Morgan',
-        clientUserId: 1,
-        bookingReference: 'BF-APT-10421',
-        notes: 'Wear comfortable clothing.',
-        location: 'VitalLife Wellness Centre · Studio 2',
-      },
-      {
-        id: 'apt-seed-2',
-        professionalId: 'med-elena',
-        professional: 'Elena Costa',
-        professionalRole: 'Medical Advisor',
-        professionalUserId: 7,
-        service: 'Health Check-up',
-        serviceId: 'checkup',
-        date: sampleIso,
-        time: '6:30 AM',
-        duration: '60 min',
-        status: 'Upcoming',
-        clientName: 'Alex Morgan',
-        clientUserId: 1,
-        bookingReference: 'BF-APT-10458',
-        notes: 'Routine wellness review.',
-        location: 'VitalLife Wellness Centre · Health Suite',
-      },
-    ],
+    blocks: [],
+    bookings: [],
     notifications: [],
   }
 }
@@ -245,6 +193,7 @@ export function resetBookingStore() {
 
 export function listProfessionals({ audience = 'CLIENT', serviceId } = {}) {
   return BOOKABLE_PROFESSIONALS.filter((p) => {
+    if (p.roleKey === 'MEDICAL_ADVISOR') return false
     if (audience === 'CLIENT' && p.audience !== 'CLIENT') return false
     if (audience === 'STAFF' && p.roleKey !== 'WELLNESS_CENTRE_MANAGER') return false
     if (serviceId && !p.services.includes(serviceId)) return false
@@ -253,7 +202,9 @@ export function listProfessionals({ audience = 'CLIENT', serviceId } = {}) {
 }
 
 export function listServices(audience = 'CLIENT') {
-  return BOOKING_SERVICES.filter((s) => s.forAudience === audience)
+  return BOOKING_SERVICES.filter(
+    (s) => s.forAudience === audience && s.id !== 'checkup' && s.id !== 'medical',
+  )
 }
 
 export function getProfessionalAvailability(professionalId, dateIso, duration = '45 min') {
@@ -313,8 +264,8 @@ export function createMockBooking(payload) {
     duration,
     notes: payload.notes || 'Please arrive 10 minutes early for check-in.',
     location: payload.location || 'VitalLife Wellness Centre',
-    clientName: payload.clientName || 'Alex Morgan',
-    clientUserId: payload.clientUserId || 1,
+    clientName: payload.clientName || '',
+    clientUserId: payload.clientUserId || null,
     audience: payload.audience || 'CLIENT',
   }
 

@@ -23,9 +23,6 @@ const emptyForm = {
   professionalNotes: '',
   followUpRequired: false,
   nextReviewDate: '',
-  guidanceRequired: false,
-  fitnessGuidance: '',
-  nutritionGuidance: '',
 }
 
 function listToText(value) {
@@ -58,7 +55,6 @@ export default function MedicalRecordForm({
   useEffect(() => {
     if (!initialValues) return
     const history = initialValues.medicalHistory || {}
-    const guidance = initialValues.wellnessGuidance || {}
     const nextReviewRaw = initialValues.nextReviewDate || initialValues.nextCheckup || ''
     setForm({
       ...emptyForm,
@@ -75,9 +71,6 @@ export default function MedicalRecordForm({
       professionalNotes: initialValues.professionalNotes || '',
       followUpRequired: Boolean(initialValues.followUpRequired),
       nextReviewDate: nextReviewRaw ? String(nextReviewRaw).slice(0, 10) : '',
-      guidanceRequired: Boolean(initialValues.guidanceRequired),
-      fitnessGuidance: guidance.fitness || initialValues.fitnessGuidance || '',
-      nutritionGuidance: guidance.nutrition || initialValues.nutritionGuidance || '',
     })
     setErrors({})
   }, [initialValues])
@@ -147,13 +140,7 @@ export default function MedicalRecordForm({
       },
       professionalNotes: form.professionalNotes || '',
       followUpRequired: form.followUpRequired,
-      guidanceRequired: form.guidanceRequired,
       recordStatus: form.followUpRequired ? 'Review Required' : 'Up to Date',
-      wellnessGuidance: {
-        fitness: form.fitnessGuidance || '',
-        nutrition: form.nutritionGuidance || '',
-        status: form.guidanceRequired ? 'Update Required' : 'Current',
-      },
     }
     if (form.nextReviewDate) {
       payload.nextReviewDate = form.nextReviewDate
@@ -178,7 +165,7 @@ export default function MedicalRecordForm({
           options.length === 0 ? (
             <p className="rounded-2xl border border-[#eef2f0] bg-[#f8faf9] px-4 py-3 text-sm text-[#6b7280]">
               {clientsEmptyMessage ||
-                'No attended clients available. Attend a patient first to select a client.'}
+                'No attended clients available. Mark a Medical Request as attended first.'}
             </p>
           ) : (
             <Select
@@ -272,12 +259,6 @@ export default function MedicalRecordForm({
             onChange={(e) => update('followUpRequired', e.target.checked)}
             label="Follow-up required"
           />
-          <Checkbox
-            id="guidance-required"
-            checked={form.guidanceRequired}
-            onChange={(e) => update('guidanceRequired', e.target.checked)}
-            label="Wellness safety guidance required"
-          />
           <Input
             type="date"
             label="Next review date"
@@ -285,24 +266,6 @@ export default function MedicalRecordForm({
             min={today}
             onChange={(e) => handleNextReviewChange(e.target.value)}
             error={errors.nextReviewDate}
-          />
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Shared Wellness Guidance">
-        <p className="mb-4 text-[12px] text-[#6b7280]">
-          Only high-level safety guidance appropriate for Fitness Coach and Nutrition Consultant.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <TextArea
-            label="Fitness guidance"
-            value={form.fitnessGuidance}
-            onChange={(e) => update('fitnessGuidance', e.target.value)}
-          />
-          <TextArea
-            label="Nutrition guidance"
-            value={form.nutritionGuidance}
-            onChange={(e) => update('nutritionGuidance', e.target.value)}
           />
         </div>
       </SectionCard>

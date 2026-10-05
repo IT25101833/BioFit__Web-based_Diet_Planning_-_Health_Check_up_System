@@ -10,6 +10,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -33,6 +34,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleAuth(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ApiResponse.fail("UNAUTHORIZED", "Invalid email or password."));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUpload(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.fail("VALIDATION_ERROR", "Receipt must be 5 MB or smaller."));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

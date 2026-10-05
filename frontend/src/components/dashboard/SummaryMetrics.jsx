@@ -24,6 +24,7 @@ export default function SummaryMetrics({ cards = [] }) {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map(({ title, value, support, badge, badgeTone }) => {
           const Icon = iconByTitle[title] || Activity
+          const hasBadge = Boolean(badge)
           return (
             <article
               key={title}
@@ -33,20 +34,26 @@ export default function SummaryMetrics({ cards = [] }) {
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e6f5f0] text-[#005a40]">
                   <Icon className="h-[18px] w-[18px]" strokeWidth={2.1} />
                 </span>
-                <span
-                  className={[
-                    'rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide uppercase',
-                    badgeStyles[badgeTone] || badgeStyles.green,
-                  ].join(' ')}
-                >
-                  {badge}
-                </span>
+                {hasBadge ? (
+                  <span
+                    className={[
+                      'rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide uppercase',
+                      badgeStyles[badgeTone] || badgeStyles.green,
+                    ].join(' ')}
+                  >
+                    {badge}
+                  </span>
+                ) : (
+                  <span className="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide uppercase text-[#8b93a1]">
+                    -
+                  </span>
+                )}
               </div>
               <p className="mt-4 text-[13px] font-medium text-[#6b7280]">{title}</p>
               <p className="mt-1 font-display text-[1.35rem] font-bold tracking-tight text-[#111827]">
-                {value}
+                {value ?? '-'}
               </p>
-              <p className="mt-1 text-[13px] text-[#8b93a1]">{support}</p>
+              <p className="mt-1 text-[13px] text-[#8b93a1]">{support ?? '-'}</p>
             </article>
           )
         })}

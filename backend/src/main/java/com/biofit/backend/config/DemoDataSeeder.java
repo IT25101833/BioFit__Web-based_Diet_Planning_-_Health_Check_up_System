@@ -56,9 +56,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             log.info("Demo data seeding skipped (biofit.seed-demo-data=false)");
             return;
         }
-        if (userRepository.count() == 0) {
-            seedUsers();
-        }
+        seedUsers();
         seedMedicalPortalClients();
         if (healthProfileRepository.count() == 0) {
             seedClientHealth();
@@ -109,7 +107,11 @@ public class DemoDataSeeder implements ApplicationRunner {
                                 "Preventive health"),
                         new SeedUser("admin@biofit.demo", "Sam", "Okoye", RoleName.ADMIN, "System admin"));
 
+        int created = 0;
         for (SeedUser seed : seeds) {
+            if (userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull(seed.email()).isPresent()) {
+                continue;
+            }
             Role role =
                     roleRepository
                             .findByName(seed.role())
@@ -124,9 +126,12 @@ public class DemoDataSeeder implements ApplicationRunner {
             user.setEmailVerified(true);
             user.setRoles(Set.of(role));
             userRepository.save(user);
+            created++;
         }
 
-        log.info("Seeded {} BioFit demo users (password: Demo123!)", seeds.size());
+        if (created > 0) {
+            log.info("Seeded {} BioFit demo users (password: Demo123!)", created);
+        }
     }
 
     private void seedMedicalPortalClients() {

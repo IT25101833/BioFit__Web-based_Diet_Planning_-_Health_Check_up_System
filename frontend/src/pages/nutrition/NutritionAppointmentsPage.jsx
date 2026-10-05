@@ -3,7 +3,7 @@ import NutritionAppointments from '../../features/nutrition/appointments/Nutriti
 
 export default function NutritionAppointmentsPage() {
   return (
-    <NutritionLayout title="Appointments" breadcrumb="Nutrition Consultant">
+    <NutritionLayout title="Appointment Lobby" breadcrumb="Nutrition Consultant">
       <NutritionAppointments />
     </NutritionLayout>
   )

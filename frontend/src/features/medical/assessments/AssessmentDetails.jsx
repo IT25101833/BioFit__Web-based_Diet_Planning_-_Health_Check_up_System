@@ -95,13 +95,6 @@ export default function AssessmentDetails() {
               Edit Assessment
             </Button>
             <Button
-              to="/medical/appointments"
-              variant="outline"
-              className="!text-[#005a40]"
-            >
-              Create Follow-up
-            </Button>
-            <Button
               to={raiseAlertHref}
               className="!bg-[#005a40] !text-white hover:!bg-[#004833]"
             >

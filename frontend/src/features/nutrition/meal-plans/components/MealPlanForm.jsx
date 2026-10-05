@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import Button from '../../../../components/ui/Button'
 import Input from '../../../../components/ui/Input'
@@ -12,7 +12,7 @@ const mealSections = ['Breakfast', 'Mid-morning Snack', 'Lunch', 'Afternoon Snac
 
 function newMeal(section = 'Breakfast') {
   return {
-    id: `meal-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: `meal-${Date.now()}`,
     section,
     name: '',
     description: '',
@@ -24,7 +24,7 @@ function newMeal(section = 'Breakfast') {
 
 function newDay(label = 'Monday') {
   return {
-    id: `day-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: `day-${Date.now()}`,
     day: label,
     meals: [newMeal('Breakfast')],
   }
@@ -51,8 +51,12 @@ export default function MealPlanForm({
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState({})
   const [restrictions, setRestrictions] = useState([])
-  const clients = useMemo(() => getMealPlanClientOptions(), [])
+  const [clients, setClients] = useState([])
   const selectedClient = clients.find((c) => c.value === form.clientId)?.client
+
+  useEffect(() => {
+    getMealPlanClientOptions().then(setClients).catch(() => setClients([]))
+  }, [])
 
   useEffect(() => {
     if (initialValues) {
@@ -89,15 +93,22 @@ export default function MealPlanForm({
       next.safety = 'Review the client’s dietary restrictions before assigning this plan.'
     }
     const allergyNames = restrictions
-      .filter((r) => r.type === 'Medical Allergy' && r.status === 'Active')
-      .map((r) => r.name.toLowerCase())
+      .filter((r) => r.type === 'Medical Allergy' && r.status === 'Active' && r.name)
+      .map((r) => String(r.name).toLowerCase())
     const conflict = form.days.some((day) =>
-      day.meals.some((meal) =>
-        allergyNames.some(
-          (name) =>
-            meal.name.toLowerCase().includes(name.split(' ')[0]) ||
-            meal.description.toLowerCase().includes(name.split(' ')[0]),
-        ),
+      (day.meals || []).some((meal) =>
+        allergyNames.some((name) => {
+          const token = name.split(' ')[0]
+          if (!token) return false
+          return (
+            String(meal.name || '')
+              .toLowerCase()
+              .includes(token) ||
+            String(meal.description || '')
+              .toLowerCase()
+              .includes(token)
+          )
+        }),
       ),
     )
     if (conflict) {

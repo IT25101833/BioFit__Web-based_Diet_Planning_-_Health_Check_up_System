@@ -15,7 +15,7 @@ export default function NutritionLayout({ children, title = 'Dashboard', breadcr
           breadcrumb={breadcrumb}
           notificationsTo="/nutrition/notifications"
           profileTo="/nutrition/profile"
-          fallbackName="Maya Fernando"
+          fallbackName=""
           fallbackRole="Nutrition Consultant"
           onOpenMenu={() => setMobileOpen(true)}
         />

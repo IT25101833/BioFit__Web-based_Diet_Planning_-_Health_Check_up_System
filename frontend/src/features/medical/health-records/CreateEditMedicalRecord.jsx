@@ -21,7 +21,9 @@ function toSelectOptions(clients) {
   return (Array.isArray(clients) ? clients : [])
     .map((c) => ({
       value: String(c.id ?? c.userId ?? ''),
-      label: c.name || c.clientName || 'Client',
+      label: `${c.name || c.clientName || 'Client'}${
+        c.clientId || c.id || c.userId ? ` - ${c.clientId || `BF-C${c.id ?? c.userId}`}` : ''
+      }`,
       programme: c.programme || '',
       userId: c.id ?? c.userId,
       clientCode: c.clientId || (c.id || c.userId ? `BF-C${c.id ?? c.userId}` : ''),
@@ -66,7 +68,7 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
           setClientWarning('')
         } else {
           setClientWarning(
-            `Client user ID ${clientUserIdParam} is not in your attended clients list. Attend them from Appointments first.`,
+            `Client user ID ${clientUserIdParam} is not in your attended clients list. Attend the Medical Request first.`,
           )
         }
       }
@@ -171,7 +173,7 @@ export default function CreateEditMedicalRecord({ mode = 'create' }) {
         clients={clients}
         clientsEmptyMessage={
           mode === 'create'
-            ? 'No attended clients available. Attend a patient from Appointments first to select a client.'
+            ? 'No attended clients available. Mark a Medical Request as attended first.'
             : undefined
         }
         saving={saving}

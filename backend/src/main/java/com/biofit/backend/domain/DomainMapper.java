@@ -216,7 +216,7 @@ public class DomainMapper {
             m.put("days", days != null ? days : List.of());
             m.put("considerations", considerations != null ? considerations : List.of());
             m.put("history", history != null ? history : List.of());
-            m.put("consultant", consultant != null ? consultant : "Maya Fernando");
+            m.put("consultant", consultant != null ? consultant : "");
         } else {
             m.put("days", List.of());
             m.put("considerations", List.of());
@@ -254,6 +254,13 @@ public class DomainMapper {
 
     private String str(LocalDate d) {
         return d == null ? null : ISO_DATE.format(d);
+    }
+
+    public String endTimeFor(Appointment a) {
+        if (a == null) {
+            return null;
+        }
+        return endTimeLabel(a.getAppointmentTime(), a.getDuration());
     }
 
     private static String endTimeLabel(String startLabel, String durationLabel) {

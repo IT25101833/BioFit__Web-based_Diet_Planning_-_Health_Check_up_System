@@ -11,4 +11,7 @@ public interface MedicalHistoryEntryRepository extends JpaRepository<MedicalHist
     List<MedicalHistoryEntry> findAllByOrderByUpdatedAtDesc();
 
     List<MedicalHistoryEntry> findByUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(Long userId, String status);
+
+    List<MedicalHistoryEntry> findBySourceHealthRecordIdAndSourceFieldOrderBySourceIndexAscIdAsc(
+            Long sourceHealthRecordId, String sourceField);
 }

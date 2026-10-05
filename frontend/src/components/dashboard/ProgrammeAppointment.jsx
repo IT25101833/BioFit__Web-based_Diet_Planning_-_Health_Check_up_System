@@ -1,7 +1,20 @@
 import { ArrowRight, CheckCircle2 } from 'lucide-react'
 import Button from '../ui/Button'
 
-export default function ProgrammeAppointment() {
+export default function ProgrammeAppointment({ programme, appointment }) {
+  const name = programme?.name ?? '-'
+  const week = programme?.week ?? '-'
+  const progressPercent = programme?.progressPercent
+  const remainingWeeks = programme?.remainingWeeks
+  const isActive = Boolean(programme?.name && programme?.status)
+
+  const day = appointment?.day ?? '-'
+  const month = appointment?.month ?? '-'
+  const title = appointment?.title ?? '-'
+  const professional = appointment?.professional ?? '-'
+  const time = appointment?.time ?? '-'
+  const status = appointment?.status ?? '-'
+
   return (
     <section id="programme" className="scroll-mt-8">
       <div className="mb-4 flex items-end justify-between gap-3">
@@ -23,26 +36,36 @@ export default function ProgrammeAppointment() {
                 Current Programme
               </p>
               <h3 className="mt-1 font-display text-xl font-bold tracking-tight text-[#111827]">
-                Weight Management
+                {name}
               </h3>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f5f0] px-2.5 py-1 text-[10px] font-bold text-[#005a40] uppercase">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
-              Active
-            </span>
+            {isActive ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f5f0] px-2.5 py-1 text-[10px] font-bold text-[#005a40] uppercase">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
+                {programme.status}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f4f6fb] px-2.5 py-1 text-[10px] font-bold text-[#8b93a1] uppercase">
+                -
+              </span>
+            )}
           </div>
 
-          <p className="mt-4 text-sm text-[#4b5563]">Week 4 of 12</p>
+          <p className="mt-4 text-sm text-[#4b5563]">{week}</p>
 
           <div className="mt-3">
             <div className="mb-1.5 flex items-center justify-between text-[12px]">
-              <span className="font-semibold text-[#005a40]">33% Complete</span>
-              <span className="text-[#8b93a1]">8 weeks remaining</span>
+              <span className="font-semibold text-[#005a40]">
+                {progressPercent != null ? `${progressPercent}% Complete` : '-'}
+              </span>
+              <span className="text-[#8b93a1]">
+                {remainingWeeks != null ? `${remainingWeeks} weeks remaining` : '-'}
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#eef2f0]">
               <div
                 className="bf-progress-fill h-full rounded-full bg-[#005a40]"
-                style={{ width: '33%' }}
+                style={{ width: `${progressPercent != null ? progressPercent : 0}%` }}
               />
             </div>
           </div>
@@ -67,20 +90,22 @@ export default function ProgrammeAppointment() {
 
           <div className="mt-4 flex gap-4">
             <div className="flex h-[72px] w-[64px] shrink-0 flex-col items-center justify-center rounded-2xl bg-[#e6f5f0] text-[#005a40]">
-              <span className="font-display text-2xl font-bold leading-none">08</span>
+              <span className="font-display text-2xl font-bold leading-none">{day}</span>
               <span className="mt-1 text-[11px] font-bold tracking-[0.12em] uppercase">
-                Sep
+                {month}
               </span>
             </div>
             <div className="min-w-0">
               <h3 className="font-display text-lg font-bold tracking-tight text-[#111827]">
-                Medical Review
+                {title}
               </h3>
-              <p className="mt-1 text-sm text-[#4b5563]">Dr. Jordan Lee</p>
-              <p className="mt-1 text-sm text-[#6b7280]">9:00 AM – 9:30 AM</p>
+              <p className="mt-1 text-sm text-[#4b5563]">{professional}</p>
+              <p className="mt-1 text-sm text-[#6b7280]">{time}</p>
               <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#005a40]">
-                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.3} />
-                Confirmed
+                {appointment?.status ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.3} />
+                ) : null}
+                {status}
               </p>
             </div>
           </div>

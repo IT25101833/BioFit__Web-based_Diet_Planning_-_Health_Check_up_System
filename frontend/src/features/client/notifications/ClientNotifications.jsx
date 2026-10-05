@@ -32,6 +32,14 @@ function formatDateTime(value) {
   })
 }
 
+function chooseTimePath(item) {
+  const link = item?.link
+  if (typeof link === 'string' && link.includes('reviewRequestId=')) {
+    return link.startsWith('/') ? link : `/${link}`
+  }
+  return null
+}
+
 export default function ClientNotifications() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -56,7 +64,12 @@ export default function ClientNotifications() {
 
   const filtered = useMemo(() => {
     if (filter === 'all') return items
-    return items.filter((item) => item.type === filter)
+    return items.filter((item) => {
+      const type = String(item.type || '').toLowerCase()
+      if (filter === 'appointment') return type.includes('appointment')
+      if (filter === 'meal') return type.includes('meal') || type.includes('nutrition')
+      return type === filter || type.includes(filter)
+    })
   }, [items, filter])
 
   const unreadCount = items.filter((item) => !item.read).length
@@ -118,42 +131,56 @@ export default function ClientNotifications() {
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map((item) => (
-            <article
-              key={item.id}
-              className={[
-                'rounded-[1.25rem] border bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:p-5',
-                item.read ? 'border-[#e8ecf1]' : 'border-[#005a40]/25 bg-[#f7fbf9]',
-              ].join(' ')}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-display text-base font-bold text-[#111827]">
-                      {item.title}
-                    </h2>
-                    <StatusBadge status={item.read ? 'Read' : 'Unread'} />
+          {filtered.map((item) => {
+            const timePath = chooseTimePath(item)
+            return (
+              <article
+                key={item.id}
+                className={[
+                  'rounded-[1.25rem] border bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:p-5',
+                  item.read ? 'border-[#e8ecf1]' : 'border-[#005a40]/25 bg-[#f7fbf9]',
+                ].join(' ')}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-display text-base font-bold text-[#111827]">
+                        {item.title}
+                      </h2>
+                      <StatusBadge status={item.read ? 'Read' : 'Unread'} />
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed text-[#4b5563]">
+                      {item.body || item.message}
+                    </p>
+                    <p className="mt-2 text-[12px] text-[#8b93a1]">
+                      {formatDateTime(item.createdAt)}
+                    </p>
                   </div>
-                  <p className="mt-2 text-sm leading-relaxed text-[#4b5563]">
-                    {item.body}
-                  </p>
-                  <p className="mt-2 text-[12px] text-[#8b93a1]">
-                    {formatDateTime(item.createdAt)}
-                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {timePath ? (
+                      <Button
+                        to={timePath}
+                        size="sm"
+                        className="!bg-[#005a40] hover:!bg-[#004833]"
+                      >
+                        Choose Time
+                      </Button>
+                    ) : null}
+                    {!item.read ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleMarkRead(item.id)}
+                        className="!border-[#005a40]/25 !text-[#005a40]"
+                      >
+                        Mark as read
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                {!item.read ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleMarkRead(item.id)}
-                    className="!border-[#005a40]/25 !text-[#005a40]"
-                  >
-                    Mark as read
-                  </Button>
-                ) : null}
-              </div>
-            </article>
-          ))}
+              </article>
+            )
+          })}
         </div>
       )}
     </div>

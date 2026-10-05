@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronLeft, ChevronRight, Clock3 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
@@ -15,8 +15,10 @@ import {
 } from '../../booking/bookingEngine'
 import YourBookingsSection from './components/YourBookingsSection'
 import {
+  bookMedicalReviewRequest,
   createClientAppointment,
   fetchBookingCatalog,
+  fetchMedicalReviewRequest,
   fetchProfessionalAvailability,
   getBookingDateOptions,
 } from './data/appointmentData'
@@ -25,6 +27,9 @@ const steps = ['Service', 'Professional', 'Date', 'Time', 'Review', 'Confirm']
 
 export default function BookAppointment({ audience = 'CLIENT', successPath } = {}) {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const reviewRequestId = searchParams.get('reviewRequestId') || ''
+
   const [step, setStep] = useState(0)
   const [services, setServices] = useState([])
   const [professionals, setProfessionals] = useState([])
@@ -38,7 +43,17 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
   const [bookingsRefreshKey, setBookingsRefreshKey] = useState(0)
-  const dateOptions = useMemo(() => getBookingDateOptions(), [])
+  const [reviewLocked, setReviewLocked] = useState(false)
+  const [reviewMeta, setReviewMeta] = useState(null)
+  const [loadingReview, setLoadingReview] = useState(Boolean(reviewRequestId))
+
+  const dateOptions = useMemo(() => {
+    const base = getBookingDateOptions()
+    if (date && !base.includes(date)) {
+      return [date, ...base]
+    }
+    return base
+  }, [date])
 
   useEffect(() => {
     let cancelled = false
@@ -56,11 +71,49 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     }
   }, [audience])
 
+  useEffect(() => {
+    if (!reviewRequestId) {
+      setLoadingReview(false)
+      return undefined
+    }
+    let cancelled = false
+    setLoadingReview(true)
+    fetchMedicalReviewRequest(reviewRequestId)
+      .then((req) => {
+        if (cancelled) return
+        if (String(req.status || '').toUpperCase() === 'BOOKED') {
+          setError('Review appointment already booked')
+          setReviewLocked(false)
+          return
+        }
+        setReviewMeta(req)
+        setServiceId(req.serviceId || 'medical')
+        setProfessionalId(req.professionalId || `user-${req.advisorUserId}`)
+        setDate(req.reviewDate || '')
+        setReviewLocked(true)
+        setStep(3)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err?.message || 'This review request is no longer active.')
+          setReviewLocked(false)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReview(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reviewRequestId])
+
   const service = services.find((item) => item.id === serviceId)
   const filteredProfessionals = professionals.filter(
     (item) => !serviceId || item.services?.includes(serviceId),
   )
-  const professional = filteredProfessionals.find((item) => item.id === professionalId)
+  const professional =
+    filteredProfessionals.find((item) => item.id === professionalId) ||
+    professionals.find((item) => item.id === professionalId)
 
   useEffect(() => {
     if (!professionalId || !date || !service) {
@@ -73,7 +126,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     fetchProfessionalAvailability({
       professionalId,
       date,
-      duration: service.duration,
+      duration: service.duration || reviewMeta?.duration || '30 min',
       audience,
     })
       .then((data) => {
@@ -96,7 +149,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     return () => {
       cancelled = true
     }
-  }, [professionalId, date, service, audience])
+  }, [professionalId, date, service, audience, reviewMeta?.duration])
 
   function canContinue() {
     if (step === 0) return Boolean(serviceId)
@@ -121,6 +174,8 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     setTime('')
     setAvailability(null)
     setError('')
+    setReviewLocked(false)
+    setReviewMeta(null)
   }
 
   async function handleConfirm() {
@@ -132,16 +187,22 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     setSubmitting(true)
     setError('')
     try {
+      if (reviewLocked && reviewRequestId) {
+        await bookMedicalReviewRequest(reviewRequestId, { time })
+        setToast('Medical review confirmed. Your dashboard will show the appointment.')
+        navigate('/dashboard')
+        return
+      }
       await createClientAppointment({
         service: service?.name,
         serviceId: service?.id,
-        professionalId: professional?.id,
-        professional: professional?.name,
-        professionalRole: professional?.role,
-        professionalUserId: professional?.userId,
+        professionalId: professional?.id || professionalId,
+        professional: professional?.name || reviewMeta?.advisorName,
+        professionalRole: professional?.role || 'Medical Advisor',
+        professionalUserId: professional?.userId || reviewMeta?.advisorUserId,
         date,
         time,
-        duration: service?.duration,
+        duration: service?.duration || '30 min',
         audience,
         notes: 'Please arrive 10 minutes early for check-in.',
         location: 'VitalLife Wellness Centre',
@@ -150,39 +211,93 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
       resetWizard()
       setBookingsRefreshKey((key) => key + 1)
     } catch (err) {
-      setError(err?.message || 'This slot is no longer available. Please try another time.')
+      setError(
+        err?.message ||
+          'This time slot is no longer available. Please select another time.',
+      )
       setStep(3)
+      if (professionalId && date && service) {
+        try {
+          const data = await fetchProfessionalAvailability({
+            professionalId,
+            date,
+            duration: service.duration || '30 min',
+            audience,
+          })
+          setAvailability({
+            ...data,
+            availableSlots: filterAvailableSlotsForDate(data?.availableSlots || [], date),
+          })
+          setTime('')
+        } catch {
+          /* keep previous slots */
+        }
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   const listPath = successPath || (audience === 'STAFF' ? '/coach/dashboard' : '/client/appointments')
+  const advisorLabel = professional?.name || reviewMeta?.advisorName || 'Medical Advisor'
+  const serviceLabel = service?.name || reviewMeta?.serviceName || 'Medical Review'
+  const durationLabel = service?.duration || reviewMeta?.duration || '30 min'
+
+  if (loadingReview) {
+    return (
+      <div>
+        <PageHeader
+          title="Book Appointment"
+          description="Loading your medical review request…"
+        />
+        <p className="text-sm text-[var(--bf-muted)]">Please wait…</p>
+      </div>
+    )
+  }
 
   return (
     <div>
       <PageHeader
-        title="Book Appointment"
-        description="Pick a person, see their open hours, and book an available slot automatically."
+        title={reviewLocked ? 'Choose Review Time' : 'Book Appointment'}
+        description={
+          reviewLocked
+            ? 'Your Medical Advisor selected the date. Pick an available time to confirm.'
+            : 'Pick a person, see their open hours, and book an available slot automatically.'
+        }
       />
 
-      <div className="mb-6 flex flex-wrap gap-2" aria-label="Booking steps">
-        {steps.map((label, index) => (
-          <span
-            key={label}
-            className={[
-              'rounded-full px-3 py-1.5 text-[12px] font-semibold',
-              index === step
-                ? 'bg-[var(--bf-primary)] text-[var(--bf-ink)]'
-                : index < step
-                  ? 'bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]'
-                  : 'bg-[var(--bf-surface)] text-[var(--bf-muted)]',
-            ].join(' ')}
-          >
-            {index + 1}. {label}
-          </span>
-        ))}
-      </div>
+      {reviewLocked ? (
+        <div className="mb-6 rounded-2xl border border-[#e8ecf1] bg-[#f7fbf9] px-4 py-4 text-sm text-[#374151]">
+          <p>
+            <span className="font-semibold text-[#111827]">Appointment Type:</span> {serviceLabel}
+          </p>
+          <p className="mt-1">
+            <span className="font-semibold text-[#111827]">Medical Advisor:</span> {advisorLabel}
+          </p>
+          <p className="mt-1">
+            <span className="font-semibold text-[#111827]">Date:</span>{' '}
+            {reviewMeta?.reviewDateLabel || date}
+          </p>
+        </div>
+      ) : (
+        <div className="mb-6 flex flex-wrap gap-2" aria-label="Booking steps">
+          {steps.map((label, index) => (
+            <span
+              key={label}
+              className={[
+                'rounded-full px-3 py-1.5 text-[12px] font-semibold',
+                index === step
+                  ? 'bg-[var(--bf-primary)] text-[var(--bf-ink)]'
+                  : index < step
+                    ? 'bg-[var(--bf-primary-soft)] text-[var(--bf-ink)]'
+                    : 'bg-[var(--bf-surface)] text-[var(--bf-muted)]',
+              ].join(' ')}
+            >
+              {index + 1}. {label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {error ? (
         <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-200">
@@ -191,7 +306,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
       ) : null}
 
       <SectionCard>
-        {step === 0 && (
+        {step === 0 && !reviewLocked && (
           <div className="grid gap-3 sm:grid-cols-2">
             {services.map((item) => (
               <button
@@ -220,7 +335,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
           </div>
         )}
 
-        {step === 1 && (
+        {step === 1 && !reviewLocked && (
           <div className="grid gap-3 sm:grid-cols-2">
             {filteredProfessionals.length === 0 ? (
               <p className="text-sm text-[var(--bf-muted)]">
@@ -251,7 +366,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
           </div>
         )}
 
-        {step === 2 && (
+        {step === 2 && !reviewLocked && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {dateOptions.map((iso) => {
               const label = new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', {
@@ -283,6 +398,9 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
 
         {step === 3 && (
           <div className="space-y-4">
+            {reviewLocked ? (
+              <p className="text-sm font-semibold text-[#111827]">Choose a Time:</p>
+            ) : null}
             {loadingSlots ? (
               <p className="text-sm text-[var(--bf-muted)]">Checking availability…</p>
             ) : null}
@@ -297,57 +415,17 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
             ) : null}
 
             {availability?.unavailableWindows?.length ? (
-              <div>
-                <p className="mb-2 text-xs font-semibold tracking-wide text-[var(--bf-muted)] uppercase">
-                  Unavailable
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {availability.unavailableWindows.map((window) => (
-                    <span
-                      key={`${window.start}-${window.end}-${window.reason}`}
-                      className="rounded-full bg-[var(--bf-surface)] px-3 py-1.5 text-[12px] text-[var(--bf-muted)]"
-                    >
-                      {window.start}–{window.end}
-                      {window.reason ? ` · ${window.reason}` : ''}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {availability?.freeRanges?.length ? (
-              <div>
-                <p className="mb-2 text-xs font-semibold tracking-wide text-[var(--bf-muted)] uppercase">
-                  Open ranges
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {availability.freeRanges.map((range) => (
-                    <span
-                      key={`${range.start}-${range.end}`}
-                      className="rounded-full bg-[var(--bf-primary-soft)] px-3 py-1.5 text-[12px] font-medium text-[var(--bf-ink)]"
-                    >
-                      {range.start}–{range.end}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {availability?.message ? (
-              <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-sm text-[var(--bf-ink)]">
-                {availability.message}
+              <p className="text-[12px] text-[var(--bf-muted)]">
+                Some times are already booked or blocked and are hidden below.
               </p>
             ) : null}
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {(availability?.availableSlots || []).map((slot) => (
                 <button
                   key={slot}
                   type="button"
-                  onClick={() => {
-                    setTime(slot)
-                    setError('')
-                  }}
+                  onClick={() => setTime(slot)}
                   className={[
                     'rounded-2xl border px-3 py-3 text-sm font-semibold transition-colors',
                     time === slot
@@ -359,31 +437,32 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                 </button>
               ))}
             </div>
+
+            {!loadingSlots && !(availability?.availableSlots || []).length ? (
+              <p className="text-sm text-[var(--bf-muted)]">
+                No available times on this date. Please ask your advisor to pick another review date.
+              </p>
+            ) : null}
           </div>
         )}
 
         {(step === 4 || step === 5) && (
-          <div className="space-y-3 text-sm">
-            <ReviewRow label="Service" value={service?.name} />
-            <ReviewRow label="Professional" value={professional?.name} />
-            <ReviewRow
-              label="Date"
-              value={
-                date
-                  ? new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })
-                  : ''
-              }
-            />
-            <ReviewRow label="Time" value={timeRangeLabel(time, service?.duration)} />
-            <ReviewRow label="Duration" value={service?.duration} />
+          <div className="space-y-3 text-sm text-[var(--bf-ink)]">
+            <div className="flex items-start gap-3 rounded-2xl bf-neo-inset px-4 py-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 text-[var(--bf-ink)]" />
+              <div>
+                <p className="font-semibold">{serviceLabel}</p>
+                <p className="mt-1 text-[var(--bf-muted)]">
+                  with {advisorLabel}
+                </p>
+                <p className="mt-1 text-[var(--bf-muted)]">
+                  {date} · {timeRangeLabel(time, durationLabel)}
+                </p>
+              </div>
+            </div>
             {step === 5 ? (
-              <p className="rounded-2xl bg-[var(--bf-primary-soft)] px-4 py-3 text-[var(--bf-ink)]">
-                Confirm to book this slot. Overlaps and blocked times are rejected automatically.
+              <p className="text-[var(--bf-muted)]">
+                Confirm to reserve this slot. Availability is checked again on the server.
               </p>
             ) : null}
           </div>
@@ -392,54 +471,49 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <Button
             variant="outline"
-            onClick={() => (step === 0 ? navigate(listPath) : setStep(step - 1))}
-            className="!border-[var(--bf-border)] !text-[var(--bf-muted)]"
+            size="sm"
+            disabled={submitting || (reviewLocked && step <= 3)}
+            onClick={() => {
+              if (reviewLocked && step > 3) {
+                setStep(3)
+                return
+              }
+              if (step === 0) {
+                navigate(listPath)
+                return
+              }
+              setStep((current) => Math.max(0, current - 1))
+            }}
           >
             <ChevronLeft className="h-4 w-4" />
-            {step === 0 ? 'Cancel' : 'Back'}
+            Back
           </Button>
 
           {step < 5 ? (
             <Button
-              disabled={!canContinue()}
-              onClick={() => {
-                setError('')
-                setStep(step + 1)
-              }}
-              className="!bg-[var(--bf-primary)] !text-white hover:opacity-90"
+              size="sm"
+              disabled={!canContinue() || submitting}
+              onClick={() => setStep((current) => Math.min(5, current + 1))}
+              className="!bg-[#005a40] hover:!bg-[#004833]"
             >
               Continue
               <ChevronRight className="h-4 w-4" />
             </Button>
           ) : (
             <Button
-              disabled={submitting}
+              size="sm"
+              disabled={submitting || !time}
               onClick={handleConfirm}
-              className="!bg-[var(--bf-primary)] !text-white hover:opacity-90"
+              className="!bg-[#005a40] hover:!bg-[#004833]"
             >
-              <CheckCircle2 className="h-4 w-4" />
-              {submitting ? 'Confirming…' : 'Confirm Booking'}
+              {submitting ? 'Booking…' : 'Confirm booking'}
             </Button>
           )}
         </div>
       </SectionCard>
 
-      <YourBookingsSection
-        audience={audience}
-        refreshKey={bookingsRefreshKey}
-        onToast={setToast}
-      />
-
-      <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
-    </div>
-  )
-}
-
-function ReviewRow({ label, value }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-[var(--bf-border)] py-3 last:border-0">
-      <span className="text-[var(--bf-muted)]">{label}</span>
-      <span className="font-semibold text-[var(--bf-ink)]">{value || '—'}</span>
+      {!reviewLocked ? <YourBookingsSection refreshKey={bookingsRefreshKey} /> : null}
+      <Toast message={toast} onClose={() => setToast('')} />
     </div>
   )
 }

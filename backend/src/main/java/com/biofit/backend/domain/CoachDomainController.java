@@ -25,6 +25,7 @@ public class CoachDomainController {
 
     private final DomainService domainService;
     private final CompletionService completionService;
+    private final PlanAccessService planAccessService;
 
     @GetMapping("/dashboard")
     public ApiResponse<Map<String, Object>> dashboard(@AuthenticationPrincipal UserPrincipal principal) {
@@ -81,11 +82,19 @@ public class CoachDomainController {
         return ApiResponse.ok(domainService.archiveWorkoutPlan(id));
     }
 
+    @DeleteMapping("/workout-plans/{id}")
+    public ApiResponse<Map<String, Object>> hardDeleteDraft(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.hardDeleteUnusedDraftWorkoutPlan(principal.getId(), id));
+    }
+
     @PostMapping("/workout-plans/{id}/duplicate")
     public ApiResponse<Map<String, Object>> duplicate(@PathVariable String id) {
         Map<String, Object> existing = domainService.workoutPlan(id);
         existing.remove("id");
         existing.put("name", existing.get("name") + " (copy)");
+        existing.put("status", "Draft");
+        existing.put("progress", 0);
         return ApiResponse.ok(domainService.saveWorkoutPlan(null, existing));
     }
 
@@ -155,8 +164,9 @@ public class CoachDomainController {
     }
 
     @PatchMapping("/notifications/{id}/read")
-    public ApiResponse<Map<String, Object>> markRead(@PathVariable String id) {
-        return ApiResponse.ok(domainService.markNotificationRead(id));
+    public ApiResponse<Map<String, Object>> markRead(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
+        return ApiResponse.ok(domainService.markNotificationRead(principal.getId(), id));
     }
 
     @PatchMapping("/notifications/read-all")
@@ -183,5 +193,10 @@ public class CoachDomainController {
     public ApiResponse<Map<String, Object>> updateAssessment(
             @PathVariable String id, @RequestBody Map<String, Object> body) {
         return ApiResponse.ok(completionService.saveFitnessAssessment(id, body));
+    }
+
+    @GetMapping("/health-risk-alerts")
+    public ApiResponse<List<Map<String, Object>>> fitnessAlerts() {
+        return ApiResponse.ok(planAccessService.alertsForCategory("Fitness"));
     }
 }
