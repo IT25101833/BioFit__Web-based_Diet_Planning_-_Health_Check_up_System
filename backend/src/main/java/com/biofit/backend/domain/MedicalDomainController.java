@@ -332,14 +332,8 @@ public class MedicalDomainController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
-        String authorName =
-                principal == null
-                        ? "Medical Advisor"
-                        : userRepository
-                                .findById(principal.getId())
-                                .map(User::getFullName)
-                                .orElse(principal.getUsername());
-        return ApiResponse.ok(completionService.specialistRespond(id, authorName, body));
+        return ApiResponse.ok(
+                completionService.specialistRespond(id, principal.getId(), "Medical Advisor", body));
     }
 
     @GetMapping("/notifications")

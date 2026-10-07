@@ -4,7 +4,9 @@ import { formatWhen } from '../utils/formatWhen'
 export default function EscalatedTicketState({ escalation }) {
   if (!escalation) return null
 
-  const escalationDate = formatWhen(escalation.escalatedAt, { style: 'date' })
+  const guidanceReceived =
+    escalation.status === 'Responded' || Boolean(escalation.specialistResponse)
+  const respondedAt = formatWhen(escalation.respondedAt || escalation.escalatedAt, { style: 'date' })
 
   return (
     <div className="rounded-3xl border border-purple-200 bg-purple-50/50 p-5 shadow-xs mb-6 sm:p-6">
@@ -15,10 +17,11 @@ export default function EscalatedTicketState({ escalation }) {
           </span>
           <div>
             <h3 className="font-display text-sm font-bold text-purple-950">
-              Specialist Review in Progress
+              {guidanceReceived ? 'Specialist Guidance Received' : 'Specialist Review in Progress'}
             </h3>
             <p className="text-xs text-purple-800">
-              Assigned to {escalation.escalatedTo}
+              {escalation.escalatedTo}
+              {guidanceReceived ? ' · support action required' : ' · waiting for specialist guidance'}
             </p>
           </div>
         </div>
@@ -35,7 +38,7 @@ export default function EscalatedTicketState({ escalation }) {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-[#6b7280]">Escalation Date:</span>
-          <span className="font-medium text-[#111827]">{escalationDate}</span>
+          <span className="font-medium text-[#111827]">{respondedAt}</span>
         </div>
         <div className="pt-1 border-t border-purple-100">
           <span className="text-[#6b7280] block mb-1 font-semibold">Reason for Escalation:</span>

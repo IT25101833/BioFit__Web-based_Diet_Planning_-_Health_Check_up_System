@@ -102,7 +102,7 @@ export default function CreateSupportTicket() {
           />
           <div>
             <label className="bf-label" htmlFor="attachment">
-              Attachment (optional)
+              Attachment reference (optional)
             </label>
             <input
               id="attachment"
@@ -112,6 +112,9 @@ export default function CreateSupportTicket() {
                 update('attachmentName', e.target.files?.[0]?.name || '')
               }
             />
+            <p className="mt-1.5 text-[12px] text-[#6b7280]">
+              Only the file name is saved with the ticket. The file itself is not uploaded.
+            </p>
             {form.attachmentName ? (
               <p className="mt-1.5 text-[12px] text-[#6b7280]">
                 Selected: {form.attachmentName}

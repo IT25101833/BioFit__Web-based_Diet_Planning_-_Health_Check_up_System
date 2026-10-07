@@ -8,6 +8,7 @@ import {
   LogOut,
   Settings,
   ShieldAlert,
+  ArrowUpRight,
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'Medical History', to: '/medical/medical-history', icon: FileHeart },
   { label: 'Health Risk Alerts', to: '/medical/health-alerts', icon: ShieldAlert },
   { label: 'Safety Validation', to: '/medical/safety-validation', icon: ShieldCheck },
+  { label: 'Escalations', to: '/medical/escalations', icon: ArrowUpRight },
   { label: 'Notifications', to: '/medical/notifications', icon: Bell },
 ]
 

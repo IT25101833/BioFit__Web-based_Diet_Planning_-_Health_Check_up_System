@@ -23,31 +23,32 @@ export default function SupportPerformance({ performance }) {
           <p className="font-display text-xl font-bold text-[#111827]">
             {performance.resolvedThisWeek}
           </p>
-          <span className="text-[10px] text-[#005a40] font-medium">Stable volume</span>
+          <span className="text-[10px] text-[#6b7280] font-medium">Recorded this week</span>
         </div>
 
         <div className="rounded-2xl border border-[#e8ecf1] bg-[#f8faf9] p-3 text-center space-y-1">
-          <span className="text-[11px] text-[#6b7280] block">Avg First Response</span>
+          <span className="text-[11px] text-[#6b7280] block">Average Waiting</span>
           <p className="font-display text-xl font-bold text-[#005a40]">
-            {performance.avgFirstResponseMinutes}m
+            {performance.avgWaitingMinutes ?? '—'}
+            {performance.avgWaitingMinutes == null ? '' : 'm'}
           </p>
-          <span className="text-[10px] text-[#005a40] font-medium">Within target</span>
+          <span className="text-[10px] text-[#6b7280] font-medium">Active tickets</span>
         </div>
 
         <div className="rounded-2xl border border-[#e8ecf1] bg-[#f8faf9] p-3 text-center space-y-1">
-          <span className="text-[11px] text-[#6b7280] block">Avg Resolution Time</span>
+          <span className="text-[11px] text-[#6b7280] block">SLA Breaches</span>
           <p className="font-display text-xl font-bold text-[#111827]">
-            {performance.avgResolutionHours}h
+            {performance.slaBreaches ?? 0}
           </p>
-          <span className="text-[10px] text-[#6b7280] font-medium">Standard SLA</span>
+          <span className="text-[10px] text-[#6b7280] font-medium">Past waiting target</span>
         </div>
 
         <div className="rounded-2xl border border-[#e8ecf1] bg-[#f8faf9] p-3 text-center space-y-1">
-          <span className="text-[11px] text-[#6b7280] block">Client Satisfaction</span>
+          <span className="text-[11px] text-[#6b7280] block">SLA Compliance</span>
           <p className="font-display text-xl font-bold text-[#005a40]">
-            {performance.positiveFeedbackPercentage}%
+            {performance.slaCompliancePercentage == null ? '—' : `${performance.slaCompliancePercentage}%`}
           </p>
-          <span className="text-[10px] text-[#005a40] font-medium">Positive ratings</span>
+          <span className="text-[10px] text-[#6b7280] font-medium">From waiting time</span>
         </div>
       </div>
     </div>

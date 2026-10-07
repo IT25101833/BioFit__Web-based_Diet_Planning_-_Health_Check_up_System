@@ -145,8 +145,9 @@ public class CoachDomainController {
     }
 
     @GetMapping("/notifications")
-    public ApiResponse<List<Map<String, Object>>> notifications() {
-        return ApiResponse.ok(domainService.notificationsByAudience("COACH"));
+    public ApiResponse<List<Map<String, Object>>> notifications(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.notificationsForAudienceUser("COACH", principal.getId()));
     }
 
     @GetMapping("/escalations")
@@ -159,8 +160,7 @@ public class CoachDomainController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
-        String author = principal == null ? "Fitness Coach" : principal.getUsername();
-        return ApiResponse.ok(completionService.specialistRespond(id, author, body));
+        return ApiResponse.ok(completionService.specialistRespond(id, principal.getId(), "Fitness Coach", body));
     }
 
     @PatchMapping("/notifications/{id}/read")
@@ -170,8 +170,8 @@ public class CoachDomainController {
     }
 
     @PatchMapping("/notifications/read-all")
-    public ApiResponse<Map<String, Object>> markAll() {
-        return ApiResponse.ok(domainService.markAudienceNotificationsRead("COACH"));
+    public ApiResponse<Map<String, Object>> markAll(@AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.markMyAudienceNotificationsRead(principal.getId(), "COACH"));
     }
 
     @GetMapping("/assessments")

@@ -92,8 +92,9 @@ public class ManagerDomainController {
     }
 
     @GetMapping("/notifications")
-    public ApiResponse<List<Map<String, Object>>> notifications() {
-        return ApiResponse.ok(domainService.notificationsByAudience("MANAGER"));
+    public ApiResponse<List<Map<String, Object>>> notifications(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.notificationsForAudienceUser("MANAGER", principal.getId()));
     }
 
     @GetMapping("/escalations")
@@ -106,8 +107,8 @@ public class ManagerDomainController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
-        String author = principal == null ? "Wellness Centre Manager" : principal.getUsername();
-        return ApiResponse.ok(completionService.specialistRespond(id, author, body));
+        return ApiResponse.ok(
+                completionService.specialistRespond(id, principal.getId(), "Wellness Centre Manager", body));
     }
 
     @GetMapping("/support-overview")
@@ -122,7 +123,7 @@ public class ManagerDomainController {
     }
 
     @PatchMapping("/notifications/read-all")
-    public ApiResponse<Map<String, Object>> markAll() {
-        return ApiResponse.ok(domainService.markAudienceNotificationsRead("MANAGER"));
+    public ApiResponse<Map<String, Object>> markAll(@AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.markMyAudienceNotificationsRead(principal.getId(), "MANAGER"));
     }
 }

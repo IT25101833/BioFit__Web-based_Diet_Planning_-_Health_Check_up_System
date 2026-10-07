@@ -3,8 +3,12 @@ import Avatar from '../../../../components/ui/Avatar'
 import { formatWhen } from '../utils/formatWhen'
 
 export default function TicketResponseCard({ response }) {
-  const isInternalNote = response.role === 'internal_note' || response.role === 'internal'
-  const isSpecialist = response.role === 'specialist'
+  const isInternalNote =
+    response.visibility === 'INTERNAL_NOTE' ||
+    response.role === 'internal_note' ||
+    response.role === 'internal'
+  const isSpecialist =
+    response.visibility === 'SPECIALIST_INTERNAL' || response.role === 'specialist'
   const isSupport = response.role === 'support'
 
   const formattedDate = formatWhen(response.at)

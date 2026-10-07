@@ -108,6 +108,8 @@ public class DomainMapper {
         m.put("at", n.getCreatedAt() != null ? n.getCreatedAt().toString() : Instant.now().toString());
         m.put("read", n.isReadFlag());
         m.put("link", n.getLink());
+        m.put("ticketId", n.getTicketId());
+        m.put("eventType", n.getEventType());
         return m;
     }
 
@@ -123,10 +125,13 @@ public class DomainMapper {
         m.put("clientName", t.getClientName());
         m.put("createdAt", t.getCreatedAt() != null ? t.getCreatedAt().toString() : null);
         m.put("updatedAt", t.getUpdatedAt() != null ? t.getUpdatedAt().toString() : null);
-        Instant activityBase = t.getUpdatedAt() != null ? t.getUpdatedAt() : t.getCreatedAt();
-        if (activityBase != null) {
-            m.put("lastActivityAt", activityBase.toString());
-            m.put("waitingTimeMinutes", Math.max(0, Duration.between(activityBase, Instant.now()).toMinutes()));
+        if (t.getUpdatedAt() != null) {
+            m.put("lastActivityAt", t.getUpdatedAt().toString());
+        }
+        Instant waitingSince = t.getWaitingSince() != null ? t.getWaitingSince() : t.getCreatedAt();
+        m.put("waitingSince", waitingSince != null ? waitingSince.toString() : null);
+        if (waitingSince != null) {
+            m.put("waitingTimeMinutes", Math.max(0, Duration.between(waitingSince, Instant.now()).toMinutes()));
         }
         @SuppressWarnings("unchecked")
         List<Object> messages = (List<Object>) parseJson(t.getMessagesJson(), new ArrayList<>());

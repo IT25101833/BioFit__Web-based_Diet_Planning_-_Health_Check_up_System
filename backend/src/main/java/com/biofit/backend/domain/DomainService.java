@@ -8,11 +8,17 @@ import com.biofit.backend.health.HealthAssessmentRepository;
 import com.biofit.backend.health.HealthRiskAlert;
 import com.biofit.backend.health.HealthRiskAlertRepository;
 import com.biofit.backend.security.UserPrincipal;
+import com.biofit.backend.support.SupportTicketPresenter;
+import com.biofit.backend.support.SupportTicketWorkflow;
+import com.biofit.backend.support.TicketAudience;
+import com.biofit.backend.support.TicketStatus;
 import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.WeekFields;
@@ -44,6 +50,8 @@ public class DomainService {
     private final MealPlanRepository mealPlanRepository;
     private final DietaryRestrictionRepository dietaryRestrictionRepository;
     private final SupportTicketRepository supportTicketRepository;
+    private final SupportTicketWorkflow supportTicketWorkflow;
+    private final SupportTicketPresenter supportTicketPresenter;
     private final NotificationRepository notificationRepository;
     private final ExerciseRepository exerciseRepository;
     private final StaffScheduleRepository staffScheduleRepository;
@@ -534,174 +542,31 @@ public class DomainService {
 
     public List<Map<String, Object>> clientTickets(Long userId) {
         return supportTicketRepository.findByClientUserIdOrderByUpdatedAtDesc(userId).stream()
-                .map(mapper::ticketSummary)
+                .map(ticket -> supportTicketPresenter.present(ticket, TicketAudience.CLIENT))
                 .toList();
     }
 
     public Map<String, Object> clientTicket(Long userId, String id) {
-        return mapper.ticketSummary(
+        return supportTicketPresenter.present(
                 supportTicketRepository
                         .findByIdAndClientUserId(id, userId)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND)));
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND)),
+                TicketAudience.CLIENT);
     }
 
     @Transactional
     public Map<String, Object> createClientTicket(Long userId, Map<String, Object> payload) {
-        User user = userRepository.findById(userId).orElseThrow();
-        SupportTicketEntity t = new SupportTicketEntity();
-        t.setId("tkt-" + UUID.randomUUID().toString().substring(0, 8));
-        t.setClientUserId(userId);
-        t.setClientId("BF-C" + userId);
-        t.setClientName(user.getFirstName() + " " + user.getLastName());
-        t.setSubject(str(payload.get("subject")));
-        t.setCategory(nullTo(str(payload.get("category")), "General"));
-        String priority = nullTo(str(payload.get("priority")), "Medium");
-        if ("Normal".equalsIgnoreCase(priority)) priority = "Medium";
-        t.setPriority(priority);
-        t.setStatus("Open");
-        t.setAssignedTo(null);
-        t.setWaitingOn("Support");
-        t.setRelatedService(nullTo(str(payload.get("relatedService")), "General"));
-        String messageBody = firstNonBlank(
-                str(payload.get("description")),
-                str(payload.get("message")),
-                str(payload.get("body")));
-        Map<String, Object> firstMessage = new LinkedHashMap<>();
-        firstMessage.put("id", "msg-1");
-        firstMessage.put("from", "client");
-        firstMessage.put("role", "client");
-        firstMessage.put("author", "You");
-        firstMessage.put("body", messageBody == null ? "" : messageBody);
-        firstMessage.put("at", Instant.now().toString());
-        String attachmentName = str(payload.get("attachmentName"));
-        if (attachmentName != null && !attachmentName.isBlank()) {
-            firstMessage.put("attachments", List.of(Map.of("name", attachmentName)));
-        } else {
-            firstMessage.put("attachments", List.of());
-        }
-        t.setMessagesJson(mapper.toJson(List.of(firstMessage)));
-        t.setActivityJson(
-                mapper.toJson(
-                        List.of(
-                                Map.of(
-                                        "id",
-                                        "act-1",
-                                        "text",
-                                        "Ticket created by client",
-                                        "at",
-                                        Instant.now().toString()))));
-        t.setCreatedAt(Instant.now());
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-        createNotification(
-                null,
-                "SUPPORT",
-                "tickets",
-                "New support ticket " + t.getId(),
-                t.getClientName() + " opened \"" + t.getSubject() + "\" (" + t.getPriority() + ").",
-                "/support/tickets/" + t.getId());
-        return mapper.ticketSummary(t);
+        return supportTicketWorkflow.createFromClient(userId, payload);
     }
 
     @Transactional
     public Map<String, Object> replyClientTicket(Long userId, String id, Map<String, Object> payload) {
-        SupportTicketEntity t =
-                supportTicketRepository
-                        .findByIdAndClientUserId(id, userId)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
-        if ("Closed".equalsIgnoreCase(t.getStatus())) {
-            throw new ApiException("CONFLICT", "Closed tickets cannot accept replies", HttpStatus.CONFLICT);
-        }
-        @SuppressWarnings("unchecked")
-        List<Object> messages = new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
-        String body = str(payload.getOrDefault("message", payload.get("body")));
-        messages.add(
-                Map.of(
-                        "id",
-                        "msg-" + (messages.size() + 1),
-                        "from",
-                        "client",
-                        "role",
-                        "client",
-                        "author",
-                        t.getClientName() == null ? "You" : t.getClientName(),
-                        "body",
-                        body == null ? "" : body,
-                        "at",
-                        Instant.now().toString()));
-        t.setMessagesJson(mapper.toJson(messages));
-        String status = t.getStatus() == null ? "" : t.getStatus();
-        if ("Pending Client Reply".equalsIgnoreCase(status)
-                || "Pending Reply".equalsIgnoreCase(status)
-                || "Resolved".equalsIgnoreCase(status)
-                || "Open".equalsIgnoreCase(status)) {
-            t.setStatus("In Progress");
-        }
-        t.setWaitingOn("Support");
-        if ("Resolved".equalsIgnoreCase(status)) {
-            t.setResolutionJson(null);
-            appendTicketActivity(t, "Resolution withdrawn — client replied");
-        } else {
-            appendTicketActivity(t, "Client replied");
-        }
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-        createNotification(
-                null,
-                "SUPPORT",
-                "tickets",
-                "Client replied on " + t.getId(),
-                t.getClientName() + " sent a follow-up on \"" + t.getSubject() + "\".",
-                "/support/tickets/" + t.getId());
-        return mapper.ticketSummary(t);
+        return supportTicketWorkflow.replyAsClient(userId, id, payload);
     }
 
     @Transactional
     public Map<String, Object> reopenClientTicket(Long userId, String id, Map<String, Object> payload) {
-        SupportTicketEntity t =
-                supportTicketRepository
-                        .findByIdAndClientUserId(id, userId)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
-        String status = t.getStatus() == null ? "" : t.getStatus();
-        if (!"Resolved".equalsIgnoreCase(status) && !"Closed".equalsIgnoreCase(status)) {
-            throw new ApiException(
-                    "CONFLICT", "Only resolved or closed tickets can be kept open", HttpStatus.CONFLICT);
-        }
-        String note = firstNonBlank(str(payload.get("message")), str(payload.get("body")), str(payload.get("reason")));
-        if (note != null && !note.isBlank()) {
-            @SuppressWarnings("unchecked")
-            List<Object> messages =
-                    new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
-            messages.add(
-                    Map.of(
-                            "id",
-                            "msg-" + (messages.size() + 1),
-                            "from",
-                            "client",
-                            "role",
-                            "client",
-                            "author",
-                            t.getClientName() == null ? "You" : t.getClientName(),
-                            "body",
-                            note,
-                            "at",
-                            Instant.now().toString()));
-            t.setMessagesJson(mapper.toJson(messages));
-        }
-        t.setStatus("In Progress");
-        t.setWaitingOn("Support");
-        t.setResolutionJson(null);
-        appendTicketActivity(t, "Client requested ticket remain open");
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-        createNotification(
-                null,
-                "SUPPORT",
-                "tickets",
-                "Ticket reopened " + t.getId(),
-                t.getClientName() + " asked to keep \"" + t.getSubject() + "\" open.",
-                "/support/tickets/" + t.getId());
-        return mapper.ticketSummary(t);
+        return supportTicketWorkflow.reopenAsClient(userId, id, payload == null ? Map.of() : payload);
     }
 
     @Transactional
@@ -747,11 +612,15 @@ public class DomainService {
             }
             String roleText = map.get("role") == null ? "" : String.valueOf(map.get("role"));
             String fromText = map.get("from") == null ? "" : String.valueOf(map.get("from"));
+            String visibility = map.get("visibility") == null ? "" : String.valueOf(map.get("visibility"));
             if ("support".equalsIgnoreCase(roleText)
                     || "internal".equalsIgnoreCase(roleText)
                     || "internal_note".equalsIgnoreCase(roleText)
                     || "specialist".equalsIgnoreCase(roleText)
-                    || "support".equalsIgnoreCase(fromText)) {
+                    || "support".equalsIgnoreCase(fromText)
+                    || "SUPPORT".equalsIgnoreCase(visibility)
+                    || "INTERNAL_NOTE".equalsIgnoreCase(visibility)
+                    || "SPECIALIST_INTERNAL".equalsIgnoreCase(visibility)) {
                 return true;
             }
         }
@@ -785,6 +654,26 @@ public class DomainService {
         if (payload.get("specialization") != null) user.setSpecialization(str(payload.get("specialization")));
         userRepository.save(user);
         return clientProfile(userId);
+    }
+
+    public Map<String, Object> supportOfficerProfile(Long userId) {
+        User user = userRepository.findById(userId).orElseThrow();
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("id", "BF-S" + userId);
+        profile.put("firstName", user.getFirstName());
+        profile.put("lastName", user.getLastName());
+        profile.put("email", user.getEmail());
+        profile.put("contactNumber", user.getContactNumber() == null ? "" : user.getContactNumber());
+        profile.put("role", "Customer Experience Officer");
+        profile.put("specialization", user.getSpecialization() == null ? "" : user.getSpecialization());
+        profile.put("accountStatus", user.getDeletedAt() == null ? "Active" : "Inactive");
+        return profile;
+    }
+
+    @Transactional
+    public Map<String, Object> updateSupportOfficerProfile(Long userId, Map<String, Object> payload) {
+        updateClientProfile(userId, payload);
+        return supportOfficerProfile(userId);
     }
 
     /* ---------- Manager ---------- */
@@ -1076,6 +965,21 @@ public class DomainService {
         return notificationRepository.findByAudienceIgnoreCaseOrderByCreatedAtDesc(audience).stream()
                 .map(mapper::notificationMap)
                 .toList();
+    }
+
+    public List<Map<String, Object>> notificationsForAudienceUser(String audience, Long userId) {
+        return notificationRepository.findForAudienceUserOrBroadcast(audience, userId).stream()
+                .map(mapper::notificationMap)
+                .toList();
+    }
+
+    @Transactional
+    public Map<String, Object> markMyAudienceNotificationsRead(Long userId, String audience) {
+        List<NotificationEntity> list =
+                notificationRepository.findByUserIdAndAudienceIgnoreCaseOrderByCreatedAtDesc(userId, audience);
+        list.forEach(notification -> notification.setReadFlag(true));
+        notificationRepository.saveAll(list);
+        return Map.of("updated", list.size());
     }
 
     public List<Map<String, Object>> medicalNotificationsForAdvisor(Long advisorUserId) {
@@ -2266,29 +2170,29 @@ public class DomainService {
 
     public Map<String, Object> supportDashboard(Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
-        List<Map<String, Object>> tickets = allTickets();
-        long open =
-                tickets.stream()
-                        .filter(t -> "Open".equalsIgnoreCase(String.valueOf(t.get("status"))))
+        List<SupportTicketEntity> ticketEntities = supportTicketRepository.findAll();
+        List<Map<String, Object>> tickets = ticketEntities.stream().map(mapper::ticketSummary).toList();
+        long open = countTicketStatus(ticketEntities, TicketStatus.OPEN);
+        long assigned = countTicketStatus(ticketEntities, TicketStatus.ASSIGNED);
+        long inProgress = countTicketStatus(ticketEntities, TicketStatus.IN_PROGRESS);
+        long pendingReply = countTicketStatus(ticketEntities, TicketStatus.PENDING_CLIENT_REPLY);
+        long escalated = countTicketStatus(ticketEntities, TicketStatus.ESCALATED);
+        long resolvedOnly = countTicketStatus(ticketEntities, TicketStatus.RESOLVED);
+        long closed = countTicketStatus(ticketEntities, TicketStatus.CLOSED);
+        Instant startOfToday = LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+        Instant weekAgo = Instant.now().minus(Duration.ofDays(7));
+        long resolvedToday =
+                ticketEntities.stream()
+                        .filter(ticket -> isResolvedOrClosed(ticket) && ticket.getUpdatedAt() != null)
+                        .filter(ticket -> !ticket.getUpdatedAt().isBefore(startOfToday))
                         .count();
-        long inProgress =
-                tickets.stream()
-                        .filter(t -> {
-                            String s = String.valueOf(t.get("status"));
-                            return s.equalsIgnoreCase("In Progress") || s.equalsIgnoreCase("Assigned");
-                        })
+        long resolvedThisWeek =
+                ticketEntities.stream()
+                        .filter(ticket -> isResolvedOrClosed(ticket) && ticket.getUpdatedAt() != null)
+                        .filter(ticket -> !ticket.getUpdatedAt().isBefore(weekAgo))
                         .count();
-        long pendingReply =
-                tickets.stream()
-                        .filter(t -> String.valueOf(t.get("status")).toLowerCase().contains("pending"))
-                        .count();
-        long resolved =
-                tickets.stream()
-                        .filter(t -> {
-                            String s = String.valueOf(t.get("status"));
-                            return s.equalsIgnoreCase("Resolved") || s.equalsIgnoreCase("Closed");
-                        })
-                        .count();
+        long slaBreaches = ticketEntities.stream().filter(this::isSlaBreach).count();
+        long averageWaitingMinutes = averageActiveWaitingMinutes(ticketEntities);
 
         List<Map<String, Object>> attention =
                 tickets.stream()
@@ -2316,9 +2220,7 @@ public class DomainService {
                                     row.put("category", t.get("category"));
                                     row.put(
                                             "waitingTime",
-                                            "Open".equalsIgnoreCase(String.valueOf(t.get("status")))
-                                                    ? "Awaiting triage"
-                                                    : "In queue");
+                                            formatWaiting(t.get("waitingTimeMinutes")));
                                     row.put(
                                             "reason",
                                             t.get("priority")
@@ -2335,36 +2237,27 @@ public class DomainService {
             String cat = String.valueOf(t.getOrDefault("category", "Other"));
             categoryCounts.merge(cat, 1, Integer::sum);
         }
-        int categoryTotal = Math.max(1, tickets.size());
+        int categoryTotal = tickets.size();
         String[] colors = {"#005a40", "#00a67e", "#0d9488", "#14b8a6", "#64748b", "#94a3b8", "#cbd5e1"};
         List<Map<String, Object>> categoryBreakdown = new java.util.ArrayList<>();
         int colorIdx = 0;
-        for (Map.Entry<String, Integer> e : categoryCounts.entrySet()) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("category", e.getKey());
-            row.put("count", e.getValue());
-            row.put("percentage", Math.round((e.getValue() * 100.0) / categoryTotal));
-            row.put("color", colors[colorIdx % colors.length]);
-            categoryBreakdown.add(row);
-            colorIdx++;
-        }
-        if (categoryBreakdown.isEmpty()) {
-            categoryBreakdown.add(
-                    Map.of("category", "General Support", "count", 1, "percentage", 100, "color", "#005a40"));
+        if (categoryTotal > 0) {
+            for (Map.Entry<String, Integer> e : categoryCounts.entrySet()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("category", e.getKey());
+                row.put("count", e.getValue());
+                row.put("percentage", Math.round((e.getValue() * 100.0) / categoryTotal));
+                row.put("color", colors[colorIdx % colors.length]);
+                categoryBreakdown.add(row);
+                colorIdx++;
+            }
         }
 
         List<Map<String, Object>> statusOverview =
                 List.of(
                         Map.of("status", "Open", "count", open, "color", "#f59e0b", "hint", "Requires triage"),
-                        Map.of(
-                                "status",
-                                "In Progress",
-                                "count",
-                                Math.max(inProgress, 0),
-                                "color",
-                                "#0d9488",
-                                "hint",
-                                "Being worked on"),
+                        Map.of("status", "Assigned", "count", assigned, "color", "#0284c7", "hint", "Owned by an officer"),
+                        Map.of("status", "In Progress", "count", inProgress, "color", "#0d9488", "hint", "Being worked on"),
                         Map.of(
                                 "status",
                                 "Pending Client Reply",
@@ -2374,72 +2267,131 @@ public class DomainService {
                                 "#f59e0b",
                                 "hint",
                                 "Client action needed"),
-                        Map.of(
-                                "status",
-                                "Resolved",
-                                "count",
-                                resolved,
-                                "color",
-                                "#005a40",
-                                "hint",
-                                "Handled successfully"));
+                        Map.of("status", "Escalated", "count", escalated, "color", "#7c3aed", "hint", "With a specialist"),
+                        Map.of("status", "Resolved", "count", resolvedOnly, "color", "#005a40", "hint", "Handled successfully"),
+                        Map.of("status", "Closed", "count", closed, "color", "#64748b", "hint", "Finished"));
+
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("openTickets", Map.of("value", open, "hint", "Awaiting action"));
+        stats.put("assigned", Map.of("value", assigned, "hint", "Assigned to an officer"));
+        stats.put("inProgress", Map.of("value", inProgress, "hint", "Currently being handled"));
+        stats.put("resolvedToday", Map.of("value", resolvedToday, "hint", "Resolved or closed today"));
+        stats.put("pendingReply", Map.of("value", pendingReply, "hint", "Awaiting the client"));
+        stats.put("escalated", Map.of("value", escalated, "hint", "Waiting on a specialist"));
+        stats.put("closed", Map.of("value", closed, "hint", "Closed tickets"));
+        stats.put("slaBreaches", Map.of("value", slaBreaches, "hint", "Past the waiting target"));
+
+        List<Map<String, Object>> recentActivity = new ArrayList<>();
+        ticketEntities.stream()
+                .sorted(Comparator.comparing(SupportTicketEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(5)
+                .forEach(
+                        ticket -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("id", ticket.getId());
+                            row.put("text", ticket.getStatus() + " · " + ticket.getSubject());
+                            row.put("at", ticket.getUpdatedAt() == null ? null : ticket.getUpdatedAt().toString());
+                            recentActivity.add(row);
+                        });
+
+        Map<String, Object> performance = new LinkedHashMap<>();
+        performance.put("resolvedThisWeek", resolvedThisWeek);
+        performance.put("avgWaitingMinutes", averageWaitingMinutes);
+        performance.put("slaBreaches", slaBreaches);
+        performance.put("slaCompliancePercentage", slaCompliance(ticketEntities, slaBreaches));
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("officerName", user.getFirstName());
-        m.put(
-                "stats",
-                Map.of(
-                        "openTickets",
-                        Map.of("value", open, "hint", "Awaiting action"),
-                        "inProgress",
-                        Map.of("value", Math.max(inProgress, tickets.isEmpty() ? 0 : 1), "hint", "Currently being handled"),
-                        "resolvedToday",
-                        Map.of("value", Math.max(resolved, 1), "hint", "Successfully completed"),
-                        "pendingReply",
-                        Map.of("value", pendingReply, "hint", "Awaiting response")));
+        m.put("stats", stats);
         m.put("attentionTickets", attention);
         m.put("recentInquiries", List.of());
         m.put("categoryBreakdown", categoryBreakdown);
         m.put("statusOverview", statusOverview);
-        m.put(
-                "recentActivity",
-                List.of(
-                        Map.of(
-                                "id",
-                                "act-1",
-                                "text",
-                                open + " open ticket(s) in the support queue",
-                                "at",
-                                "Just now"),
-                        Map.of(
-                                "id",
-                                "act-2",
-                                "text",
-                                "Support dashboard refreshed for " + user.getFirstName(),
-                                "at",
-                                "Today"),
-                        Map.of(
-                                "id",
-                                "act-3",
-                                "text",
-                                tickets.size() + " ticket(s) tracked overall",
-                                "at",
-                                "Today")));
+        m.put("recentActivity", recentActivity);
         m.put("recentFeedback", List.of());
-        m.put(
-                "performance",
-                Map.of(
-                        "resolvedThisWeek",
-                        Math.max(resolved, tickets.size()),
-                        "avgFirstResponseMinutes",
-                        14,
-                        "avgResolutionHours",
-                        3.4,
-                        "positiveFeedbackPercentage",
-                        98,
-                        "slaCompliancePercentage",
-                        96));
+        m.put("performance", performance);
         return m;
+    }
+
+    private static String formatWaiting(Object minutes) {
+        long value = 0;
+        if (minutes instanceof Number number) {
+            value = number.longValue();
+        }
+        if (value < 60) {
+            return value + " min";
+        }
+        return (value / 60) + " h " + (value % 60) + " min";
+    }
+
+    private long countTicketStatus(List<SupportTicketEntity> tickets, TicketStatus status) {
+        return tickets.stream().filter(ticket -> status.label().equalsIgnoreCase(ticket.getStatus())).count();
+    }
+
+    private boolean isResolvedOrClosed(SupportTicketEntity ticket) {
+        return TicketStatus.RESOLVED.label().equalsIgnoreCase(ticket.getStatus())
+                || TicketStatus.CLOSED.label().equalsIgnoreCase(ticket.getStatus());
+    }
+
+    private boolean isSlaBreach(SupportTicketEntity ticket) {
+        if (isResolvedOrClosed(ticket)) {
+            return false;
+        }
+        String waitingOn = ticket.getWaitingOn() == null ? "" : ticket.getWaitingOn();
+        if (!waitingOn.equalsIgnoreCase("Support") && !waitingOn.equalsIgnoreCase("Specialist")) {
+            return false;
+        }
+        Instant since = ticket.getWaitingSince() != null ? ticket.getWaitingSince() : ticket.getCreatedAt();
+        if (since == null) {
+            return false;
+        }
+        long minutes = Duration.between(since, Instant.now()).toMinutes();
+        String priority = ticket.getPriority() == null ? "" : ticket.getPriority();
+        long limit = priority.equalsIgnoreCase("High") || priority.equalsIgnoreCase("Urgent") ? 240 : 1440;
+        return minutes > limit;
+    }
+
+    private long averageActiveWaitingMinutes(List<SupportTicketEntity> tickets) {
+        List<Long> minutes =
+                tickets.stream()
+                        .filter(ticket -> !isResolvedOrClosed(ticket))
+                        .map(
+                                ticket -> {
+                                    Instant since =
+                                            ticket.getWaitingSince() != null
+                                                    ? ticket.getWaitingSince()
+                                                    : ticket.getCreatedAt();
+                                    if (since == null) {
+                                        return 0L;
+                                    }
+                                    return Math.max(0, Duration.between(since, Instant.now()).toMinutes());
+                                })
+                        .toList();
+        if (minutes.isEmpty()) {
+            return 0;
+        }
+        long total = 0;
+        for (Long value : minutes) {
+            total += value;
+        }
+        return total / minutes.size();
+    }
+
+    private Long slaCompliance(List<SupportTicketEntity> tickets, long breaches) {
+        long active =
+                tickets.stream()
+                        .filter(ticket -> !isResolvedOrClosed(ticket))
+                        .filter(
+                                ticket -> {
+                                    String waitingOn = ticket.getWaitingOn() == null ? "" : ticket.getWaitingOn();
+                                    return waitingOn.equalsIgnoreCase("Support")
+                                            || waitingOn.equalsIgnoreCase("Specialist");
+                                })
+                        .count();
+        if (active == 0) {
+            return null;
+        }
+        return Math.round(100.0 * (active - breaches) / active);
     }
 
     public Map<String, Object> adminOverview() {

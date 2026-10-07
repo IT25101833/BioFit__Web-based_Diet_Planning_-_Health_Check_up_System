@@ -10,6 +10,7 @@ import {
   Settings,
   UserRound,
   Users,
+  ArrowUpRight,
 } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
@@ -22,6 +23,7 @@ const navItems = [
   { label: 'Availability', to: '/manager/availability', icon: CalendarClock },
   { label: 'Enrolments', to: '/manager/enrolments', icon: Users },
   { label: 'Reports', to: '/manager/reports', icon: ChartColumn },
+  { label: 'Escalations', to: '/manager/escalations', icon: ArrowUpRight },
   { label: 'Notifications', to: '/manager/notifications', icon: Bell },
 ]
 

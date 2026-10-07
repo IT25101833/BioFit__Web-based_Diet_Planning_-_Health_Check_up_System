@@ -1,4 +1,4 @@
-import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { apiRequest, USE_MOCK } from '../../../../api/client'
 export let feedbackItems = [
   {
     id: 'FB-501',
@@ -94,12 +94,12 @@ function delay(ms = 350) {
 }
 
 export async function fetchSupportFeedback() {
-  if (shouldUseMockData()) { await delay(); return feedbackItems.map((f) => structuredClone(f)) }
+  if (USE_MOCK) { await delay(); return feedbackItems.map((f) => structuredClone(f)) }
   return apiRequest('/api/support/feedback')
 }
 
 export async function updateFeedbackStatus(id, status) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(350)
     feedbackItems = feedbackItems.map((f) => (f.id === id ? { ...f, status } : f))
     return feedbackItems.find((f) => f.id === id)
@@ -108,7 +108,7 @@ export async function updateFeedbackStatus(id, status) {
 }
 
 export async function addFeedbackNote(id, note) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(350)
     return { id, note }
   }
@@ -116,7 +116,7 @@ export async function addFeedbackNote(id, note) {
 }
 
 export async function resolveFeedback(id, payload = {}) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(400)
     return { id, status: 'Resolved', ...payload }
   }

@@ -13,6 +13,7 @@ import {
   Settings,
   UserRound,
   Users,
+  ArrowUpRight,
 } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'Progress Tracking', to: '/coach/progress', icon: ChartColumn },
   { label: 'My Availability', to: '/coach/availability', icon: CalendarClock },
   { label: 'Book Manager', to: '/coach/book-appointment', icon: CalendarPlus },
+  { label: 'Escalations', to: '/coach/escalations', icon: ArrowUpRight },
   { label: 'Notifications', to: '/coach/notifications', icon: Bell },
 ]
 

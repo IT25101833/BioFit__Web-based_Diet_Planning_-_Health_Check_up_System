@@ -1,4 +1,4 @@
-import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { apiRequest, USE_MOCK } from '../../../../api/client'
 import { hydrateList, persistList, getMockClientProfile } from '../../data/supportMockStore'
 import { pushSupportNotification } from '../../notifications/data/supportNotificationsData'
 
@@ -107,7 +107,7 @@ function persistInquiries() {
 }
 
 export async function fetchClientInquiries() {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay()
     clientInquiries = hydrateList('inquiries', INQUIRY_SEED)
     return clientInquiries.map((i) => structuredClone(i))
@@ -116,7 +116,7 @@ export async function fetchClientInquiries() {
 }
 
 export async function respondToInquiry(id, payload) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(400)
     clientInquiries = hydrateList('inquiries', INQUIRY_SEED)
     const inquiry = clientInquiries.find((i) => i.id === id)
@@ -142,7 +142,7 @@ export async function respondToInquiry(id, payload) {
 }
 
 export async function convertInquiryToTicket(id) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(450)
     clientInquiries = hydrateList('inquiries', INQUIRY_SEED)
     const inquiry = clientInquiries.find((i) => i.id === id)
@@ -216,7 +216,7 @@ export async function convertInquiryToTicket(id) {
 
 /** Client-facing: raise a general inquiry that appears in CX inquiries list */
 export async function createClientInquiry(payload) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(500)
     const profile = getMockClientProfile()
     const now = new Date().toISOString()

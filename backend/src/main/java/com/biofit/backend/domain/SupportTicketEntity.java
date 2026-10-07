@@ -31,6 +31,7 @@ public class SupportTicketEntity {
     @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
     private String activityJson;
     private String waitingOn;
+    private Instant waitingSince;
     @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)
     private String escalationJson;
     @JdbcTypeCode(SqlTypes.LONG32NVARCHAR)

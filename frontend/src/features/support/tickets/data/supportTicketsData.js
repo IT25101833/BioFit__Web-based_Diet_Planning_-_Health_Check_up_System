@@ -1,4 +1,4 @@
-import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { apiRequest, USE_MOCK } from '../../../../api/client'
 import { hydrateList, persistList } from '../../data/supportMockStore'
 export const supportOfficers = [
   { id: 'off-1', name: 'Priya Nair', email: 'amaya.fernando@vitallife.lk', role: 'Customer Experience Officer' },
@@ -601,7 +601,7 @@ function delay(ms = 350) {
 }
 
 export async function fetchSupportTickets() {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay()
     supportTickets = hydrateList('tickets', supportTickets)
     return supportTickets.map((t) => structuredClone(t))
@@ -610,7 +610,7 @@ export async function fetchSupportTickets() {
 }
 
 export async function fetchSupportTicketById(id) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay()
     supportTickets = hydrateList('tickets', supportTickets)
     const found = supportTickets.find((t) => t.id === id)
@@ -621,7 +621,7 @@ export async function fetchSupportTicketById(id) {
 }
 
 export async function assignSupportTicket(id, officerName) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(400)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -643,7 +643,7 @@ export async function assignSupportTicket(id, officerName) {
 }
 
 export async function startTicketProgress(id) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(350)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -657,7 +657,7 @@ export async function startTicketProgress(id) {
 }
 
 export async function updateSupportTicketStatus(id, newStatus) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(350)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -671,7 +671,7 @@ export async function updateSupportTicketStatus(id, newStatus) {
 }
 
 export async function updateSupportTicketPriority(id, newPriority) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(300)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -685,7 +685,7 @@ export async function updateSupportTicketPriority(id, newPriority) {
 }
 
 export async function updateSupportTicketCategory(id, newCategory) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(300)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -699,7 +699,7 @@ export async function updateSupportTicketCategory(id, newCategory) {
 }
 
 export async function sendTicketReply(id, messageBody) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(450)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -739,7 +739,7 @@ export async function sendTicketReply(id, messageBody) {
 }
 
 export async function addTicketInternalNote(id, noteBody) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(350)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -753,7 +753,7 @@ export async function addTicketInternalNote(id, noteBody) {
 }
 
 export async function escalateSupportTicket(id, { escalateTo, reason, additionalContext }) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(500)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -769,7 +769,7 @@ export async function escalateSupportTicket(id, { escalateTo, reason, additional
 }
 
 export async function resolveSupportTicket(id, { summary, category }) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(450)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -803,7 +803,7 @@ export async function resolveSupportTicket(id, { summary, category }) {
 }
 
 export async function closeSupportTicket(id) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(400)
     const ticket = supportTickets.find((t) => t.id === id)
     if (!ticket) throw new Error('Ticket not found')
@@ -834,7 +834,7 @@ export async function closeSupportTicket(id) {
 }
 
 export async function fetchClientSupportHistory(clientId) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(300)
     return structuredClone(supportTickets.filter((t) => t.client.id === clientId))
   }

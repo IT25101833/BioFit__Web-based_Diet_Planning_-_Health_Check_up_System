@@ -18,6 +18,8 @@ public class NotificationEntity {
     private Long userId;
     private String audience;
     private String type;
+    private String eventType;
+    private String ticketId;
     private String title;
     @Column(length = 2000)
     private String body;

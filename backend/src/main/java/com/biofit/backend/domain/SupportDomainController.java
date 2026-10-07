@@ -66,13 +66,13 @@ public class SupportDomainController {
 
     @GetMapping("/profile")
     public ApiResponse<Map<String, Object>> profile(@AuthenticationPrincipal UserPrincipal principal) {
-        return ApiResponse.ok(domainService.clientProfile(principal.getId()));
+        return ApiResponse.ok(domainService.supportOfficerProfile(principal.getId()));
     }
 
     @PatchMapping("/profile")
     public ApiResponse<Map<String, Object>> updateProfile(
             @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
-        return ApiResponse.ok(domainService.updateClientProfile(principal.getId(), body));
+        return ApiResponse.ok(domainService.updateSupportOfficerProfile(principal.getId(), body));
     }
 
     @GetMapping("/tickets")
@@ -91,7 +91,7 @@ public class SupportDomainController {
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
         body.putIfAbsent("author", resolveAuthorName(principal));
-        return ApiResponse.ok(completionService.patchTicket(id, body));
+        return ApiResponse.ok(completionService.patchTicket(id, principal == null ? null : principal.getId(), body));
     }
 
     @PostMapping("/tickets/{id}/replies")
@@ -100,7 +100,7 @@ public class SupportDomainController {
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
         body.putIfAbsent("author", resolveAuthorName(principal));
-        return ApiResponse.ok(completionService.patchTicket(id, body));
+        return ApiResponse.ok(completionService.patchTicket(id, principal == null ? null : principal.getId(), body));
     }
 
     private String resolveAuthorName(UserPrincipal principal) {
@@ -144,8 +144,9 @@ public class SupportDomainController {
     }
 
     @GetMapping("/notifications")
-    public ApiResponse<List<Map<String, Object>>> notifications() {
-        return ApiResponse.ok(domainService.notificationsByAudience("SUPPORT"));
+    public ApiResponse<List<Map<String, Object>>> notifications(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.notificationsForAudienceUser("SUPPORT", principal.getId()));
     }
 
     @PatchMapping("/notifications/{id}/read")
@@ -155,7 +156,7 @@ public class SupportDomainController {
     }
 
     @PatchMapping("/notifications/read-all")
-    public ApiResponse<Map<String, Object>> markAll() {
-        return ApiResponse.ok(domainService.markAudienceNotificationsRead("SUPPORT"));
+    public ApiResponse<Map<String, Object>> markAll(@AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.markMyAudienceNotificationsRead(principal.getId(), "SUPPORT"));
     }
 }
