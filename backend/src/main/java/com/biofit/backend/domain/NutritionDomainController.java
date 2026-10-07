@@ -152,8 +152,9 @@ public class NutritionDomainController {
     }
 
     @GetMapping("/notifications")
-    public ApiResponse<List<Map<String, Object>>> notifications() {
-        return ApiResponse.ok(domainService.notificationsByAudience("NUTRITION"));
+    public ApiResponse<List<Map<String, Object>>> notifications(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.notificationsForAudienceUser("NUTRITION", principal.getId()));
     }
 
     @GetMapping("/escalations")
@@ -166,8 +167,9 @@ public class NutritionDomainController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id,
             @RequestBody Map<String, Object> body) {
-        String author = principal == null ? "Nutrition Consultant" : principal.getUsername();
-        return ApiResponse.ok(completionService.specialistRespond(id, author, body));
+        return ApiResponse.ok(
+                completionService.specialistRespond(
+                        id, principal.getId(), "Nutrition Consultant", body));
     }
 
     @PatchMapping("/notifications/{id}/read")
@@ -177,8 +179,8 @@ public class NutritionDomainController {
     }
 
     @PatchMapping("/notifications/read-all")
-    public ApiResponse<Map<String, Object>> markAll() {
-        return ApiResponse.ok(domainService.markAudienceNotificationsRead("NUTRITION"));
+    public ApiResponse<Map<String, Object>> markAll(@AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(domainService.markMyAudienceNotificationsRead(principal.getId(), "NUTRITION"));
     }
 
     @GetMapping("/health-risk-alerts")

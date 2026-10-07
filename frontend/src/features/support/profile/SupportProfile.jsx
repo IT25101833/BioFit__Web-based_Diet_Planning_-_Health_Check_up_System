@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Award, Clock, Mail, Phone, ShieldCheck, User } from 'lucide-react'
+import { Clock, Mail, Phone, ShieldCheck } from 'lucide-react'
 import PageHeader from '../../../components/ui/PageHeader'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -7,7 +7,6 @@ import SectionCard from '../../../components/ui/SectionCard'
 import Avatar from '../../../components/ui/Avatar'
 import Button from '../../../components/ui/Button'
 import Input from '../../../components/ui/Input'
-import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
 import {
   fetchSupportProfile,
@@ -49,8 +48,7 @@ export default function SupportProfile() {
         firstName: form.firstName,
         lastName: form.lastName,
         contactNumber: form.contactNumber,
-        bio: form.bio,
-        workingHours: form.workingHours,
+        specialization: form.specialization,
       })
       setProfile(next)
       setForm(next)
@@ -72,7 +70,7 @@ export default function SupportProfile() {
     <div className="space-y-6">
       <PageHeader
         title="My Profile"
-        description="Manage your Customer Experience Officer account details, desk availability, and contact information."
+        description="Manage the account details stored for your Customer Experience Officer profile."
         actions={
           !editing ? (
             <Button
@@ -95,7 +93,7 @@ export default function SupportProfile() {
                 {fullName}
               </h2>
               <p className="text-sm font-semibold text-[#005a40]">{profile.role}</p>
-              <p className="text-xs text-[#6b7280]">{profile.department}</p>
+              <p className="text-xs text-[#6b7280]">{profile.specialization || 'Customer Experience'}</p>
             </div>
           </div>
           <span className="rounded-full bg-[#e6f5f0] px-3 py-1 text-xs font-semibold text-[#005a40]">
@@ -142,26 +140,12 @@ export default function SupportProfile() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                id="profile-working-hours"
-                label="Working Hours & Shift"
-                value={form.workingHours}
-                onChange={(e) => setForm({ ...form, workingHours: e.target.value })}
-              />
-              <Input
-                id="profile-team"
-                label="Assigned Team"
-                disabled
-                value={profile.team}
+                id="profile-specialization"
+                label="Focus"
+                value={form.specialization || ''}
+                onChange={(e) => setForm({ ...form, specialization: e.target.value })}
               />
             </div>
-
-            <TextArea
-              id="profile-bio"
-              label="Professional Summary / Responsibilities"
-              rows={3}
-              value={form.bio}
-              onChange={(e) => setForm({ ...form, bio: e.target.value })}
-            />
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#eef2f0]">
               <Button
@@ -206,35 +190,19 @@ export default function SupportProfile() {
               <div className="rounded-2xl border border-[#e8ecf1] bg-[#f8faf9] p-4 space-y-1 col-span-2 sm:col-span-1">
                 <span className="text-[#6b7280] flex items-center gap-1.5 font-medium">
                   <Clock className="h-3.5 w-3.5 text-[#005a40]" />
-                  Coverage Hours
+                  Focus
                 </span>
-                <p className="font-semibold text-[#111827] text-sm">{profile.workingHours}</p>
+                <p className="font-semibold text-[#111827] text-sm">{profile.specialization || 'Customer experience'}</p>
               </div>
             </div>
 
             <div className="rounded-2xl border border-[#e8ecf1] bg-white p-5 space-y-2 text-xs">
               <h3 className="font-display font-bold text-[#111827] text-sm">
-                Service Experience Scope
+                Role
               </h3>
               <p className="text-[#4b5563] leading-relaxed text-sm">
-                {profile.bio}
+                {profile.role}. Account status: {profile.accountStatus || 'Active'}.
               </p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="font-display font-bold text-[#111827] text-xs uppercase tracking-wider">
-                Support Competencies &amp; Routing Permissions
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {profile.skills?.map((s) => (
-                  <span
-                    key={s}
-                    className="rounded-xl border border-[#e8ecf1] bg-[#f8faf9] px-3 py-1 text-xs font-medium text-[#374151]"
-                  >
-                    {s}
-                  </span>
-                ))}
-              </div>
             </div>
 
             <div className="flex items-center gap-2 text-xs text-[#6b7280] pt-4 border-t border-[#eef2f0]">

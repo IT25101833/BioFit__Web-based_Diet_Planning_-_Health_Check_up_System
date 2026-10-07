@@ -21,7 +21,10 @@ export default function SupportCategoryChart({ categories = [] }) {
         <span className="text-xs text-[#8b93a1]">Last 30 days</span>
       </div>
 
-      <div className="space-y-3 pt-1">
+      {safeCategories.length === 0 ? (
+        <p className="text-sm text-[#6b7280]">No support tickets yet.</p>
+      ) : (
+        <div className="space-y-3 pt-1">
         {safeCategories.map((item) => {
           const count = Number(item.count ?? item.value) || 0
           const widthPercent = Math.round((count / maxCount) * 100)
@@ -50,7 +53,8 @@ export default function SupportCategoryChart({ categories = [] }) {
             </div>
           )
         })}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

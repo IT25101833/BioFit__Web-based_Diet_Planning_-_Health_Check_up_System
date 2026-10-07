@@ -1,4 +1,4 @@
-import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { apiRequest, USE_MOCK } from '../../../../api/client'
 import {
   getMockClientProfile,
   hydrateList,
@@ -141,9 +141,10 @@ function persistClientTickets() {
 
 function normalizeClientStatus(status) {
   if (!status) return status
+  // Display alias only. Escalated and Closed stay as stored so a specialist review
+  // is not shown as ordinary progress, and a closed ticket is not offered for reopen.
   if (status === 'Pending Client Reply') return 'Pending Reply'
-  if (status === 'Assigned' || status === 'Escalated') return 'In Progress'
-  if (status === 'Closed') return 'Resolved'
+  if (status === 'Assigned') return 'In Progress'
   return status
 }
 
@@ -203,7 +204,7 @@ async function publishTicketToCx(ticket) {
 
 /** GET /api/client/support */
 export async function fetchClientSupportTickets() {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay()
     supportTickets = hydrateList('clientTickets', CLIENT_TICKET_SEED)
     return supportTickets.map((item) =>
@@ -219,7 +220,7 @@ export async function fetchClientSupportTickets() {
 
 /** GET /api/client/support/:id */
 export async function fetchClientSupportTicketById(id) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay()
     supportTickets = hydrateList('clientTickets', CLIENT_TICKET_SEED)
     const found = supportTickets.find((item) => item.id === id)
@@ -234,7 +235,7 @@ export async function fetchClientSupportTicketById(id) {
 
 /** POST /api/client/support */
 export async function createClientSupportTicket(payload) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(600)
     const profile = getMockClientProfile()
     const now = new Date().toISOString()
@@ -289,7 +290,7 @@ export async function createClientSupportTicket(payload) {
 
 /** POST /api/client/support/:id/replies */
 export async function replyToClientSupportTicket(id, body) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(450)
     supportTickets = hydrateList('clientTickets', CLIENT_TICKET_SEED)
     const ticket = supportTickets.find((item) => item.id === id)
@@ -337,7 +338,7 @@ export async function replyToClientSupportTicket(id, body) {
 
 /** POST /api/client/support/:id/reopen */
 export async function reopenClientSupportTicket(id, message) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(450)
     supportTickets = hydrateList('clientTickets', CLIENT_TICKET_SEED)
     const ticket = supportTickets.find((item) => item.id === id)
@@ -407,7 +408,7 @@ export async function deleteClientSupportTicket(id) {
   if (!ticketId) {
     throw new Error('Ticket id is missing.')
   }
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(400)
     supportTickets = hydrateList('clientTickets', CLIENT_TICKET_SEED)
     const idx = supportTickets.findIndex((item) => item.id === id)

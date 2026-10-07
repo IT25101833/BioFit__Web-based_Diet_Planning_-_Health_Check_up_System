@@ -37,6 +37,7 @@ import CoachEditExercisePage from './pages/coach/CoachEditExercisePage'
 import CoachEditWorkoutPlanPage from './pages/coach/CoachEditWorkoutPlanPage'
 import CoachExercisesPage from './pages/coach/CoachExercisesPage'
 import CoachNotificationsPage from './pages/coach/CoachNotificationsPage'
+import CoachEscalationsPage from './pages/coach/CoachEscalationsPage'
 import CoachProfilePage from './pages/coach/CoachProfilePage'
 import CoachProgressPage from './pages/coach/CoachProgressPage'
 import CoachWorkoutPlanDetailsPage from './pages/coach/CoachWorkoutPlanDetailsPage'
@@ -65,7 +66,11 @@ import MedicalHealthRecordDetailsPage from './pages/medical/MedicalHealthRecordD
 import MedicalHealthRecordsPage from './pages/medical/MedicalHealthRecordsPage'
 import MedicalHistoryPage from './pages/medical/MedicalHistoryPage'
 import MedicalNotificationsPage from './pages/medical/MedicalNotificationsPage'
+
 import MedicalPlanAccessPage from './pages/medical/MedicalPlanAccessPage'
+
+import MedicalEscalationsPage from './pages/medical/MedicalEscalationsPage'
+
 import MedicalProfilePage from './pages/medical/MedicalProfilePage'
 import MedicalRequestsPage from './pages/medical/MedicalRequestsPage'
 import MedicalSafetyValidationPage from './pages/medical/MedicalSafetyValidationPage'
@@ -81,6 +86,7 @@ import NutritionEditMealPlanPage from './pages/nutrition/NutritionEditMealPlanPa
 import NutritionMealPlanDetailsPage from './pages/nutrition/NutritionMealPlanDetailsPage'
 import NutritionMealPlansPage from './pages/nutrition/NutritionMealPlansPage'
 import NutritionNotificationsPage from './pages/nutrition/NutritionNotificationsPage'
+import NutritionEscalationsPage from './pages/nutrition/NutritionEscalationsPage'
 import NutritionProfilePage from './pages/nutrition/NutritionProfilePage'
 import NutritionProgressPage from './pages/nutrition/NutritionProgressPage'
 import ManagerCreateProgrammePage from './pages/manager/ManagerCreateProgrammePage'
@@ -88,6 +94,7 @@ import ManagerDashboardPage from './pages/manager/ManagerDashboardPage'
 import ManagerEditProgrammePage from './pages/manager/ManagerEditProgrammePage'
 import ManagerEnrolmentsPage from './pages/manager/ManagerEnrolmentsPage'
 import ManagerNotificationsPage from './pages/manager/ManagerNotificationsPage'
+import ManagerEscalationsPage from './pages/manager/ManagerEscalationsPage'
 import ManagerProfilePage from './pages/manager/ManagerProfilePage'
 import ManagerProgrammeDetailsPage from './pages/manager/ManagerProgrammeDetailsPage'
 import ManagerProgrammesPage from './pages/manager/ManagerProgrammesPage'
@@ -199,6 +206,7 @@ function App() {
         <Route path="/manager/availability" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerAvailabilityPage />)} />
         <Route path="/manager/enrolments" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerEnrolmentsPage />)} />
         <Route path="/manager/reports" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerReportsPage />)} />
+        <Route path="/manager/escalations" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerEscalationsPage />)} />
         <Route path="/manager/notifications" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerNotificationsPage />)} />
         <Route path="/manager/profile" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerProfilePage />)} />
 
@@ -219,6 +227,7 @@ function App() {
         <Route path="/coach/assessments/:id" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAssessmentDetailsPage />)} />
         <Route path="/coach/progress" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachProgressPage />)} />
         <Route path="/coach/progress/:clientId" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachClientProgressPage />)} />
+        <Route path="/coach/escalations" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachEscalationsPage />)} />
         <Route path="/coach/notifications" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachNotificationsPage />)} />
         <Route path="/coach/availability" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAvailabilityPage />)} />
         <Route path="/coach/book-appointment" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachBookAppointmentPage />)} />
@@ -239,6 +248,7 @@ function App() {
         <Route path="/nutrition/appointments" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionAppointmentsPage />)} />
         <Route path="/nutrition/availability" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionAvailabilityPage />)} />
         <Route path="/nutrition/book-appointment" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionBookAppointmentPage />)} />
+        <Route path="/nutrition/escalations" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionEscalationsPage />)} />
         <Route path="/nutrition/notifications" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionNotificationsPage />)} />
         <Route path="/nutrition/profile" element={guard(['NUTRITION_CONSULTANT', 'ADMIN'], <NutritionProfilePage />)} />
 
@@ -257,7 +267,11 @@ function App() {
         <Route path="/medical/health-alerts/:id" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalHealthAlertDetailsPage />)} />
         <Route path="/medical/safety-validation" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalSafetyValidationPage />)} />
         <Route path="/medical/requests" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalRequestsPage />)} />
+
         <Route path="/medical/plan-access" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalPlanAccessPage />)} />
+
+        <Route path="/medical/escalations" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalEscalationsPage />)} />
+
         <Route path="/medical/notifications" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalNotificationsPage />)} />
         <Route path="/medical/profile" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalProfilePage />)} />
 

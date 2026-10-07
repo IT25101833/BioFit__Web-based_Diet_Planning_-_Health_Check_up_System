@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Calendar, Clock, Edit2, ShieldAlert, Tag, User, UserCheck } from 'lucide-react'
 import StatusBadge from '../../../../components/ui/StatusBadge'
 import Button from '../../../../components/ui/Button'
-import { supportCategories, supportPriorities, supportStatuses } from '../data/supportTicketsData'
+import { supportCategories, supportPriorities } from '../data/supportTicketsData'
+import { ticketCapabilities } from '../ticketState'
 
 export default function TicketInfoPanel({
   ticket,
@@ -11,6 +12,7 @@ export default function TicketInfoPanel({
   onUpdateCategory,
   onOpenAssignModal,
 }) {
+  const caps = ticketCapabilities(ticket)
   const [editingStatus, setEditingStatus] = useState(false)
   const [editingPriority, setEditingPriority] = useState(false)
   const [editingCategory, setEditingCategory] = useState(false)
@@ -30,7 +32,7 @@ export default function TicketInfoPanel({
         {/* Status */}
         <div className="flex items-center justify-between">
           <span className="text-[#6b7280]">Status:</span>
-          {editingStatus ? (
+          {editingStatus && caps.statusTargets.length > 0 ? (
             <select
               value={ticket.status}
               onChange={(e) => {
@@ -39,23 +41,28 @@ export default function TicketInfoPanel({
               }}
               className="rounded-lg border border-[#e8ecf1] bg-white px-2 py-1 text-xs text-[#111827] focus:outline-none"
             >
-              {supportStatuses.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+              <option value={ticket.status}>{ticket.status}</option>
+              {caps.statusTargets
+                .filter((status) => status !== ticket.status)
+                .map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
             </select>
           ) : (
             <div className="flex items-center gap-1.5">
               <StatusBadge status={ticket.status} />
-              <button
-                type="button"
-                onClick={() => setEditingStatus(true)}
-                className="text-[#9ca3af] hover:text-[#005a40]"
-                aria-label="Edit Status"
-              >
-                <Edit2 className="h-3 w-3" />
-              </button>
+              {caps.statusTargets.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingStatus(true)}
+                  className="text-[#9ca3af] hover:text-[#005a40]"
+                  aria-label="Edit Status"
+                >
+                  <Edit2 className="h-3 w-3" />
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -90,14 +97,16 @@ export default function TicketInfoPanel({
               >
                 {ticket.priority}
               </span>
-              <button
-                type="button"
-                onClick={() => setEditingPriority(true)}
-                className="text-[#9ca3af] hover:text-[#005a40]"
-                aria-label="Edit Priority"
-              >
-                <Edit2 className="h-3 w-3" />
-              </button>
+              {caps.canEditPriority ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingPriority(true)}
+                  className="text-[#9ca3af] hover:text-[#005a40]"
+                  aria-label="Edit Priority"
+                >
+                  <Edit2 className="h-3 w-3" />
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -125,14 +134,16 @@ export default function TicketInfoPanel({
               <span className="font-medium text-[#111827] truncate max-w-[140px]">
                 {ticket.category}
               </span>
-              <button
-                type="button"
-                onClick={() => setEditingCategory(true)}
-                className="text-[#9ca3af] hover:text-[#005a40]"
-                aria-label="Edit Category"
-              >
-                <Edit2 className="h-3 w-3" />
-              </button>
+              {caps.canEditCategory ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingCategory(true)}
+                  className="text-[#9ca3af] hover:text-[#005a40]"
+                  aria-label="Edit Category"
+                >
+                  <Edit2 className="h-3 w-3" />
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -146,14 +157,16 @@ export default function TicketInfoPanel({
                 ? 'Unassigned'
                 : ticket.assignedTo}
             </span>
-            <button
-              type="button"
-              onClick={onOpenAssignModal}
-              className="text-[#9ca3af] hover:text-[#005a40]"
-              aria-label="Change Assignment"
-            >
-              <UserCheck className="h-3 w-3" />
-            </button>
+            {caps.canAssign ? (
+              <button
+                type="button"
+                onClick={onOpenAssignModal}
+                className="text-[#9ca3af] hover:text-[#005a40]"
+                aria-label="Change Assignment"
+              >
+                <UserCheck className="h-3 w-3" />
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -171,6 +184,25 @@ export default function TicketInfoPanel({
             ].join(' ')}
           >
             {ticket.waitingOn || '—'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[#6b7280]">Waiting Since:</span>
+          <span className="font-medium text-[#111827]">
+            {ticket.waitingSince
+              ? new Date(ticket.waitingSince).toLocaleString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : '—'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[#6b7280]">Waiting Time:</span>
+          <span className="font-medium text-[#111827]">
+            {ticket.waitingTimeMinutes == null ? '—' : `${ticket.waitingTimeMinutes} min`}
           </span>
         </div>
 

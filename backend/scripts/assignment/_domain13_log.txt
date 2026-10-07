@@ -1,0 +1,11 @@
+Changed database context to 'biofit'.
+Script 13 domain functions created.
+Quick checks (capture for report):
+  SELECT dbo.fn_ClassifyBMICategory(dbo.fn_CalculateBMI(170,68));  -- Normal
+  SELECT dbo.fn_OpenSupportTicketCount(NULL);
+  SELECT dbo.fn_ClientTotalPaid(id) FROM users WHERE email LIKE 'asgn.client%';
+bmi_category_example                     open_tickets_all open_tickets_high
+---------------------------------------- ---------------- -----------------
+Normal                                                  3                 1
+
+(1 rows affected)

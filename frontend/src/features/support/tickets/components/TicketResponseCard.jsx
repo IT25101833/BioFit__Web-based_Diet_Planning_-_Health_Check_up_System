@@ -3,8 +3,12 @@ import Avatar from '../../../../components/ui/Avatar'
 import { formatWhen } from '../utils/formatWhen'
 
 export default function TicketResponseCard({ response }) {
-  const isInternalNote = response.role === 'internal_note' || response.role === 'internal'
-  const isSpecialist = response.role === 'specialist'
+  const isInternalNote =
+    response.visibility === 'INTERNAL_NOTE' ||
+    response.role === 'internal_note' ||
+    response.role === 'internal'
+  const isSpecialist =
+    response.visibility === 'SPECIALIST_INTERNAL' || response.role === 'specialist'
   const isSupport = response.role === 'support'
 
   const formattedDate = formatWhen(response.at)
@@ -109,7 +113,10 @@ export default function TicketResponseCard({ response }) {
       {response.attachments && response.attachments.length > 0 ? (
         <div className="mt-3 flex items-center gap-2 pl-10.5 text-xs text-[#6b7280]">
           <Paperclip className="h-3.5 w-3.5" />
-          <span>{response.attachments.length} attachment(s)</span>
+          <span>
+            {response.attachments.length} attachment reference
+            {response.attachments.length === 1 ? '' : 's'} (file name only)
+          </span>
         </div>
       ) : null}
     </div>

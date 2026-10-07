@@ -204,7 +204,15 @@ export default function ClientSupportTicketDetails() {
     )
   }
 
-  const isResolved = ticket.status === 'Resolved' || ticket.status === 'Closed'
+  const isClosed = ticket.status === 'Closed'
+  const isResolved = ticket.status === 'Resolved'
+  const isEscalated = ticket.status === 'Escalated'
+  const visibleMessages = (ticket.messages || []).filter((message) => {
+    const role = String(message.role || message.from || '').toLowerCase()
+    const visibility = String(message.visibility || '').toUpperCase()
+    if (visibility === 'INTERNAL_NOTE' || visibility === 'SPECIALIST_INTERNAL') return false
+    return role !== 'internal' && role !== 'internal_note' && role !== 'specialist'
+  })
   const canDelete = canClientDeleteTicket(ticket)
 
   return (
@@ -263,7 +271,7 @@ export default function ClientSupportTicketDetails() {
 
         <SectionCard title="Conversation" className="lg:col-span-2">
           <div className="space-y-3">
-            {ticket.messages.map((message) => (
+            {visibleMessages.map((message) => (
               <div
                 key={message.id}
                 className={[
@@ -286,7 +294,14 @@ export default function ClientSupportTicketDetails() {
             ))}
           </div>
 
-          {isResolved ? (
+          {isClosed ? (
+            <div className="mt-5 rounded-2xl border border-[#e8ecf1] bg-[#f8faf9] p-4">
+              <p className="text-sm font-semibold text-[#111827]">This ticket is closed</p>
+              <p className="mt-1 text-sm text-[#4b5563]">
+                Closed tickets stay on record. Open a new ticket if you need more help.
+              </p>
+            </div>
+          ) : isResolved ? (
             <div className="mt-5 space-y-4 rounded-2xl border border-[#e6f5f0] bg-[#f4fbf8] p-4 shadow-[var(--bf-shadow-in)]">
               <div>
                 <p className="text-sm font-semibold text-[#005a40]">This ticket is resolved</p>
@@ -315,12 +330,21 @@ export default function ClientSupportTicketDetails() {
             </div>
           ) : (
             <form onSubmit={handleReply} className="mt-5 space-y-3">
+              {isEscalated ? (
+                <p className="text-sm text-[#4b5563]">
+                  A specialist is reviewing this ticket. You can add more information without changing that review.
+                </p>
+              ) : null}
               <TextArea
-                label="Your reply"
+                label={isEscalated ? 'Additional information' : 'Your reply'}
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
                 error={replyError}
-                placeholder="Write a reply to the support team"
+                placeholder={
+                  isEscalated
+                    ? 'Add details for the specialist review'
+                    : 'Write a reply to the support team'
+                }
               />
               <Button
                 type="submit"

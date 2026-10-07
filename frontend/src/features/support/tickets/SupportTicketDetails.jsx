@@ -12,6 +12,8 @@ import Toast from '../../../components/ui/Toast'
 
 import TicketHeader from './components/TicketHeader'
 
+import { ticketCapabilities } from './ticketState'
+
 import TicketLifecycle from './components/TicketLifecycle'
 
 import EscalatedTicketState from './components/EscalatedTicketState'
@@ -439,7 +441,7 @@ export default function SupportTicketDetails() {
 
 
 
-          {ticket.status !== 'Closed' ? (
+          {ticketCapabilities(ticket).canReply ? (
 
             <ReplyComposer
 
@@ -457,7 +459,15 @@ export default function SupportTicketDetails() {
 
             <div className="rounded-2xl border border-[#e8ecf1] bg-[#f8faf9] p-4 text-center text-xs text-[#6b7280]">
 
-              This ticket has concluded its support lifecycle and is closed for further client replies.
+              {ticket.status === 'Escalated'
+
+                ? 'Specialist review is in progress. Reply to the client after guidance is received.'
+
+                : ticket.status === 'Resolved'
+
+                ? 'This ticket is resolved. Close it, or the client can reopen it.'
+
+                : 'This ticket is closed. No further replies or assignment changes are available.'}
 
             </div>
 

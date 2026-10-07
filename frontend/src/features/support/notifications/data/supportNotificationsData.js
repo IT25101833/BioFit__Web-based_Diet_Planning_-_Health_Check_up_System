@@ -1,4 +1,4 @@
-import { apiRequest, shouldUseMockData } from '../../../../api/client'
+import { apiRequest, USE_MOCK } from '../../../../api/client'
 import { hydrateList, persistList } from '../../data/supportMockStore'
 
 const NOTIFICATION_SEED = [
@@ -69,7 +69,7 @@ function persistNotifications() {
 }
 
 export async function fetchSupportNotifications() {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay()
     supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
     return supportNotifications.map((n) => ({ ...n }))
@@ -78,7 +78,7 @@ export async function fetchSupportNotifications() {
 }
 
 export async function markSupportNotificationRead(id) {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(250)
     supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
     const found = supportNotifications.find((n) => n.id === id)
@@ -90,7 +90,7 @@ export async function markSupportNotificationRead(id) {
 }
 
 export async function markAllSupportNotificationsRead() {
-  if (shouldUseMockData()) {
+  if (USE_MOCK) {
     await delay(350)
     supportNotifications = hydrateList('supportNotifications', NOTIFICATION_SEED)
     supportNotifications.forEach((n) => {

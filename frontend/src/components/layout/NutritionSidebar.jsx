@@ -13,6 +13,7 @@ import {
   UserRound,
   Users,
   Utensils,
+  ArrowUpRight,
 } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'Appointment Lobby', to: '/nutrition/appointments', icon: CalendarDays },
   { label: 'My Availability', to: '/nutrition/availability', icon: CalendarClock },
   { label: 'Book Manager', to: '/nutrition/book-appointment', icon: CalendarPlus },
+  { label: 'Escalations', to: '/nutrition/escalations', icon: ArrowUpRight },
   { label: 'Notifications', to: '/nutrition/notifications', icon: Bell },
 ]
 

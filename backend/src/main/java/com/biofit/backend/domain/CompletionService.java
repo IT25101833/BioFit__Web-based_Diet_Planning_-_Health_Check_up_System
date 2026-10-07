@@ -14,6 +14,9 @@ import com.biofit.backend.user.RoleRepository;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import com.biofit.backend.user.UserStatus;
+import com.biofit.backend.support.SupportTicketPresenter;
+import com.biofit.backend.support.SupportTicketWorkflow;
+import com.biofit.backend.support.TicketAudience;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -43,6 +46,8 @@ public class CompletionService {
     private final RoleRepository roleRepository;
     private final AuditLogRepository auditLogRepository;
     private final DomainMapper mapper;
+    private final SupportTicketWorkflow supportTicketWorkflow;
+    private final SupportTicketPresenter supportTicketPresenter;
     private final NotificationRepository notificationRepository;
     private final MedicalReviewRequestService medicalReviewRequestService;
     private final MedicalAdvisorService medicalAdvisorService;
@@ -487,17 +492,7 @@ public class CompletionService {
         supportTicketRepository.save(t);
         inq.setStatus("Converted");
         inquiryRepository.save(inq);
-        NotificationEntity n = new NotificationEntity();
-        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
-        n.setAudience("SUPPORT");
-        n.setType("tickets");
-        n.setTitle("Inquiry converted to " + t.getId());
-        n.setBody(t.getClientName() + " inquiry became ticket \"" + t.getSubject() + "\".");
-        n.setLink("/support/tickets/" + t.getId());
-        n.setReadFlag(false);
-        n.setCreatedAt(Instant.now());
-        notificationRepository.save(n);
-        return mapper.ticketSummary(t);
+        return supportTicketWorkflow.adoptConvertedTicket(t);
     }
 
     public List<Map<String, Object>> feedback() {
@@ -533,173 +528,8 @@ public class CompletionService {
     /* ---------- Support ticket mutations ---------- */
 
     @Transactional
-    public Map<String, Object> patchTicket(String id, Map<String, Object> body) {
-        SupportTicketEntity t =
-                supportTicketRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
-        String previousStatus = t.getStatus();
-        String previousAssignedTo = t.getAssignedTo();
-        if (body.get("status") != null) t.setStatus(str(body.get("status")));
-        if (body.get("priority") != null) t.setPriority(str(body.get("priority")));
-        if (body.get("category") != null) t.setCategory(str(body.get("category")));
-        if (body.get("assignedTo") != null) {
-            t.setAssignedTo(str(body.get("assignedTo")));
-            if (isBlank(previousStatus) || "Open".equalsIgnoreCase(previousStatus)) {
-                if (body.get("status") == null) t.setStatus("Assigned");
-            }
-        }
-        if (body.get("waitingOn") != null) t.setWaitingOn(str(body.get("waitingOn")));
-        if (body.get("escalation") != null) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> escalation =
-                    body.get("escalation") instanceof Map<?, ?>
-                            ? new LinkedHashMap<>((Map<String, Object>) body.get("escalation"))
-                            : new LinkedHashMap<>();
-            escalation.putIfAbsent("escalatedBy", str(body.getOrDefault("author", "Support")));
-            escalation.putIfAbsent("escalatedAt", Instant.now().toString());
-            escalation.putIfAbsent("status", "Under Review");
-            escalation.putIfAbsent("specialistResponse", null);
-            t.setEscalationJson(mapper.toJson(escalation));
-            if (body.get("status") == null) t.setStatus("Escalated");
-            notifyEscalationTarget(t, escalation);
-        }
-        if (body.get("resolution") != null) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> resolution =
-                    body.get("resolution") instanceof Map<?, ?>
-                            ? new LinkedHashMap<>((Map<String, Object>) body.get("resolution"))
-                            : new LinkedHashMap<>();
-            resolution.putIfAbsent("resolvedBy", str(body.getOrDefault("author", "Support")));
-            resolution.putIfAbsent("resolvedAt", Instant.now().toString());
-            t.setResolutionJson(mapper.toJson(resolution));
-            if (body.get("status") == null) t.setStatus("Resolved");
-        }
-        if (body.get("message") != null || body.get("body") != null || body.get("note") != null) {
-            @SuppressWarnings("unchecked")
-            List<Object> messages =
-                    new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
-            boolean internal = Boolean.TRUE.equals(body.get("internal"));
-            messages.add(
-                    Map.of(
-                            "id",
-                            "msg-" + (messages.size() + 1),
-                            "from",
-                            internal ? "internal" : "support",
-                            "role",
-                            internal ? "internal" : "support",
-                            "author",
-                            str(body.getOrDefault("author", "Support")),
-                            "body",
-                            str(body.getOrDefault("message", body.getOrDefault("body", body.get("note")))),
-                            "at",
-                            Instant.now().toString()));
-            t.setMessagesJson(mapper.toJson(messages));
-        }
-        appendActivity(t, str(body.getOrDefault("activity", "Ticket updated")));
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-
-        if (body.get("assignedTo") != null) {
-            String newAssignedTo = str(body.get("assignedTo"));
-            if (previousAssignedTo == null || !previousAssignedTo.equals(newAssignedTo)) {
-                notifySupportAssignment(t, newAssignedTo);
-            }
-        }
-
-        String newStatus = t.getStatus() == null ? "" : t.getStatus();
-        boolean statusChanged = previousStatus == null || !previousStatus.equalsIgnoreCase(newStatus);
-        if (statusChanged && "Resolved".equalsIgnoreCase(newStatus)) {
-            notifyTicketClient(
-                    t,
-                    "Support ticket resolved",
-                    "Your ticket \"" + t.getSubject() + "\" was marked resolved. You can reopen it if something is still outstanding.",
-                    "/client/support/" + t.getId());
-        } else if (statusChanged && "Closed".equalsIgnoreCase(newStatus)) {
-            notifyTicketClient(
-                    t,
-                    "Support ticket closed",
-                    "Your ticket \"" + t.getSubject() + "\" has been closed.",
-                    "/client/support/" + t.getId());
-        } else if (statusChanged && "Pending Client Reply".equalsIgnoreCase(newStatus)) {
-            notifyTicketClient(
-                    t,
-                    "Support replied to your ticket",
-                    "Support replied on \"" + t.getSubject() + "\". Please review and respond if needed.",
-                    "/client/support/" + t.getId());
-        } else if (!Boolean.TRUE.equals(body.get("internal"))
-                && (body.get("message") != null || body.get("body") != null)
-                && !"Resolved".equalsIgnoreCase(newStatus)
-                && !"Closed".equalsIgnoreCase(newStatus)) {
-            notifyTicketClient(
-                    t,
-                    "Support replied to your ticket",
-                    "Support replied on \"" + t.getSubject() + "\".",
-                    "/client/support/" + t.getId());
-        }
-
-        return fullTicket(t);
-    }
-
-    private void notifyTicketClient(SupportTicketEntity t, String title, String body, String link) {
-        if (t.getClientUserId() == null) return;
-        NotificationEntity n = new NotificationEntity();
-        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
-        n.setUserId(t.getClientUserId());
-        n.setAudience("CLIENT");
-        n.setType("support");
-        n.setTitle(title);
-        n.setBody(body);
-        n.setLink(link);
-        n.setReadFlag(false);
-        n.setCreatedAt(Instant.now());
-        notificationRepository.save(n);
-    }
-
-    private void notifyEscalationTarget(SupportTicketEntity t, Map<String, Object> escalation) {
-        String destination = str(escalation.getOrDefault("escalatedTo", escalation.get("destination")));
-        if (isBlank(destination)) return;
-        String audience = mapEscalationDestinationToAudience(destination);
-        if (audience == null) return;
-        NotificationEntity n = new NotificationEntity();
-        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
-        n.setAudience(audience);
-        n.setType("escalation");
-        n.setTitle("Ticket escalated: " + t.getId());
-        n.setBody(
-                "Support escalated \""
-                        + t.getSubject()
-                        + "\" to "
-                        + destination
-                        + ". Ticket: "
-                        + t.getId());
-        n.setLink("/support/tickets/" + t.getId());
-        n.setReadFlag(false);
-        n.setCreatedAt(Instant.now());
-        notificationRepository.save(n);
-    }
-
-    private void notifySupportAssignment(SupportTicketEntity t, String assignee) {
-        NotificationEntity n = new NotificationEntity();
-        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
-        n.setAudience("SUPPORT");
-        n.setType("assignment");
-        n.setTitle("Ticket assigned: " + t.getId());
-        n.setBody("Ticket \"" + t.getSubject() + "\" assigned to " + assignee + ".");
-        n.setLink("/support/tickets/" + t.getId());
-        n.setReadFlag(false);
-        n.setCreatedAt(Instant.now());
-        notificationRepository.save(n);
-    }
-
-    private static String mapEscalationDestinationToAudience(String destination) {
-        String d = destination.toLowerCase();
-        if (d.contains("medical")) return "MEDICAL";
-        if (d.contains("coach") || d.contains("fitness")) return "COACH";
-        if (d.contains("nutrition")) return "NUTRITION";
-        if (d.contains("manager") || d.contains("management")) return "MANAGER";
-        if (d.contains("admin") || d.contains("digital") || d.contains("operations")) return "STAFF";
-        return "STAFF";
+    public Map<String, Object> patchTicket(String id, Long actorUserId, Map<String, Object> body) {
+        return supportTicketWorkflow.applySupportPatch(id, actorUserId, body == null ? Map.of() : body);
     }
 
     public Map<String, Object> fullTicket(String id) {
@@ -747,69 +577,13 @@ public class CompletionService {
     }
 
     public List<Map<String, Object>> escalatedTicketsFor(String destination) {
-        return supportTicketRepository.findAll().stream()
-                .filter(t -> t.getEscalationJson() != null && !t.getEscalationJson().isBlank())
-                .filter(
-                        t -> {
-                            Object esc = mapper.parseJson(t.getEscalationJson(), null);
-                            if (!(esc instanceof Map<?, ?> map)) return false;
-                            String escalatedTo = str(map.get("escalatedTo"));
-                            return escalatedTo != null && escalatedTo.equalsIgnoreCase(destination);
-                        })
-                .map(this::fullTicket)
-                .toList();
+        return supportTicketWorkflow.queueFor(destination);
     }
 
     @Transactional
-    public Map<String, Object> specialistRespond(String id, String authorName, Map<String, Object> body) {
-        SupportTicketEntity t =
-                supportTicketRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "Ticket not found", HttpStatus.NOT_FOUND));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> escalation =
-                new LinkedHashMap<>(
-                        (Map<String, Object>) mapper.parseJson(t.getEscalationJson(), new LinkedHashMap<>()));
-        String responseBody = str(body.getOrDefault("message", body.get("body")));
-        escalation.put("specialistResponse", responseBody == null ? "" : responseBody);
-        escalation.put("status", "Responded");
-        t.setEscalationJson(mapper.toJson(escalation));
-
-        @SuppressWarnings("unchecked")
-        List<Object> messages =
-                new ArrayList<>((List<Object>) mapper.parseJson(t.getMessagesJson(), new ArrayList<>()));
-        Map<String, Object> msg = new LinkedHashMap<>();
-        msg.put("id", "msg-" + (messages.size() + 1));
-        msg.put("from", "specialist");
-        msg.put("role", "specialist");
-        msg.put("author", authorName == null || authorName.isBlank() ? "Specialist" : authorName);
-        msg.put("body", responseBody == null ? "" : responseBody);
-        msg.put("at", Instant.now().toString());
-        messages.add(msg);
-        t.setMessagesJson(mapper.toJson(messages));
-
-        t.setStatus("In Progress");
-        t.setWaitingOn("Support");
-        appendActivity(t, (authorName == null ? "Specialist" : authorName) + " responded to escalation");
-        t.setUpdatedAt(Instant.now());
-        supportTicketRepository.save(t);
-
-        NotificationEntity n = new NotificationEntity();
-        n.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
-        n.setAudience("SUPPORT");
-        n.setType("escalation");
-        n.setTitle("Specialist responded: " + t.getId());
-        n.setBody(
-                (authorName == null ? "Specialist" : authorName)
-                        + " responded to escalation on \""
-                        + t.getSubject()
-                        + "\".");
-        n.setLink("/support/tickets/" + t.getId());
-        n.setReadFlag(false);
-        n.setCreatedAt(Instant.now());
-        notificationRepository.save(n);
-
-        return fullTicket(t);
+    public Map<String, Object> specialistRespond(
+            String id, Long actorUserId, String expectedDestination, Map<String, Object> body) {
+        return supportTicketWorkflow.specialistRespond(id, actorUserId, expectedDestination, body);
     }
 
     @Transactional
@@ -1227,52 +1001,7 @@ public class CompletionService {
     }
 
     private Map<String, Object> fullTicket(SupportTicketEntity t) {
-        Map<String, Object> m = mapper.ticketSummary(t);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> existingClient = (Map<String, Object>) m.get("client");
-        final Map<String, Object> client =
-                existingClient != null ? existingClient : new LinkedHashMap<>();
-        if (existingClient == null) {
-            m.put("client", client);
-        }
-        if (t.getClientUserId() != null) {
-            userRepository
-                    .findById(t.getClientUserId())
-                    .ifPresent(
-                            u -> {
-                                client.put("email", u.getEmail());
-                                client.put("phone", u.getContactNumber());
-                            });
-            healthProfileRepository
-                    .findByUserId(t.getClientUserId())
-                    .ifPresent(
-                            hp -> {
-                                if (hp.getProgrammeLabel() != null) {
-                                    client.put("programme", hp.getProgrammeLabel());
-                                }
-                            });
-        }
-        if (t.getClientId() != null) {
-            long ticketCount = supportTicketRepository.countByClientId(t.getClientId());
-            client.put("previousTicketCount", Math.max(0, ticketCount - 1));
-        }
-        m.put("waitingOn", t.getWaitingOn());
-        m.put("activityTimeline", mapper.parseJson(t.getActivityJson(), List.of()));
-        m.put("escalation", mapper.parseJson(t.getEscalationJson(), null));
-        m.put("resolution", mapper.parseJson(t.getResolutionJson(), null));
-        return m;
-    }
-
-    private void appendActivity(SupportTicketEntity t, String text) {
-        @SuppressWarnings("unchecked")
-        List<Object> activity =
-                new ArrayList<>((List<Object>) mapper.parseJson(t.getActivityJson(), new ArrayList<>()));
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("id", "act-" + (activity.size() + 1));
-        entry.put("text", text);
-        entry.put("at", Instant.now().toString());
-        activity.add(entry);
-        t.setActivityJson(mapper.toJson(activity));
+        return supportTicketPresenter.present(t, TicketAudience.SUPPORT);
     }
 
     @SuppressWarnings("unchecked")

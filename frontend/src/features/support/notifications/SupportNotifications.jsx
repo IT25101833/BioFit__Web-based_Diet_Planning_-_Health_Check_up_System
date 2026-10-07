@@ -63,8 +63,8 @@ export default function SupportNotifications() {
 
   async function handleMarkAllRead() {
     await markAllSupportNotificationsRead()
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-    setToast('All notifications marked as read.')
+    await load({ quiet: true })
+    setToast('Your notifications were marked as read.')
   }
 
   if (loading) return <LoadingSkeleton rows={5} />

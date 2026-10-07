@@ -179,8 +179,10 @@ public class DomainSeedService {
         ticket.setSubject("Reschedule nutrition consultation");
         ticket.setCategory("Scheduling");
         ticket.setPriority("Medium");
-        ticket.setStatus("Open");
+        ticket.setStatus("Assigned");
         ticket.setAssignedTo("Priya Nair");
+        ticket.setWaitingOn("Support");
+        ticket.setWaitingSince(Instant.now());
         ticket.setRelatedService("Nutrition Consultation");
         ticket.setMessagesJson(mapper.toJson(List.of(
                 Map.of("id", "msg-1", "from", "client", "author", clientName,
