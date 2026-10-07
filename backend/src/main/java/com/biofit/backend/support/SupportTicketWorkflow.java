@@ -61,8 +61,7 @@ public class SupportTicketWorkflow {
         ticket.setPriority(TicketPriority.parse(blankTo(str(payload.get("priority")), "Medium")).label());
         ticket.setStatus(TicketStatus.OPEN.label());
         ticket.setAssignedTo(null);
-        ticket.setWaitingOn("Support");
-        ticket.setWaitingSince(Instant.now());
+        alignWaiting(ticket);
         ticket.setRelatedService(blankTo(str(payload.get("relatedService")), "General"));
         ticket.setActivityJson("[]");
         ticket.setMessagesJson(
@@ -98,8 +97,7 @@ public class SupportTicketWorkflow {
         if (ticket.getPriority() == null) {
             ticket.setPriority(TicketPriority.MEDIUM.label());
         }
-        ticket.setWaitingOn("Support");
-        ticket.setWaitingSince(Instant.now());
+        alignWaiting(ticket);
         if (ticket.getActivityJson() == null) {
             ticket.setActivityJson("[]");
         }
@@ -136,15 +134,17 @@ public class SupportTicketWorkflow {
             cause = Cause.CLIENT_REPLY;
             ticket.setResolutionJson(null);
         }
-        if (from != TicketStatus.ESCALATED
-                && (from == TicketStatus.PENDING_CLIENT_REPLY
-                        || from == TicketStatus.RESOLVED
-                        || from == TicketStatus.OPEN
-                        || from == TicketStatus.ASSIGNED)) {
+        // An active escalation stays with the specialist. The client may add information,
+        // but that does not reopen, resolve, or move waitingOn away from Specialist.
+        if (from == TicketStatus.ESCALATED) {
+            alignWaiting(ticket);
+        } else if (from == TicketStatus.PENDING_CLIENT_REPLY
+                || from == TicketStatus.RESOLVED
+                || from == TicketStatus.OPEN
+                || from == TicketStatus.ASSIGNED) {
             move(ticket, from, TicketStatus.IN_PROGRESS, cause);
-        }
-        if (from != TicketStatus.ESCALATED) {
-            setWaiting(ticket, "Support");
+        } else {
+            alignWaiting(ticket);
         }
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
@@ -178,7 +178,6 @@ public class SupportTicketWorkflow {
         }
         move(ticket, from, TicketStatus.IN_PROGRESS, Cause.CLIENT_REOPEN);
         ticket.setResolutionJson(null);
-        setWaiting(ticket, "Support");
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
         publish(
@@ -228,7 +227,7 @@ public class SupportTicketWorkflow {
             return changeStatus(ticket, from, actor, actorName, actorRole, str(body.get("status")));
         }
         if (body.get("priority") != null || body.get("category") != null) {
-            return updateMetadata(ticket, actorName, body);
+            return updateMetadata(ticket, from, actor, actorName, actorRole, body);
         }
         throw new ApiException("VALIDATION_ERROR", "Nothing to update on this ticket.", HttpStatus.BAD_REQUEST);
     }
@@ -284,7 +283,6 @@ public class SupportTicketWorkflow {
                         response,
                         null));
         move(ticket, from, TicketStatus.IN_PROGRESS, Cause.SPECIALIST_RESPONSE);
-        setWaiting(ticket, "Support");
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
         publish(
@@ -347,7 +345,6 @@ public class SupportTicketWorkflow {
         escalation.put("specialistResponse", null);
         ticket.setEscalationJson(mapper.toJson(escalation));
         move(ticket, from, TicketStatus.ESCALATED, Cause.WORKFLOW);
-        setWaiting(ticket, "Specialist");
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
         publish(
@@ -396,7 +393,6 @@ public class SupportTicketWorkflow {
         resolution.put("resolvedAt", Instant.now().toString());
         ticket.setResolutionJson(mapper.toJson(resolution));
         move(ticket, from, TicketStatus.RESOLVED, Cause.WORKFLOW);
-        setWaiting(ticket, "Client");
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
         publish(
@@ -484,9 +480,10 @@ public class SupportTicketWorkflow {
                 message(nextMessageId(ticket), "support", MessageVisibility.SUPPORT, actorName, text, null));
         if (from != TicketStatus.PENDING_CLIENT_REPLY) {
             move(ticket, from, TicketStatus.PENDING_CLIENT_REPLY, Cause.WORKFLOW);
+        } else {
+            alignWaiting(ticket);
         }
         ticket.setResolutionJson(null);
-        setWaiting(ticket, "Client");
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
         publish(
@@ -510,19 +507,19 @@ public class SupportTicketWorkflow {
             String actorName,
             String actorRole,
             String assignee) {
-        if (assignee == null || assignee.isBlank()) {
-            throw new ApiException("VALIDATION_ERROR", "Choose an officer to assign.", HttpStatus.BAD_REQUEST);
-        }
-        String name = assignee.trim();
+        User officer = requireActiveOfficer(assignee);
+        String name = officer.getFullName();
         ticket.setAssignedTo(name);
         if (from == TicketStatus.OPEN) {
             move(ticket, from, TicketStatus.ASSIGNED, Cause.WORKFLOW);
+        } else {
+            alignWaiting(ticket);
         }
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
-        Long officerId = findOfficerId(name);
         publish(
-                assignedEvent(ticket, actor, actorName, actorRole, officerId, name, from.label(), ticket.getStatus()));
+                assignedEvent(
+                        ticket, actor, actorName, actorRole, officer.getId(), name, from.label(), ticket.getStatus()));
         return presenter.present(ticket, TicketAudience.SUPPORT);
     }
 
@@ -563,30 +560,86 @@ public class SupportTicketWorkflow {
         return presenter.present(ticket, TicketAudience.SUPPORT);
     }
 
-    private Map<String, Object> updateMetadata(SupportTicketEntity ticket, String actorName, Map<String, Object> body) {
+    private Map<String, Object> updateMetadata(
+            SupportTicketEntity ticket,
+            TicketStatus from,
+            User actor,
+            String actorName,
+            String actorRole,
+            Map<String, Object> body) {
+        List<String> changes = new ArrayList<>();
         if (body.get("priority") != null) {
-            ticket.setPriority(TicketPriority.parse(str(body.get("priority"))).label());
+            String next = TicketPriority.parse(str(body.get("priority"))).label();
+            if (!next.equals(ticket.getPriority())) {
+                changes.add("Priority " + ticket.getPriority() + " → " + next);
+                ticket.setPriority(next);
+            }
         }
         if (body.get("category") != null) {
             String category = str(body.get("category"));
             if (category == null || category.isBlank()) {
                 throw new ApiException("VALIDATION_ERROR", "Category cannot be empty.", HttpStatus.BAD_REQUEST);
             }
-            ticket.setCategory(category.trim());
+            category = category.trim();
+            if (!category.equals(ticket.getCategory())) {
+                changes.add("Category " + blankTo(ticket.getCategory(), "none") + " → " + category);
+                ticket.setCategory(category);
+            }
+        }
+        if (changes.isEmpty()) {
+            return presenter.present(ticket, TicketAudience.SUPPORT);
         }
         ticket.setUpdatedAt(Instant.now());
         supportTicketRepository.save(ticket);
+        publish(
+                event(
+                        TicketEventType.TICKET_METADATA_UPDATED,
+                        ticket,
+                        actor == null ? null : actor.getId(),
+                        actorName,
+                        actorRole,
+                        null,
+                        from.label(),
+                        ticket.getStatus(),
+                        String.join(". ", changes)));
         return presenter.present(ticket, TicketAudience.SUPPORT);
     }
 
     private void move(SupportTicketEntity ticket, TicketStatus from, TicketStatus to, Cause cause) {
         TicketStateMachine.assertTransition(from, to, cause);
         ticket.setStatus(to.label());
+        alignWaiting(ticket);
+    }
+
+    /**
+     * Waiting party is derived from status so every transition uses the same rule.
+     * Closed keeps the party it already had. waitingSince moves only when the party changes.
+     */
+    private void alignWaiting(SupportTicketEntity ticket) {
+        TicketStatus status = TicketStatus.parse(ticket.getStatus());
+        if (status == TicketStatus.CLOSED) {
+            return;
+        }
+        setWaiting(ticket, waitingParty(status));
+    }
+
+    private static String waitingParty(TicketStatus status) {
+        return switch (status) {
+            case OPEN, ASSIGNED, IN_PROGRESS -> "Support";
+            case PENDING_CLIENT_REPLY, RESOLVED -> "Client";
+            case ESCALATED -> "Specialist";
+            case CLOSED -> null;
+        };
     }
 
     private void setWaiting(SupportTicketEntity ticket, String party) {
+        if (party == null) {
+            return;
+        }
         if (ticket.getWaitingOn() == null || !ticket.getWaitingOn().equalsIgnoreCase(party)) {
             ticket.setWaitingOn(party);
+            ticket.setWaitingSince(Instant.now());
+        } else if (ticket.getWaitingSince() == null) {
             ticket.setWaitingSince(Instant.now());
         }
     }
@@ -655,7 +708,10 @@ public class SupportTicketWorkflow {
         }
         Map<String, Object> escalation = escalationMap(ticket);
         String escalatedTo = str(escalation.get("escalatedTo"));
-        return escalatedTo != null && escalatedTo.equalsIgnoreCase(destinationLabel);
+        String escalationStatus = str(escalation.get("status"));
+        return escalatedTo != null
+                && escalatedTo.equalsIgnoreCase(destinationLabel)
+                && "Under Review".equalsIgnoreCase(escalationStatus);
     }
 
     private boolean hasActiveEscalation(SupportTicketEntity ticket) {
@@ -731,6 +787,25 @@ public class SupportTicketWorkflow {
         return supportTicketRepository
                 .findByIdAndClientUserId(ticketId, userId)
                 .orElseThrow(TicketNotFoundException::new);
+    }
+
+    private User requireActiveOfficer(String assignee) {
+        if (assignee == null || assignee.isBlank()) {
+            throw new ApiException("VALIDATION_ERROR", "Choose an officer to assign.", HttpStatus.BAD_REQUEST);
+        }
+        String name = assignee.trim();
+        return userRepository.findActiveByRole(RoleName.CUSTOMER_EXPERIENCE_OFFICER, UserStatus.ACTIVE).stream()
+                .filter(
+                        user ->
+                                user.getFullName().equalsIgnoreCase(name)
+                                        || user.getEmail().equalsIgnoreCase(name))
+                .findFirst()
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "ASSIGNEE_NOT_FOUND",
+                                        "No active Customer Experience Officer matches \"" + name + "\".",
+                                        HttpStatus.BAD_REQUEST));
     }
 
     private Long findOfficerId(String name) {

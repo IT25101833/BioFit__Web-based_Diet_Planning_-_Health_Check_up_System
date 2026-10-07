@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Award, Clock, Mail, Phone, ShieldCheck, User } from 'lucide-react'
+import { Clock, Mail, Phone, ShieldCheck } from 'lucide-react'
 import PageHeader from '../../../components/ui/PageHeader'
 import LoadingSkeleton from '../../../components/ui/LoadingSkeleton'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -70,7 +70,7 @@ export default function SupportProfile() {
     <div className="space-y-6">
       <PageHeader
         title="My Profile"
-        description="Manage your Customer Experience Officer account details, desk availability, and contact information."
+        description="Manage the account details stored for your Customer Experience Officer profile."
         actions={
           !editing ? (
             <Button

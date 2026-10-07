@@ -73,6 +73,10 @@ public class AuditObserver implements TicketObserver {
             case TICKET_RESOLVED -> "Ticket resolved";
             case TICKET_CLOSED -> "Ticket closed";
             case TICKET_REOPENED -> "Client reopened the ticket";
+            case TICKET_METADATA_UPDATED ->
+                    event.summary() == null || event.summary().isBlank()
+                            ? actor + " updated ticket details"
+                            : event.summary();
         };
     }
 }

@@ -6,11 +6,8 @@ export let supportProfile = {
   email: 'amaya.fernando@vitallife.lk',
   contactNumber: '+94 77 342 9918',
   role: 'Customer Experience Officer',
-  department: 'Client Care & Service Experience',
-  team: 'VitalLife Experience Desk',
-  workingHours: '08:00 AM – 05:00 PM (Mon – Sat)',
-  bio: 'Specialized in wellness onboarding, appointment coordination, and omnichannel client concierge care for VitalLife members.',
-  skills: ['Appointment Scheduling', 'Client Care', 'Complaint Resolution', 'Specialist Routing', 'Service Triage'],
+  specialization: 'Customer experience',
+  accountStatus: 'Active',
 }
 
 function delay(ms = 350) {

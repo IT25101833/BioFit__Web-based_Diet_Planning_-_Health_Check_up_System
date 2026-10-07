@@ -224,6 +224,9 @@ class SupportTicketFlowTest {
                 .andExpect(jsonPath("$.data.status").value("In Progress"))
                 .andExpect(jsonPath("$.data.waitingOn").value("Support"))
                 .andExpect(jsonPath("$.data.escalation.status").value("Responded"));
+        mockMvc.perform(get("/api/medical/escalations").header("Authorization", bearer(medical, "MEDICAL_ADVISOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == '" + id + "')]").isEmpty());
 
         mockMvc.perform(get("/api/support/tickets/" + id).header("Authorization", bearer(support, "CUSTOMER_EXPERIENCE_OFFICER")))
                 .andExpect(jsonPath("$.data.escalation.specialistResponse").value("Pause squats and book a check-up."));
@@ -293,6 +296,152 @@ class SupportTicketFlowTest {
         assertTrue(activity.contains("TICKET_REOPENED"));
         assertTrue(activity.contains("TICKET_CLOSED"));
         assertEquals(1, activity.split("TICKET_ESCALATED", -1).length - 1);
+    }
+
+    @Test
+    void respondedEscalationLeavesTheSpecialistQueue() throws Exception {
+        String id = createTicket("Queue exit", "Need a medical look.");
+        assignAndStart(id);
+        escalate(id, "Medical Advisor", "Please review the symptoms.");
+        mockMvc.perform(get("/api/medical/escalations").header("Authorization", bearer(medical, "MEDICAL_ADVISOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == '" + id + "')]").isNotEmpty());
+
+        mockMvc.perform(
+                        post("/api/medical/escalations/" + id + "/respond")
+                                .header("Authorization", bearer(medical, "MEDICAL_ADVISOR"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"message\":\"Rest and book a check-up.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("In Progress"))
+                .andExpect(jsonPath("$.data.waitingOn").value("Support"))
+                .andExpect(jsonPath("$.data.escalation.status").value("Responded"));
+
+        mockMvc.perform(get("/api/medical/escalations").header("Authorization", bearer(medical, "MEDICAL_ADVISOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == '" + id + "')]").isEmpty());
+    }
+
+    @Test
+    void invalidAssigneeIsRejectedAndNotStored() throws Exception {
+        String id = createTicket("Bad assign", "Please assign a real officer.");
+        mockMvc.perform(
+                        patch("/api/support/tickets/" + id)
+                                .header("Authorization", bearer(support, "CUSTOMER_EXPERIENCE_OFFICER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"assignedTo\":\"Batman\"}"))
+                .andExpect(status().isBadRequest());
+
+        SupportTicketEntity stored = supportTicketRepository.findById(id).orElseThrow();
+        assertEquals("Open", stored.getStatus());
+        assertTrue(stored.getAssignedTo() == null || stored.getAssignedTo().isBlank());
+        assertFalse(stored.getMessagesJson() != null && stored.getMessagesJson().contains("Batman"));
+    }
+
+    @Test
+    void waitingPartyFollowsStatusAndClockResetsOnlyWhenThePartyChanges() throws Exception {
+        String id = createTicket("Waiting clock", "Track who the ticket is waiting on.");
+        SupportTicketEntity created = supportTicketRepository.findById(id).orElseThrow();
+        assertEquals("Support", created.getWaitingOn());
+        java.time.Instant openedAt = created.getWaitingSince();
+
+        Thread.sleep(30);
+        assignAndStart(id);
+        SupportTicketEntity started = supportTicketRepository.findById(id).orElseThrow();
+        assertEquals("In Progress", started.getStatus());
+        assertEquals("Support", started.getWaitingOn());
+        assertEquals(openedAt, started.getWaitingSince());
+
+        Thread.sleep(30);
+        mockMvc.perform(
+                        patch("/api/support/tickets/" + id)
+                                .header("Authorization", bearer(support, "CUSTOMER_EXPERIENCE_OFFICER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"status\":\"Pending Client Reply\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.waitingOn").value("Client"));
+        SupportTicketEntity pending = supportTicketRepository.findById(id).orElseThrow();
+        assertTrue(pending.getWaitingSince().isAfter(openedAt));
+
+        Thread.sleep(30);
+        mockMvc.perform(
+                        patch("/api/support/tickets/" + id)
+                                .header("Authorization", bearer(support, "CUSTOMER_EXPERIENCE_OFFICER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"message\":\"Please confirm the appointment time.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("Pending Client Reply"))
+                .andExpect(jsonPath("$.data.waitingOn").value("Client"));
+        assertEquals(pending.getWaitingSince(), supportTicketRepository.findById(id).orElseThrow().getWaitingSince());
+
+        Thread.sleep(30);
+        mockMvc.perform(
+                        post("/api/client/support/" + id + "/replies")
+                                .header("Authorization", bearer(client, "CLIENT"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"message\":\"Friday afternoon works.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("In Progress"))
+                .andExpect(jsonPath("$.data.waitingOn").value("Support"));
+        assertTrue(
+                supportTicketRepository.findById(id).orElseThrow().getWaitingSince().isAfter(pending.getWaitingSince()));
+    }
+
+    @Test
+    void clientReplyDuringEscalationStaysWithTheSpecialist() throws Exception {
+        String id = createTicket("More detail", "My knee still hurts.");
+        assignAndStart(id);
+        escalate(id, "Medical Advisor", "Pain during squats.");
+        java.time.Instant waiting = supportTicketRepository.findById(id).orElseThrow().getWaitingSince();
+
+        Thread.sleep(30);
+        mockMvc.perform(
+                        post("/api/client/support/" + id + "/replies")
+                                .header("Authorization", bearer(client, "CLIENT"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"message\":\"It is worse on stairs.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("Escalated"))
+                .andExpect(jsonPath("$.data.waitingOn").value("Specialist"));
+
+        SupportTicketEntity stored = supportTicketRepository.findById(id).orElseThrow();
+        assertEquals("Escalated", stored.getStatus());
+        assertEquals("Specialist", stored.getWaitingOn());
+        assertEquals(waiting, stored.getWaitingSince());
+        assertTrue(stored.getMessagesJson().contains("It is worse on stairs."));
+        assertTrue(stored.getActivityJson().contains("CLIENT_REPLIED"));
+        assertFalse(stored.getActivityJson().contains("TICKET_REOPENED"));
+
+        mockMvc.perform(get("/api/medical/escalations").header("Authorization", bearer(medical, "MEDICAL_ADVISOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == '" + id + "')].messages[?(@.body == 'It is worse on stairs.')]").isNotEmpty());
+    }
+
+    @Test
+    void supportProfileUsesStoredAccountFieldsOnly() throws Exception {
+        mockMvc.perform(get("/api/support/profile").header("Authorization", bearer(support, "CUSTOMER_EXPERIENCE_OFFICER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.firstName").value("Priya"))
+                .andExpect(jsonPath("$.data.lastName").value("Nair"))
+                .andExpect(jsonPath("$.data.email").value("support@biofit.demo"))
+                .andExpect(jsonPath("$.data.role").value("Customer Experience Officer"))
+                .andExpect(jsonPath("$.data.department").doesNotExist())
+                .andExpect(jsonPath("$.data.team").doesNotExist())
+                .andExpect(jsonPath("$.data.workingHours").doesNotExist())
+                .andExpect(jsonPath("$.data.bio").doesNotExist())
+                .andExpect(jsonPath("$.data.skills").doesNotExist());
+
+        mockMvc.perform(
+                        patch("/api/support/profile")
+                                .header("Authorization", bearer(support, "CUSTOMER_EXPERIENCE_OFFICER"))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"contactNumber\":\"+94 77 000 0000\",\"specialization\":\"Client care\",\"bio\":\"Not stored\",\"department\":\"Fake desk\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contactNumber").value("+94 77 000 0000"))
+                .andExpect(jsonPath("$.data.specialization").value("Client care"))
+                .andExpect(jsonPath("$.data.bio").doesNotExist())
+                .andExpect(jsonPath("$.data.department").doesNotExist());
     }
 
     private String createTicket(String subject, String description) throws Exception {

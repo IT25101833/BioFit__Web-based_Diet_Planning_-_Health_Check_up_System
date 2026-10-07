@@ -15,7 +15,9 @@ const tabs = [
   { value: 'Open', label: 'Open' },
   { value: 'In Progress', label: 'In Progress' },
   { value: 'Pending Reply', label: 'Pending Reply' },
+  { value: 'Escalated', label: 'Escalated' },
   { value: 'Resolved', label: 'Resolved' },
+  { value: 'Closed', label: 'Closed' },
 ]
 
 export default function ClientSupportTickets() {

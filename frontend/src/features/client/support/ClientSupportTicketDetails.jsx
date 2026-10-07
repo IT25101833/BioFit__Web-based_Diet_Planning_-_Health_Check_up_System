@@ -206,6 +206,7 @@ export default function ClientSupportTicketDetails() {
 
   const isClosed = ticket.status === 'Closed'
   const isResolved = ticket.status === 'Resolved'
+  const isEscalated = ticket.status === 'Escalated'
   const visibleMessages = (ticket.messages || []).filter((message) => {
     const role = String(message.role || message.from || '').toLowerCase()
     const visibility = String(message.visibility || '').toUpperCase()
@@ -329,12 +330,21 @@ export default function ClientSupportTicketDetails() {
             </div>
           ) : (
             <form onSubmit={handleReply} className="mt-5 space-y-3">
+              {isEscalated ? (
+                <p className="text-sm text-[#4b5563]">
+                  A specialist is reviewing this ticket. You can add more information without changing that review.
+                </p>
+              ) : null}
               <TextArea
-                label="Your reply"
+                label={isEscalated ? 'Additional information' : 'Your reply'}
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
                 error={replyError}
-                placeholder="Write a reply to the support team"
+                placeholder={
+                  isEscalated
+                    ? 'Add details for the specialist review'
+                    : 'Write a reply to the support team'
+                }
               />
               <Button
                 type="submit"

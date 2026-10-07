@@ -141,9 +141,10 @@ function persistClientTickets() {
 
 function normalizeClientStatus(status) {
   if (!status) return status
+  // Display alias only. Escalated and Closed stay as stored so a specialist review
+  // is not shown as ordinary progress, and a closed ticket is not offered for reopen.
   if (status === 'Pending Client Reply') return 'Pending Reply'
-  if (status === 'Assigned' || status === 'Escalated') return 'In Progress'
-  if (status === 'Closed') return 'Resolved'
+  if (status === 'Assigned') return 'In Progress'
   return status
 }
 

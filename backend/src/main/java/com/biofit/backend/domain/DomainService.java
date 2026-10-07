@@ -670,9 +670,18 @@ public class DomainService {
         return profile;
     }
 
+    /**
+     * Updates only fields that exist on the user account. Department, team, hours, bio, and skills
+     * are not stored, so they are ignored rather than echoed back as if they were saved.
+     */
     @Transactional
     public Map<String, Object> updateSupportOfficerProfile(Long userId, Map<String, Object> payload) {
-        updateClientProfile(userId, payload);
+        User user = userRepository.findById(userId).orElseThrow();
+        if (payload.get("firstName") != null) user.setFirstName(str(payload.get("firstName")));
+        if (payload.get("lastName") != null) user.setLastName(str(payload.get("lastName")));
+        if (payload.get("contactNumber") != null) user.setContactNumber(str(payload.get("contactNumber")));
+        if (payload.get("specialization") != null) user.setSpecialization(str(payload.get("specialization")));
+        userRepository.save(user);
         return supportOfficerProfile(userId);
     }
 

@@ -64,7 +64,8 @@ export default function SpecialistEscalationQueue({
         method: 'POST',
         body: JSON.stringify({ message: response.trim() }),
       })
-      setTickets((current) => current.map((ticket) => (ticket.id === updated.id ? updated : ticket)))
+      setTickets((current) => current.filter((ticket) => ticket.id !== updated.id))
+      setSelectedId((current) => (current === updated.id ? '' : current))
       setResponse('')
       setToast('Specialist Guidance Submitted')
     } catch (err) {

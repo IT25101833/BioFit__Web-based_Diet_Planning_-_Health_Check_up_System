@@ -15,5 +15,7 @@ public enum TicketEventType {
     SPECIALIST_RESPONDED,
     TICKET_RESOLVED,
     TICKET_CLOSED,
-    TICKET_REOPENED
+    TICKET_REOPENED,
+    /** Priority or category changed. Not a status change and not a notification. */
+    TICKET_METADATA_UPDATED
 }

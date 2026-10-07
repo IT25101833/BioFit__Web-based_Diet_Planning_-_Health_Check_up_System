@@ -21,7 +21,8 @@ public class NotificationObserver implements TicketObserver {
     @Override
     public void update(TicketEvent event) {
         if (event.type() == TicketEventType.INTERNAL_NOTE_ADDED
-                || event.type() == TicketEventType.TICKET_STARTED) {
+                || event.type() == TicketEventType.TICKET_STARTED
+                || event.type() == TicketEventType.TICKET_METADATA_UPDATED) {
             return;
         }
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
