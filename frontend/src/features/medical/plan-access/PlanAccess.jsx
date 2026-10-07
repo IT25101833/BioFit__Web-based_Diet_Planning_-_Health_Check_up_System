@@ -38,11 +38,11 @@ export default function PlanAccess() {
         <Link to="/medical/dashboard" className="hover:text-[#005a40] hover:underline">
           Medical Advisor
         </Link>
-        {' › Plan Access'}
+        {' › Request Client'}
       </p>
       <PageHeader
-        title="Plan Access"
-        description="Request permission before viewing a client’s fitness or nutrition plan."
+        title="Request Client"
+        description="Choose a client, then request permission to view their workout or nutrition plan."
       />
       <div className="mb-4 max-w-md">
         <Select

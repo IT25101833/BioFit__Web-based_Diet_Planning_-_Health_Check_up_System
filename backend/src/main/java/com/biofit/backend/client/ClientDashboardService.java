@@ -320,7 +320,10 @@ public class ClientDashboardService {
         String type = n.getType() == null ? "" : n.getType().toLowerCase(Locale.ROOT);
         String icon = "default";
         String tone = "green";
-        if (type.contains("appointment")) {
+        if (type.contains("plan-access") || type.contains("plan_access")) {
+            icon = "access";
+            tone = "amber";
+        } else if (type.contains("appointment")) {
             icon = "appointment";
             tone = "teal";
         } else if (type.contains("health")) {

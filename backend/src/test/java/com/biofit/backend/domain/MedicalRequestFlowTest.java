@@ -17,6 +17,7 @@ import com.biofit.backend.security.JwtService;
 import com.biofit.backend.security.UserPrincipal;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
@@ -47,6 +48,7 @@ class MedicalRequestFlowTest {
     @Autowired private NotificationRepository notificationRepository;
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private WalletRepository walletRepository;
     @Autowired private JwtService jwtService;
     @Autowired private MockMvc mockMvc;
 
@@ -70,6 +72,7 @@ class MedicalRequestFlowTest {
         String nutritionToken = jwtService.createAccessToken(nutrition.getId(), nutrition.getEmail(), List.of("NUTRITION_CONSULTANT"));
         LocalDate preferredDate = futureWeekday();
         String yesterday = LocalDate.now(MedicalRequestService.ZONE).minusDays(1).toString();
+        fundWallet(client, "3000.00");
 
         mockMvc.perform(
                         post("/api/client/medical-requests")
@@ -235,5 +238,20 @@ class MedicalRequestFlowTest {
             date = date.plusDays(1);
         }
         return date;
+    }
+
+    private void fundWallet(User client, String amount) {
+        Wallet wallet =
+                walletRepository
+                        .findByClientId(client.getId())
+                        .orElseGet(
+                                () -> {
+                                    Wallet created = new Wallet();
+                                    created.setClientId(client.getId());
+                                    created.setBalance(BigDecimal.ZERO);
+                                    return walletRepository.save(created);
+                                });
+        wallet.setBalance(new BigDecimal(amount));
+        walletRepository.save(wallet);
     }
 }

@@ -7,6 +7,7 @@ import {
   Leaf,
   LogOut,
   Settings,
+  KeyRound,
   ShieldAlert,
   ArrowUpRight,
   ShieldCheck,
@@ -19,6 +20,7 @@ import Avatar from '../ui/Avatar'
 const navItems = [
   { label: 'Dashboard', to: '/medical/dashboard', icon: LayoutDashboard },
   { label: 'Medical Requests', to: '/medical/requests', icon: ClipboardList },
+  { label: 'Request Client', to: '/medical/plan-access', icon: KeyRound },
   { label: 'Medical Records', to: '/medical/health-records', icon: FileHeart },
   { label: 'Health Assessments', to: '/medical/assessments', icon: ClipboardPlus },
   { label: 'Medical History', to: '/medical/medical-history', icon: FileHeart },
@@ -73,7 +75,8 @@ export default function MedicalSidebar({ mobileOpen, onClose }) {
               to === '/medical/assessments' ||
               to === '/medical/health-alerts' ||
               to === '/medical/safety-validation' ||
-              to === '/medical/requests'
+              to === '/medical/requests' ||
+              to === '/medical/plan-access'
             }
             onClick={onClose}
             className={({ isActive }) =>

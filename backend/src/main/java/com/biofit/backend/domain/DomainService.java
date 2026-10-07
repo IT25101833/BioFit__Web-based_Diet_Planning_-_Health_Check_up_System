@@ -60,6 +60,7 @@ public class DomainService {
     private final UserRepository userRepository;
     private final DomainMapper mapper;
     private final BookingAvailabilityService bookingAvailabilityService;
+    private final WalletService walletService;
     private final HealthAssessmentRepository healthAssessmentRepository;
     private final HealthRiskAlertRepository healthRiskAlertRepository;
     private final AuditLogRepository auditLogRepository;
@@ -138,6 +139,13 @@ public class DomainService {
 
         if (professionalId != null && !professionalId.isBlank()) {
             bookingAvailabilityService.assertSlotAvailable(professionalId, date, time, duration);
+        }
+
+        if (!"STAFF".equalsIgnoreCase(nullTo(str(payload.get("audience")), "CLIENT"))) {
+            String walletCode = walletService.codeForBookingService(str(payload.get("serviceId")));
+            if (walletCode != null) {
+                walletService.pay(new UserPrincipal(user), walletCode);
+            }
         }
 
         Appointment a = new Appointment();
@@ -2603,7 +2611,9 @@ public class DomainService {
                         p -> {
                             Map<String, Object> m = new LinkedHashMap<>();
                             m.put("clientId", p.getClientId());
+                            m.put("clientUserId", p.getClientUserId());
                             m.put("clientName", p.getClientName());
+                            m.put("programme", p.getProgramme());
                             m.put("mealPlan", p.getName());
                             m.put("mealPlanId", p.getId());
                             m.put("currentWeek", p.getCurrentWeek());
@@ -2618,6 +2628,31 @@ public class DomainService {
                             return m;
                         })
                 .toList();
+    }
+
+    public Map<String, Object> nutritionProgressForClient(String clientId) {
+        return nutritionProgressRows().stream()
+                .filter(
+                        row ->
+                                clientId.equals(String.valueOf(row.get("clientId")))
+                                        || clientId.equals(String.valueOf(row.get("clientUserId"))))
+                .max(
+                        Comparator.comparing(
+                                        (Map<String, Object> row) ->
+                                                "Active".equalsIgnoreCase(String.valueOf(row.get("status"))))
+                                .thenComparing(
+                                        row ->
+                                                String.valueOf(
+                                                        row.get("lastUpdate") == null ? "" : row.get("lastUpdate"))))
+                .orElseGet(
+                        () -> {
+                            Map<String, Object> empty = new LinkedHashMap<>();
+                            empty.put("clientId", clientId);
+                            empty.put("clientName", "");
+                            empty.put("mealPlan", "");
+                            empty.put("weeklyParticipation", List.of());
+                            return empty;
+                        });
     }
 
     private void applyProgramme(WellnessProgramme p, Map<String, Object> payload) {
