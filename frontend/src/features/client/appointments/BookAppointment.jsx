@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronLeft, ChevronRight, Clock3 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
+import Modal from '../../../components/ui/Modal'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import Toast from '../../../components/ui/Toast'
+import { fetchWallet, formatRs } from '../wallet/data/walletData'
 import {
   PAST_DATE_MESSAGE,
   filterAvailableSlotsForDate,
@@ -24,6 +26,13 @@ import {
 } from './data/appointmentData'
 
 const steps = ['Service', 'Professional', 'Date', 'Time', 'Review', 'Confirm']
+
+const BOOKING_FEES = {
+  fitness: 2000,
+  nutrition: 1000,
+  medical: 1500,
+  checkup: 1500,
+}
 
 export default function BookAppointment({ audience = 'CLIENT', successPath } = {}) {
   const navigate = useNavigate()
@@ -46,6 +55,8 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
   const [reviewLocked, setReviewLocked] = useState(false)
   const [reviewMeta, setReviewMeta] = useState(null)
   const [loadingReview, setLoadingReview] = useState(Boolean(reviewRequestId))
+  const [wallet, setWallet] = useState(null)
+  const [shortfall, setShortfall] = useState(null)
 
   const dateOptions = useMemo(() => {
     const base = getBookingDateOptions()
@@ -70,6 +81,21 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
       cancelled = true
     }
   }, [audience])
+
+  useEffect(() => {
+    if (audience !== 'CLIENT') return undefined
+    let cancelled = false
+    fetchWallet()
+      .then((data) => {
+        if (!cancelled) setWallet(data)
+      })
+      .catch(() => {
+        if (!cancelled) setWallet(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [audience, bookingsRefreshKey])
 
   useEffect(() => {
     if (!reviewRequestId) {
@@ -178,11 +204,45 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     setReviewMeta(null)
   }
 
+  function appointmentFee() {
+    if (audience !== 'CLIENT') return 0
+    if (reviewLocked) return BOOKING_FEES.medical
+    const fromCatalog = Number(service?.amount)
+    if (Number.isFinite(fromCatalog) && fromCatalog > 0) return fromCatalog
+    return BOOKING_FEES[service?.id] || 0
+  }
+
+  function openShortfall(required, current) {
+    const balance = Number(current || 0)
+    const price = Number(required || 0)
+    setShortfall({
+      current: balance,
+      required: price,
+      shortfall: Math.max(0, price - balance),
+    })
+  }
+
   async function handleConfirm() {
     if (isDateBeforeToday(date)) {
       setError(PAST_DATE_MESSAGE)
       setStep(2)
       return
+    }
+    const fee = appointmentFee()
+    let checkedBalance = Number(wallet?.balance || 0)
+    if (fee > 0) {
+      try {
+        const latest = await fetchWallet()
+        setWallet(latest)
+        checkedBalance = Number(latest?.balance || 0)
+      } catch (err) {
+        setError(err?.message || 'Unable to check your wallet balance. Please try again.')
+        return
+      }
+      if (checkedBalance < fee) {
+        openShortfall(fee, checkedBalance)
+        return
+      }
     }
     setSubmitting(true)
     setError('')
@@ -211,6 +271,10 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
       resetWizard()
       setBookingsRefreshKey((key) => key + 1)
     } catch (err) {
+      if (err?.code === 'INSUFFICIENT_BALANCE') {
+        openShortfall(fee, checkedBalance)
+        return
+      }
       setError(
         err?.message ||
           'This time slot is no longer available. Please select another time.',
@@ -242,6 +306,8 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
   const advisorLabel = professional?.name || reviewMeta?.advisorName || 'Medical Advisor'
   const serviceLabel = service?.name || reviewMeta?.serviceName || 'Medical Review'
   const durationLabel = service?.duration || reviewMeta?.duration || '30 min'
+  const fee = appointmentFee()
+  const balance = Number(wallet?.balance || 0)
 
   if (loadingReview) {
     return (
@@ -329,6 +395,9 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                 <p className="mt-1 text-[12px] text-[var(--bf-muted)]">{item.description}</p>
                 <p className="mt-2 text-[11px] font-semibold text-[var(--bf-ink)]">
                   {item.duration}
+                  {audience === 'CLIENT' && Number(item.amount || BOOKING_FEES[item.id]) > 0
+                    ? ` · ${formatRs(item.amount || BOOKING_FEES[item.id])}`
+                    : ''}
                 </p>
               </button>
             ))}
@@ -458,11 +527,18 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
                 <p className="mt-1 text-[var(--bf-muted)]">
                   {date} · {timeRangeLabel(time, durationLabel)}
                 </p>
+                {fee > 0 ? (
+                  <p className="mt-2 font-semibold text-[var(--bf-ink)]">
+                    Wallet payment {formatRs(fee)} · Balance {wallet ? formatRs(balance) : '—'}
+                  </p>
+                ) : null}
               </div>
             </div>
             {step === 5 ? (
               <p className="text-[var(--bf-muted)]">
-                Confirm to reserve this slot. Availability is checked again on the server.
+                {fee > 0
+                  ? 'Confirm to pay this fee from your wallet and reserve the slot.'
+                  : 'Confirm to reserve this slot. Availability is checked again on the server.'}
               </p>
             ) : null}
           </div>
@@ -514,6 +590,39 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
 
       {!reviewLocked ? <YourBookingsSection refreshKey={bookingsRefreshKey} /> : null}
       <Toast message={toast} onClose={() => setToast('')} />
+      <Modal
+        open={Boolean(shortfall)}
+        onClose={() => setShortfall(null)}
+        title="Insufficient Wallet Balance"
+        description="Your wallet does not have enough money to pay for this appointment. Add a cash top-up, then book again."
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setShortfall(null)}>
+              Close
+            </Button>
+            <Button size="sm" to="/client/wallet/top-up" className="!bg-[#005a40] hover:!bg-[#004833]">
+              Request Top-Up
+            </Button>
+          </>
+        }
+      >
+        {shortfall ? (
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Current Balance</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(shortfall.current)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Required</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(shortfall.required)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Shortfall</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(shortfall.shortfall)}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </Modal>
     </div>
   )
 }

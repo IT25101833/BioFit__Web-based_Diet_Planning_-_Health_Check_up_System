@@ -233,7 +233,7 @@ export default function CreateHealthAlert() {
 
       <PageHeader
         title="Create Health Risk Alert"
-        description="Share medical and safety guidance that may affect fitness, nutrition, or general wellness. Creating an alert does not grant access to a fitness or nutrition plan."
+        description="Share medical and safety guidance that may affect fitness, nutrition, or general wellness."
       />
       <PrivacyBanner />
       {clientWarning ? (

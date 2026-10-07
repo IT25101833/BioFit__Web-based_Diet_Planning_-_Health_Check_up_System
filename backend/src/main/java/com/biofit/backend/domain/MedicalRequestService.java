@@ -41,6 +41,7 @@ public class MedicalRequestService {
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
     private final AuditService auditService;
+    private final WalletService walletService;
 
     @Transactional
     public Map<String, Object> submit(UserPrincipal principal, Map<String, Object> body) {
@@ -95,6 +96,8 @@ public class MedicalRequestService {
                     "You already have an open medical request with this Medical Advisor.",
                     HttpStatus.CONFLICT);
         }
+
+        walletService.pay(principal, "MEDICAL");
 
         MedicalRequest request = new MedicalRequest();
         request.setClientId(client.getId());

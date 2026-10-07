@@ -43,14 +43,42 @@ export default function ClientNutritionProgressDetails() {
     setLoading(true)
     setError('')
     try {
-      const [p, c, d] = await Promise.all([
+      const [progressResult, dietaryResult, clientResult] = await Promise.allSettled([
         fetchNutritionClientProgress(clientId),
-        fetchNutritionClientById(clientId),
         fetchDietaryRestrictionsByClient(clientId),
+        fetchNutritionClientById(clientId),
       ])
-      setProgress(p)
-      setClient(c)
-      setUpdates(d)
+      const progressData = progressResult.status === 'fulfilled' ? progressResult.value : null
+      const dietary =
+        dietaryResult.status === 'fulfilled' && Array.isArray(dietaryResult.value)
+          ? dietaryResult.value
+          : []
+      const profile = clientResult.status === 'fulfilled' ? clientResult.value : null
+      const hasProgress = Boolean(progressData?.clientName || progressData?.mealPlan || progressData?.mealPlanId)
+      if (!hasProgress && !profile) {
+        setProgress(null)
+        setClient(null)
+        setUpdates([])
+        setError('We couldn’t load this client’s nutrition progress.')
+        return
+      }
+      setProgress(
+        progressData || {
+          clientId,
+          mealPlan: '',
+          weeklyParticipation: [],
+          participation: 0,
+        },
+      )
+      setClient(
+        profile || {
+          id: clientId,
+          name: progressData?.clientName || 'Client',
+          programme: progressData?.programme || '',
+          consultations: [],
+        },
+      )
+      setUpdates(dietary)
     } catch {
       setError('We couldn’t load this client’s nutrition progress.')
     } finally {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Button from '../../../components/ui/Button'
+import Modal from '../../../components/ui/Modal'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import Select from '../../../components/ui/Select'
@@ -15,6 +16,9 @@ import {
   submitMedicalRequest,
   todayIsoDate,
 } from './data/medicalRequestData'
+import { fetchWallet, formatRs } from '../wallet/data/walletData'
+
+const MEDICAL_FEE = 1500
 
 export default function RequestMedicalAttention() {
   const [advisors, setAdvisors] = useState([])
@@ -29,6 +33,9 @@ export default function RequestMedicalAttention() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [submitted, setSubmitted] = useState(null)
+  const [wallet, setWallet] = useState(null)
+  const [shortfall, setShortfall] = useState(null)
+  const [confirmPay, setConfirmPay] = useState(null)
 
   async function load() {
     const [advisorRows, requestRows, slots] = await Promise.all([
@@ -43,7 +50,19 @@ export default function RequestMedicalAttention() {
 
   useEffect(() => {
     load().catch((err) => setError(err?.message || 'Unable to load medical requests.'))
+    fetchWallet()
+      .then(setWallet)
+      .catch(() => setWallet(null))
   }, [])
+
+  function openShortfall(current) {
+    const balance = Number(current || 0)
+    setShortfall({
+      current: balance,
+      required: MEDICAL_FEE,
+      shortfall: Math.max(0, MEDICAL_FEE - balance),
+    })
+  }
 
   async function onSubmit(event) {
     event.preventDefault()
@@ -56,6 +75,30 @@ export default function RequestMedicalAttention() {
       setError('Please select a Monday to Saturday date.')
       return
     }
+    let checkedBalance = Number(wallet?.balance || 0)
+    try {
+      const latest = await fetchWallet()
+      setWallet(latest)
+      checkedBalance = Number(latest?.balance || 0)
+    } catch (err) {
+      setError(err?.message || 'Unable to check your wallet balance. Please try again.')
+      return
+    }
+    if (checkedBalance < MEDICAL_FEE) {
+      setConfirmPay(null)
+      openShortfall(checkedBalance)
+      return
+    }
+    setError('')
+    setConfirmPay({
+      balance: checkedBalance,
+      required: MEDICAL_FEE,
+      remaining: checkedBalance - MEDICAL_FEE,
+    })
+  }
+
+  async function confirmPayment() {
+    if (!confirmPay) return
     setBusy(true)
     setError('')
     try {
@@ -66,10 +109,17 @@ export default function RequestMedicalAttention() {
         preferredDate,
         preferredTime,
       })
+      setConfirmPay(null)
       setSubmitted(created)
       setDescription('')
       await load()
+      fetchWallet().then(setWallet).catch(() => {})
     } catch (err) {
+      setConfirmPay(null)
+      if (err?.code === 'INSUFFICIENT_BALANCE') {
+        openShortfall(confirmPay.balance)
+        return
+      }
       setError(err?.message || 'Unable to submit the medical request.')
     } finally {
       setBusy(false)
@@ -141,9 +191,13 @@ export default function RequestMedicalAttention() {
               label: advisor.name || 'Medical Advisor',
             }))}
           />
+          <p className="text-sm text-[#4b5563]">
+            This request costs {formatRs(MEDICAL_FEE)} and is paid from your wallet before it is submitted.
+            {wallet ? ` Available balance ${formatRs(wallet.balance)}.` : ''}
+          </p>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <Button type="submit" disabled={busy || !advisorId || !preferredDate || !preferredTime}>
-            Submit Request
+            {busy ? 'Submitting…' : `Pay ${formatRs(MEDICAL_FEE)} and Submit`}
           </Button>
         </form>
       </SectionCard>
@@ -195,6 +249,79 @@ export default function RequestMedicalAttention() {
           </div>
         )}
       </SectionCard>
+      <Modal
+        open={Boolean(confirmPay)}
+        onClose={() => {
+          if (!busy) setConfirmPay(null)
+        }}
+        title="Confirm wallet payment"
+        description="This amount will be taken from your wallet before the medical request is sent."
+        footer={
+          <>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirmPay(null)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={confirmPayment}
+              className="!bg-[#005a40] hover:!bg-[#004833]"
+            >
+              {busy ? 'Paying…' : `Pay ${formatRs(MEDICAL_FEE)}`}
+            </Button>
+          </>
+        }
+      >
+        {confirmPay ? (
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Current Balance</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(confirmPay.balance)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Payment</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(confirmPay.required)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Balance After Payment</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(confirmPay.remaining)}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </Modal>
+      <Modal
+        open={Boolean(shortfall)}
+        onClose={() => setShortfall(null)}
+        title="Insufficient Wallet Balance"
+        description="Your wallet does not have enough money to pay for this medical request. Add a cash top-up, then submit again."
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setShortfall(null)}>
+              Close
+            </Button>
+            <Button size="sm" to="/client/wallet/top-up" className="!bg-[#005a40] hover:!bg-[#004833]">
+              Request Top-Up
+            </Button>
+          </>
+        }
+      >
+        {shortfall ? (
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Current Balance</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(shortfall.current)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Required</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(shortfall.required)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] font-medium text-[#8b93a1]">Shortfall</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#111827]">{formatRs(shortfall.shortfall)}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </Modal>
     </div>
   )
 }

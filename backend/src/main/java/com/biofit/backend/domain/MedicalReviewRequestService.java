@@ -1,6 +1,7 @@
 package com.biofit.backend.domain;
 
 import com.biofit.backend.common.ApiException;
+import com.biofit.backend.security.UserPrincipal;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import java.time.Instant;
@@ -33,6 +34,7 @@ public class MedicalReviewRequestService {
     private final UserRepository userRepository;
     private final BookingAvailabilityService bookingAvailabilityService;
     private final DomainMapper mapper;
+    private final WalletService walletService;
 
     @Transactional
     public void syncFromSource(
@@ -183,6 +185,7 @@ public class MedicalReviewRequestService {
         }
 
         User client = userRepository.findById(clientUserId).orElseThrow();
+        walletService.pay(new UserPrincipal(client), "MEDICAL");
         User advisor = userRepository.findById(req.getAdvisorUserId()).orElse(null);
         String advisorName =
                 firstNonBlank(req.getAdvisorName(), displayAdvisorName(advisor), "Medical Advisor");

@@ -35,15 +35,7 @@ const navItems = [
   { label: 'My Health', to: '/client/health', icon: HeartPulse },
   { label: 'Health Risk Alerts', to: '/client/health-alerts', icon: AlertTriangle },
   { label: 'Request Medical Attention', to: '/client/medical-requests', icon: Stethoscope },
-  {
-    label: 'Wallet',
-    icon: Wallet,
-    children: [
-      { label: 'Overview', to: '/client/wallet' },
-      { label: 'Top-Up Requests', to: '/client/wallet/requests' },
-      { label: 'Transaction History', to: '/client/wallet/transactions' },
-    ],
-  },
+  { label: 'Wallet', to: '/client/wallet', icon: Wallet },
   { label: 'Access Requests', to: '/client/plan-access', icon: ShieldCheck },
   { label: 'My Support Tickets', to: '/client/support', icon: HelpCircle },
   { label: 'Notifications', to: '/client/notifications', icon: Bell },

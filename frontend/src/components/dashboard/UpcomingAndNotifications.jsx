@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Leaf,
+  ShieldCheck,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -11,6 +12,7 @@ const iconByKey = {
   health: Leaf,
   appointment: CheckCircle2,
   reminder: Bell,
+  access: ShieldCheck,
   default: Bell,
 }
 
@@ -101,6 +103,7 @@ export default function UpcomingAndNotifications({
             <ul className="space-y-0">
               {notifications.map(({ icon, title, detail, time, tone }, index) => {
                 const Icon = iconByKey[icon] || iconByKey.default
+                const accessRequest = /access request/i.test(title || '')
                 return (
                   <li
                     key={`${title}-${index}`}
@@ -126,6 +129,14 @@ export default function UpcomingAndNotifications({
                       <p className="mt-0.5 text-[13px] leading-snug text-[#6b7280]">
                         {detail ?? '-'}
                       </p>
+                      {accessRequest ? (
+                        <Link
+                          to="/client/plan-access"
+                          className="mt-1 inline-flex text-[13px] font-semibold text-[#005a40] hover:underline"
+                        >
+                          Review request
+                        </Link>
+                      ) : null}
                     </div>
                   </li>
                 )

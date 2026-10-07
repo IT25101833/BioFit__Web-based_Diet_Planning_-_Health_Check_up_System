@@ -66,9 +66,14 @@ export default function TopUpRequests() {
         title="My Top-Up Requests"
         description="Cash top-up requests stay pending until an Admin verifies the receipt."
         actions={
-          <Button to="/client/wallet/top-up" size="sm">
-            Request Cash Top-Up
-          </Button>
+          <>
+            <Button to="/client/wallet" variant="outline" size="sm">
+              Back to Wallet
+            </Button>
+            <Button to="/client/wallet/top-up" size="sm">
+              Request Cash Top-Up
+            </Button>
+          </>
         }
       />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

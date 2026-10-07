@@ -3,7 +3,7 @@ import PlanAccess from '../../features/medical/plan-access/PlanAccess'
 
 export default function MedicalPlanAccessPage() {
   return (
-    <MedicalLayout title="Plan Access" breadcrumb="Medical Advisor / Plan Access">
+    <MedicalLayout title="Request Client" breadcrumb="Medical Advisor / Request Client">
       <PlanAccess />
     </MedicalLayout>
   )

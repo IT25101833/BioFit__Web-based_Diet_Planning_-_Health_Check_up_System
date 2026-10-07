@@ -4,6 +4,7 @@ import com.biofit.backend.common.ApiException;
 import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -35,6 +36,7 @@ public class BookingAvailabilityService {
     private final AppointmentRepository appointmentRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final WalletService walletService;
 
     @Transactional
     public Map<String, Object> bookingCatalog(String audience) {
@@ -46,9 +48,7 @@ public class BookingAvailabilityService {
         } else {
             services.add(service("fitness", "Fitness Consultation", "Movement guidance and programme check-in.", "45 min", "CLIENT"));
             services.add(service("nutrition", "Nutrition Consultation", "Meal rhythm support and dietary guidance.", "45 min", "CLIENT"));
-            services.add(service("wellness", "Wellness Consultation", "Holistic lifestyle support.", "40 min", "CLIENT"));
             services.add(service("support", "Customer Experience Session", "Help with bookings and centre experience.", "30 min", "CLIENT"));
-            services.add(service("ops-support", "Digital Operations Support", "Platform access assistance.", "30 min", "CLIENT"));
         }
 
         List<Map<String, Object>> professionals = new ArrayList<>();
@@ -59,7 +59,9 @@ public class BookingAvailabilityService {
                 continue;
             }
             if (staffAudience && role != RoleName.WELLNESS_CENTRE_MANAGER) continue;
-            if (!staffAudience && role == RoleName.WELLNESS_CENTRE_MANAGER) continue;
+            if (!staffAudience
+                    && (role == RoleName.WELLNESS_CENTRE_MANAGER
+                            || role == RoleName.DIGITAL_OPERATIONS_EXECUTIVE)) continue;
 
             Map<String, Object> m = new LinkedHashMap<>();
             String id = "user-" + user.getId();
@@ -435,17 +437,17 @@ public class BookingAvailabilityService {
 
     private static List<String> servicesForRole(RoleName role) {
         return switch (role) {
-            case FITNESS_COACH -> List.of("fitness", "wellness");
-            case NUTRITION_CONSULTANT -> List.of("nutrition", "wellness");
+            case FITNESS_COACH -> List.of("fitness");
+            case NUTRITION_CONSULTANT -> List.of("nutrition");
             case MEDICAL_ADVISOR -> List.of("checkup", "medical");
-            case CUSTOMER_EXPERIENCE_OFFICER -> List.of("support", "wellness");
-            case DIGITAL_OPERATIONS_EXECUTIVE -> List.of("ops-support");
+            case CUSTOMER_EXPERIENCE_OFFICER -> List.of("support");
+            case DIGITAL_OPERATIONS_EXECUTIVE -> List.of();
             case WELLNESS_CENTRE_MANAGER -> List.of("staff-meeting", "ops-review");
             default -> List.of();
         };
     }
 
-    private static Map<String, Object> service(
+    private Map<String, Object> service(
             String id, String name, String description, String duration, String audience) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", id);
@@ -453,6 +455,14 @@ public class BookingAvailabilityService {
         m.put("description", description);
         m.put("duration", duration);
         m.put("forAudience", audience);
+        if ("CLIENT".equalsIgnoreCase(audience)) {
+            String walletCode = walletService.codeForBookingService(id);
+            BigDecimal price = walletService.bookingPrice(id);
+            if (walletCode != null && price != null) {
+                m.put("walletCode", walletCode);
+                m.put("amount", price);
+            }
+        }
         return m;
     }
 

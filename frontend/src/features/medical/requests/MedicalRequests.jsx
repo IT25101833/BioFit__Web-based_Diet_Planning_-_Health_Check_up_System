@@ -64,8 +64,9 @@ export default function MedicalRequests() {
     }
   }
 
-  const clientQuery = selected?.clientUserId
-    ? `?clientUserId=${encodeURIComponent(selected.clientUserId)}`
+  const clientUserId = selected?.clientUserId || selected?.clientId
+  const clientQuery = clientUserId
+    ? `?clientUserId=${encodeURIComponent(clientUserId)}`
     : ''
   const canWork =
     selected && ['ACCEPTED', 'ATTENDED', 'IN_PROGRESS', 'COMPLETED'].includes(selected.status)
@@ -196,8 +197,8 @@ export default function MedicalRequests() {
               <Link className="text-[#005a40] hover:underline" to={`/medical/medical-history${clientQuery}`}>
                 Medical History
               </Link>
-              <Link className="text-[#005a40] hover:underline" to={`/medical/health-alerts${clientQuery}`}>
-                Health Risk Alerts
+              <Link className="text-[#005a40] hover:underline" to={`/medical/health-alerts/create${clientQuery}`}>
+                Create Health Risk Alert
               </Link>
             </div>
           ) : null}

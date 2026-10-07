@@ -143,11 +143,7 @@ public class NutritionDomainController {
 
     @GetMapping("/progress/{clientId}")
     public ApiResponse<Map<String, Object>> clientProgress(@PathVariable String clientId) {
-        return ApiResponse.ok(
-                domainService.nutritionProgressRows().stream()
-                        .filter(r -> clientId.equals(r.get("clientId")))
-                        .findFirst()
-                        .orElse(Map.of("clientId", clientId)));
+        return ApiResponse.ok(domainService.nutritionProgressForClient(clientId));
     }
 
     @PostMapping("/progress")

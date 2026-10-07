@@ -65,6 +65,7 @@ import MedicalHealthRecordDetailsPage from './pages/medical/MedicalHealthRecordD
 import MedicalHealthRecordsPage from './pages/medical/MedicalHealthRecordsPage'
 import MedicalHistoryPage from './pages/medical/MedicalHistoryPage'
 import MedicalNotificationsPage from './pages/medical/MedicalNotificationsPage'
+import MedicalPlanAccessPage from './pages/medical/MedicalPlanAccessPage'
 import MedicalProfilePage from './pages/medical/MedicalProfilePage'
 import MedicalRequestsPage from './pages/medical/MedicalRequestsPage'
 import MedicalSafetyValidationPage from './pages/medical/MedicalSafetyValidationPage'
@@ -256,6 +257,7 @@ function App() {
         <Route path="/medical/health-alerts/:id" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalHealthAlertDetailsPage />)} />
         <Route path="/medical/safety-validation" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalSafetyValidationPage />)} />
         <Route path="/medical/requests" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalRequestsPage />)} />
+        <Route path="/medical/plan-access" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalPlanAccessPage />)} />
         <Route path="/medical/notifications" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalNotificationsPage />)} />
         <Route path="/medical/profile" element={guard(['MEDICAL_ADVISOR', 'ADMIN'], <MedicalProfilePage />)} />
 

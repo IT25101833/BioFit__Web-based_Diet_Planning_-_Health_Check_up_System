@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Button from '../../../components/ui/Button'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
@@ -16,7 +17,15 @@ export default function TransactionHistory() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Transaction History" description="Credits are added only after Admin approves a cash top-up." />
+      <PageHeader
+        title="Transaction History"
+        description="Credits are added only after Admin approves a cash top-up."
+        actions={
+          <Button to="/client/wallet" variant="outline" size="sm">
+            Back to Wallet
+          </Button>
+        }
+      />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <SectionCard title="Transactions">
         {rows.length === 0 ? (

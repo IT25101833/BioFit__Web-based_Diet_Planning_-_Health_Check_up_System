@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import DashboardShell from '../components/dashboard/DashboardShell'
 import MedicalReviewRequestCard from '../components/dashboard/MedicalReviewRequestCard'
+import PlanAccessRequestCard from '../components/dashboard/PlanAccessRequestCard'
 import ProgrammeAppointment from '../components/dashboard/ProgrammeAppointment'
 import ProgressAndHealth from '../components/dashboard/ProgressAndHealth'
 import QuickActions from '../components/dashboard/QuickActions'
@@ -14,11 +15,13 @@ import ErrorState from '../components/ui/ErrorState'
 import LoadingSkeleton from '../components/ui/LoadingSkeleton'
 import { useAuth } from '../auth/AuthContext'
 import { fetchClientDashboard } from '../features/client/dashboard/data/clientDashboardData'
+import { fetchClientPlanAccessRequests } from '../features/medical/plan-access/data/planAccessData'
 
 export default function ClientDashboardPage() {
   const { user } = useAuth()
   const location = useLocation()
   const [data, setData] = useState(null)
+  const [planRequests, setPlanRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -26,7 +29,12 @@ export default function ClientDashboardPage() {
     setLoading(true)
     setError('')
     try {
-      setData(await fetchClientDashboard())
+      const [dashboard, access] = await Promise.all([
+        fetchClientDashboard(),
+        fetchClientPlanAccessRequests().catch(() => []),
+      ])
+      setData(dashboard)
+      setPlanRequests(Array.isArray(access) ? access : [])
     } catch {
       setError('We couldn’t load your dashboard.')
     } finally {
@@ -50,6 +58,7 @@ export default function ClientDashboardPage() {
           {data.pendingReview ? (
             <MedicalReviewRequestCard review={data.pendingReview} />
           ) : null}
+          <PlanAccessRequestCard requests={planRequests} />
           <SummaryMetrics cards={data.summary} />
           <ProgrammeAppointment
             programme={data.programme}

@@ -42,9 +42,9 @@ public class WalletService {
             DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH).withZone(ZONE);
     private static final List<ServiceOffer> SERVICES =
             List.of(
-                    new ServiceOffer("FITNESS", "Fitness Service", new BigDecimal("2000.00")),
-                    new ServiceOffer("NUTRITION", "Nutrition Service", new BigDecimal("1000.00")),
-                    new ServiceOffer("MEDICAL", "Medical Service", new BigDecimal("1500.00")));
+                    new ServiceOffer("FITNESS", "Fitness Consultation", new BigDecimal("2000.00")),
+                    new ServiceOffer("NUTRITION", "Nutrition Consultation", new BigDecimal("1000.00")),
+                    new ServiceOffer("MEDICAL", "Medical Review", new BigDecimal("1500.00")));
 
     private final WalletRepository walletRepository;
     private final WalletTopUpRequestRepository topUpRepository;
@@ -70,6 +70,26 @@ public class WalletService {
     }
 
     @Transactional(readOnly = true)
+    public String codeForBookingService(String serviceId) {
+        if (serviceId == null || serviceId.isBlank()) return null;
+        return switch (serviceId.trim().toLowerCase(Locale.ROOT)) {
+            case "fitness" -> "FITNESS";
+            case "nutrition" -> "NUTRITION";
+            case "medical", "checkup" -> "MEDICAL";
+            default -> null;
+        };
+    }
+
+    public BigDecimal bookingPrice(String serviceId) {
+        String code = codeForBookingService(serviceId);
+        if (code == null) return null;
+        return SERVICES.stream()
+                .filter(item -> item.code().equals(code))
+                .map(ServiceOffer::price)
+                .findFirst()
+                .orElse(null);
+    }
+
     public List<Map<String, Object>> services() {
         return SERVICES.stream().map(this::serviceMap).toList();
     }
