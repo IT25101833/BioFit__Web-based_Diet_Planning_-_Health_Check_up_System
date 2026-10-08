@@ -11,6 +11,7 @@ import {
   cancelClientMedicalRequest,
   fetchClientMedicalRequests,
   fetchMedicalAdvisors,
+  buildPreferredTimeSlots,
   fetchMedicalRequestTimeSlots,
   formatPreferredDate,
   submitMedicalRequest,
@@ -36,16 +37,15 @@ export default function RequestMedicalAttention() {
   const [wallet, setWallet] = useState(null)
   const [shortfall, setShortfall] = useState(null)
   const [confirmPay, setConfirmPay] = useState(null)
+  const [slotRefresh, setSlotRefresh] = useState(0)
 
   async function load() {
-    const [advisorRows, requestRows, slots] = await Promise.all([
+    const [advisorRows, requestRows] = await Promise.all([
       fetchMedicalAdvisors(),
       fetchClientMedicalRequests(),
-      fetchMedicalRequestTimeSlots(),
     ])
     setAdvisors(Array.isArray(advisorRows) ? advisorRows : [])
     setRequests(Array.isArray(requestRows) ? requestRows : [])
-    setTimeSlots(Array.isArray(slots) ? slots : [])
   }
 
   useEffect(() => {
@@ -54,6 +54,28 @@ export default function RequestMedicalAttention() {
       .then(setWallet)
       .catch(() => setWallet(null))
   }, [])
+
+  useEffect(() => {
+    const localSlots = buildPreferredTimeSlots(preferredDate)
+    setTimeSlots(localSlots)
+    if (!preferredDate) {
+      setPreferredTime('')
+      return
+    }
+    let cancelled = false
+    fetchMedicalRequestTimeSlots(preferredDate)
+      .then((slots) => {
+        if (cancelled || !Array.isArray(slots)) return
+        setTimeSlots(slots)
+        setPreferredTime((current) => (slots.includes(current) ? current : ''))
+      })
+      .catch(() => {
+        if (!cancelled) setTimeSlots(localSlots)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [preferredDate, slotRefresh])
 
   function openShortfall(current) {
     const balance = Number(current || 0)
@@ -112,6 +134,8 @@ export default function RequestMedicalAttention() {
       setConfirmPay(null)
       setSubmitted(created)
       setDescription('')
+      setPreferredTime('')
+      setSlotRefresh((value) => value + 1)
       await load()
       fetchWallet().then(setWallet).catch(() => {})
     } catch (err) {
@@ -132,6 +156,7 @@ export default function RequestMedicalAttention() {
     try {
       await cancelClientMedicalRequest(id)
       if (submitted?.id === id) setSubmitted(null)
+      setSlotRefresh((value) => value + 1)
       await load()
     } catch (err) {
       setError(err?.message || 'Unable to cancel the medical request.')
@@ -170,16 +195,47 @@ export default function RequestMedicalAttention() {
             required
             min={today}
             value={preferredDate}
-            onChange={(event) => setPreferredDate(event.target.value)}
+            onChange={(event) => {
+              setPreferredDate(event.target.value)
+              setPreferredTime('')
+            }}
           />
-          <Select
-            label="Preferred Time"
-            required
-            value={preferredTime}
-            onChange={(event) => setPreferredTime(event.target.value)}
-            placeholder="Select a time"
-            options={timeSlots.map((slot) => ({ value: slot, label: slot }))}
-          />
+          <div>
+            <p className="mb-1.5 text-sm font-semibold text-[#111827]">
+              Preferred Time
+              <span className="ml-0.5 text-red-600" aria-hidden>
+                *
+              </span>
+            </p>
+            {!preferredDate ? (
+              <p className="text-sm text-[#6b7280]">Select a date to see the times.</p>
+            ) : timeSlots.length === 0 ? (
+              <p className="text-sm text-[#6b7280]">
+                No times are left on this date. Choose a Monday to Saturday date. Hours are 9:00 AM to 5:00 PM, and a time already taken by another client is hidden.
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {timeSlots.map((slot) => {
+                  const selected = preferredTime === slot
+                  return (
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() => setPreferredTime(slot)}
+                      className={[
+                        'rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors',
+                        selected
+                          ? 'border-[#005a40] bg-[#005a40] text-white'
+                          : 'border-[#e8ecf1] bg-white text-[#111827] hover:border-[#005a40] hover:bg-[#e6f5f0]',
+                      ].join(' ')}
+                    >
+                      {slot}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           <Select
             label="Medical Advisor"
             required

@@ -150,8 +150,10 @@ export default function AssessmentDetails() {
           <p className="text-sm text-[#4b5563]">
             {item.followUpRequired ? 'Follow-up required' : 'No follow-up required'}
           </p>
-          <p className="mt-2 text-sm text-[#6b7280]">
-            Next review: {formatMedicalDate(item.nextReview)}
+        </SectionCard>
+        <SectionCard title="Recommended support">
+          <p className="text-sm text-[#4b5563]">
+            {recommendationLabel(item, obs)}
           </p>
         </SectionCard>
         <SectionCard title="Related Health Risk Alerts">
@@ -201,6 +203,15 @@ export default function AssessmentDetails() {
       </div>
     </div>
   )
+}
+
+function recommendationLabel(item, observations) {
+  const nutrition = Boolean(item.recommendNutrition ?? observations.recommendNutrition)
+  const fitness = Boolean(item.recommendFitness ?? observations.recommendFitness)
+  if (nutrition && fitness) return 'Nutrition and fitness were both recommended.'
+  if (nutrition) return 'Nutrition was recommended.'
+  if (fitness) return 'Fitness was recommended.'
+  return 'No nutrition or fitness recommendation from this assessment.'
 }
 
 function Meta({ label, value }) {

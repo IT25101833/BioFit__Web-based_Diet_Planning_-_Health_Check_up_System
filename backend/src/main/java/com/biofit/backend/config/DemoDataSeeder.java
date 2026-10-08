@@ -17,6 +17,8 @@ import com.biofit.backend.user.RoleRepository;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import com.biofit.backend.user.UserStatus;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -49,9 +51,13 @@ public class DemoDataSeeder implements ApplicationRunner {
     @Value("${biofit.seed-demo-data:false}")
     private boolean seedDemoData;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        deleteAlexMorgan();
         if (!seedDemoData) {
             log.info("Demo data seeding skipped (biofit.seed-demo-data=false)");
             return;
@@ -64,11 +70,124 @@ public class DemoDataSeeder implements ApplicationRunner {
         domainSeedService.seedIfEmpty();
     }
 
+    private void deleteAlexMorgan() {
+        @SuppressWarnings("unchecked")
+        List<Number> ids =
+                entityManager
+                        .createNativeQuery(
+                                "SELECT id FROM users WHERE LOWER(first_name) = 'alex' AND LOWER(last_name) = 'morgan'")
+                        .getResultList();
+        int removed = 0;
+        for (Number idValue : ids) {
+            long id = idValue.longValue();
+            String code = "BF-C" + id;
+            removed += deleteClientRows(id, code);
+            removed +=
+                    entityManager
+                            .createNativeQuery("DELETE FROM user_roles WHERE user_id = ?1")
+                            .setParameter(1, id)
+                            .executeUpdate();
+            removed +=
+                    entityManager
+                            .createNativeQuery("DELETE FROM users WHERE id = ?1")
+                            .setParameter(1, id)
+                            .executeUpdate();
+        }
+        removed += deleteNamedRows();
+        entityManager.clear();
+        if (removed > 0) {
+            log.info("Deleted Alex Morgan and {} related rows", removed);
+        }
+    }
+
+    private int deleteClientRows(long id, String code) {
+        int removed = 0;
+        removed +=
+                entityManager
+                        .createNativeQuery(
+                                """
+                                DELETE FROM wallet_transactions
+                                WHERE wallet_id IN (SELECT id FROM wallets WHERE client_user_id = ?1)
+                                   OR top_up_request_id IN (
+                                        SELECT id FROM wallet_topup_requests WHERE client_user_id = ?1)
+                                """)
+                        .setParameter(1, id)
+                        .executeUpdate();
+        String[] byUserId = {
+            "DELETE FROM wallet_topup_requests WHERE client_user_id = ?1",
+            "DELETE FROM wallets WHERE client_user_id = ?1",
+            "DELETE FROM medical_requests WHERE client_user_id = ?1",
+            "DELETE FROM medical_review_requests WHERE client_user_id = ?1",
+            "DELETE FROM plan_access_requests WHERE client_user_id = ?1",
+            "DELETE FROM erasure_requests WHERE client_user_id = ?1 OR requested_by_user_id = ?1 OR reviewed_by_user_id = ?1 OR executed_by_user_id = ?1",
+            "DELETE FROM medical_history_entries WHERE user_id = ?1",
+            "DELETE FROM safety_validations WHERE user_id = ?1",
+            "DELETE FROM health_metrics WHERE user_id = ?1",
+            "DELETE FROM health_goals WHERE user_id = ?1",
+            "DELETE FROM health_assessments WHERE user_id = ?1",
+            "DELETE FROM health_risk_alerts WHERE user_id = ?1",
+            "DELETE FROM health_profiles WHERE user_id = ?1",
+            "DELETE FROM audit_logs WHERE user_id = ?1",
+            "DELETE FROM refresh_tokens WHERE user_id = ?1",
+            "DELETE FROM subscriptions WHERE user_id = ?1",
+            "DELETE FROM payments WHERE user_id = ?1",
+            "DELETE FROM notifications WHERE user_id = ?1"
+        };
+        for (String sql : byUserId) {
+            removed += entityManager.createNativeQuery(sql).setParameter(1, id).executeUpdate();
+        }
+        String[] byClient = {
+            "DELETE FROM programme_enrolments WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM appointments WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM workout_plans WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM meal_plans WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM dietary_restrictions WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM support_tickets WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM fitness_assessments WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM client_inquiries WHERE client_user_id = ?1 OR client_id = ?2",
+            "DELETE FROM client_feedback WHERE client_user_id = ?1 OR client_id = ?2"
+        };
+        for (String sql : byClient) {
+            removed +=
+                    entityManager
+                            .createNativeQuery(sql)
+                            .setParameter(1, id)
+                            .setParameter(2, code)
+                            .executeUpdate();
+        }
+        return removed;
+    }
+
+    private int deleteNamedRows() {
+        int removed = 0;
+        String[] byName = {
+            "DELETE FROM programme_enrolments WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM appointments WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM workout_plans WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM meal_plans WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM dietary_restrictions WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM support_tickets WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM fitness_assessments WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM client_inquiries WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM client_feedback WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM staff_schedules WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM medical_requests WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM plan_access_requests WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM health_risk_alerts WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM medical_history_entries WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM safety_validations WHERE LOWER(client_name) = 'alex morgan'",
+            "DELETE FROM notifications WHERE LOWER(COALESCE(title, '')) LIKE '%alex morgan%' OR LOWER(COALESCE(body, '')) LIKE '%alex morgan%'"
+        };
+        for (String sql : byName) {
+            removed += entityManager.createNativeQuery(sql).executeUpdate();
+        }
+        return removed;
+    }
+
     private void seedUsers() {
         String hash = passwordEncoder.encode("Demo123!");
         List<SeedUser> seeds =
                 List.of(
-                        new SeedUser("client@biofit.demo", "Alex", "Morgan", RoleName.CLIENT, null),
                         new SeedUser(
                                 "manager@biofit.demo",
                                 "Sarah",

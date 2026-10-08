@@ -23,12 +23,19 @@ export default function ClientNutritionProfile() {
     setLoading(true)
     setError('')
     try {
-      const [c, r] = await Promise.all([
+      const [clientResult, restrictionResult] = await Promise.allSettled([
         fetchNutritionClientById(id),
         fetchDietaryRestrictionsByClient(id),
       ])
-      setClient(c)
-      setRestrictions(r)
+      if (clientResult.status !== 'fulfilled') {
+        throw clientResult.reason
+      }
+      setClient(clientResult.value)
+      setRestrictions(
+        restrictionResult.status === 'fulfilled' && Array.isArray(restrictionResult.value)
+          ? restrictionResult.value
+          : [],
+      )
     } catch {
       setError('We couldn’t load this client nutrition profile.')
     } finally {

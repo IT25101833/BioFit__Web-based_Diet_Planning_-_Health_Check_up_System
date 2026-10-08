@@ -19,6 +19,7 @@ import com.biofit.backend.support.SupportTicketWorkflow;
 import com.biofit.backend.support.TicketAudience;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -89,6 +90,14 @@ public class CompletionService {
         a.setAssessmentType(str(body.getOrDefault("type", "General")));
         a.setAdvisorName(str(body.getOrDefault("advisor", body.get("advisorName"))));
         if (isBlank(a.getAdvisorName())) {
+            Long advisorUserId = asLong(body.get("advisorUserId"));
+            if (advisorUserId != null) {
+                userRepository
+                        .findById(advisorUserId)
+                        .ifPresent(user -> a.setAdvisorName(user.getFullName()));
+            }
+        }
+        if (isBlank(a.getAdvisorName())) {
             a.setAdvisorName(null);
         }
         a.setFollowUpRequired(Boolean.TRUE.equals(body.get("followUpRequired")));
@@ -100,7 +109,7 @@ public class CompletionService {
         a.setRelatedAlertId(isBlank(body.get("relatedAlertId")) ? null : str(body.get("relatedAlertId")));
         a.setProfessionalNotes(str(body.get("professionalNotes")));
         a.setSummary(str(body.getOrDefault("summary", a.getProfessionalNotes())));
-        a.setObservationsJson(mapper.toJson(body.getOrDefault("observations", Map.of())));
+        a.setObservationsJson(mapper.toJson(observationsWithRecommendations(body)));
         if (!isBlank(body.get("date"))) {
             LocalDate assessmentDate;
             try {
@@ -192,10 +201,19 @@ public class CompletionService {
         }
         alert.setRelatedAssessmentId(str(body.get("relatedAssessmentId")));
         if (alert.getDateRaised() == null) alert.setDateRaised(Instant.now());
+        if (body.get("followUp") instanceof Map<?, ?> requiredFollowUp
+                && Boolean.TRUE.equals(requiredFollowUp.get("required"))
+                && isBlank(requiredFollowUp.get("dueDate"))) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Due date is required when follow-up is marked.",
+                    HttpStatus.BAD_REQUEST);
+        }
         Instant followUpAt = parseOptionalDate(body.get("followUpDate"));
         if (followUpAt == null && body.get("followUp") instanceof Map<?, ?> followUpMap) {
             followUpAt = parseOptionalDate(followUpMap.get("dueDate"));
         }
+        assertFollowUpNotInPast(followUpAt);
         boolean followUpTouched =
                 body.containsKey("followUpDate")
                         || body.containsKey("followUp")
@@ -258,6 +276,7 @@ public class CompletionService {
             alert.setDetailsJson(mapper.toJson(details));
             if (body.get("followUp") instanceof Map<?, ?> fu) {
                 Instant due = parseOptionalDate(fu.get("dueDate"));
+                assertFollowUpNotInPast(due);
                 alert.setFollowUpAt(due);
             }
         }
@@ -416,7 +435,7 @@ public class CompletionService {
         a.setClientId(str(body.get("clientId")));
         a.setClientName(str(body.get("clientName")));
         a.setClientUserId(resolveUserId(body));
-        a.setCoachName(str(body.getOrDefault("coach", "Daniel Perera")));
+        a.setCoachName(str(body.get("coach")));
         a.setType(str(body.getOrDefault("type", "Fitness assessment")));
         a.setStatus(str(body.getOrDefault("status", "Completed")));
         if (body.get("date") != null) a.setAssessmentDate(LocalDate.parse(str(body.get("date"))));
@@ -729,44 +748,18 @@ public class CompletionService {
                 .toList();
     }
 
+    @Transactional
+    public void removeDemoFitnessAssessment() {
+        fitnessAssessmentRepository
+                .findById("fa-1")
+                .filter(assessment -> "Movement comfort review".equals(assessment.getType()))
+                .ifPresent(fitnessAssessmentRepository::delete);
+    }
+
     /* ---------- Seed extras ---------- */
 
     @Transactional
     public void seedExtrasIfEmpty(Long clientUserId, String clientCode, String clientName) {
-        if (fitnessAssessmentRepository.count() == 0) {
-            FitnessAssessment fa = new FitnessAssessment();
-            fa.setId("fa-1");
-            fa.setClientUserId(clientUserId);
-            fa.setClientId(clientCode);
-            fa.setClientName(clientName);
-            fa.setCoachName("Daniel Perera");
-            fa.setAssessmentDate(LocalDate.of(2026, 8, 28));
-            fa.setType("Movement comfort review");
-            fa.setStatus("Completed");
-            fa.setNextAssessment(LocalDate.of(2026, 9, 28));
-            fa.setPayloadJson(
-                    mapper.toJson(
-                            Map.of(
-                                    "activityLevel",
-                                    "Moderate",
-                                    "experience",
-                                    "Beginner+",
-                                    "strength",
-                                    "Improving",
-                                    "endurance",
-                                    "Steady",
-                                    "mobility",
-                                    "Good",
-                                    "goals",
-                                    "Consistent movement",
-                                    "limitations",
-                                    "None significant",
-                                    "safetyNotes",
-                                    "Progress gradually",
-                                    "coachNotes",
-                                    "Steady improvement in mobility.")));
-            fitnessAssessmentRepository.save(fa);
-        }
         if (inquiryRepository.count() == 0) {
             ClientInquiry inq = new ClientInquiry();
             inq.setId("inq-1");
@@ -875,7 +868,10 @@ public class CompletionService {
         m.put(
                 "nextReview",
                 a.getNextReviewAt() == null ? null : DAY.format(a.getNextReviewAt().atZone(ZoneOffset.UTC)));
-        m.put("observations", mapper.parseJson(a.getObservationsJson(), Map.of()));
+        Object observations = mapper.parseJson(a.getObservationsJson(), Map.of());
+        m.put("observations", observations);
+        m.put("recommendNutrition", recommendationFlag(observations, "recommendNutrition"));
+        m.put("recommendFitness", recommendationFlag(observations, "recommendFitness"));
         m.put("professionalNotes", a.getProfessionalNotes());
         m.put("relatedAlertId", a.getRelatedAlertId());
         return m;
@@ -957,6 +953,7 @@ public class CompletionService {
         }
         m.put("id", a.getId());
         m.put("clientId", a.getClientId());
+        m.put("clientUserId", a.getClientUserId());
         m.put("clientName", a.getClientName());
         m.put("date", a.getAssessmentDate() == null ? null : a.getAssessmentDate().toString());
         m.put("type", a.getType());
@@ -1082,6 +1079,40 @@ public class CompletionService {
             }
         }
         return null;
+    }
+
+    private void assertFollowUpNotInPast(Instant followUpAt) {
+        if (followUpAt == null) return;
+        LocalDate dueDate = followUpAt.atZone(ZoneOffset.UTC).toLocalDate();
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Colombo"));
+        if (dueDate.isBefore(today)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Follow-up date cannot be in the past.",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private Map<String, Object> observationsWithRecommendations(Map<String, Object> body) {
+        Map<String, Object> observations = new LinkedHashMap<>();
+        Object raw = body.get("observations");
+        if (raw instanceof Map<?, ?> map) {
+            map.forEach((key, value) -> observations.put(String.valueOf(key), value));
+        }
+        if (body.containsKey("recommendNutrition")) {
+            observations.put("recommendNutrition", Boolean.TRUE.equals(body.get("recommendNutrition")));
+        }
+        if (body.containsKey("recommendFitness")) {
+            observations.put("recommendFitness", Boolean.TRUE.equals(body.get("recommendFitness")));
+        }
+        return observations;
+    }
+
+    private static boolean recommendationFlag(Object observations, String key) {
+        if (!(observations instanceof Map<?, ?> map)) return false;
+        Object value = map.get(key);
+        if (value instanceof Boolean flag) return flag;
+        return value != null && "true".equalsIgnoreCase(String.valueOf(value).trim());
     }
 
     private Instant parseOptionalDate(Object value) {

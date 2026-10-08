@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MedicalReviewRequestRepository extends JpaRepository<MedicalReviewRequest, String> {
 
+    List<MedicalReviewRequest> findByStatusIgnoreCase(String status);
+
     List<MedicalReviewRequest> findByClientUserIdAndStatusIgnoreCaseOrderByReviewDateAsc(
             Long clientUserId, String status);
 

@@ -240,8 +240,12 @@ public class ClientDomainController {
     }
 
     @GetMapping("/medical-requests/time-slots")
-    public ApiResponse<List<String>> medicalRequestTimeSlots() {
-        return ApiResponse.ok(medicalRequestService.preferredTimeSlots());
+    public ApiResponse<List<String>> medicalRequestTimeSlots(
+            @RequestParam(required = false) String date) {
+        return ApiResponse.ok(
+                date == null || date.isBlank()
+                        ? medicalRequestService.preferredTimeSlots()
+                        : medicalRequestService.preferredTimeSlots(date));
     }
 
     @GetMapping("/medical-requests")

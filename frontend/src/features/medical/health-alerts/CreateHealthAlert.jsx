@@ -11,6 +11,12 @@ import SectionCard from '../../../components/ui/SectionCard'
 import Select from '../../../components/ui/Select'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
+import {
+  PAST_DATE_MESSAGE,
+  isDateBeforeToday,
+  isValidIsoDate,
+  localTodayIso,
+} from '../../booking/bookingEngine'
 import PrivacyBanner from '../shared/PrivacyBanner'
 import {
   findClientOption,
@@ -47,6 +53,16 @@ function toSelectOptions(clients) {
       clientCode: c.clientId || (c.id || c.userId ? `BF-C${c.id ?? c.userId}` : ''),
     }))
     .filter((c) => c.value)
+}
+
+function followUpDateError(dueDate, { required = false, requireWhenMarked = true } = {}) {
+  const value = String(dueDate || '').trim().slice(0, 10)
+  if (!value) {
+    return required && requireWhenMarked ? 'Due date is required when follow-up is marked.' : ''
+  }
+  if (!isValidIsoDate(value)) return 'Please enter a valid date.'
+  if (isDateBeforeToday(value)) return PAST_DATE_MESSAGE
+  return ''
 }
 
 function formatAssessmentLabel(item) {
@@ -147,6 +163,17 @@ export default function CreateHealthAlert() {
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'followUpDueDate' || field === 'followUpRequired') {
+      const dueDate = field === 'followUpDueDate' ? value : form.followUpDueDate
+      const required = field === 'followUpRequired' ? value : form.followUpRequired
+      const message = followUpDateError(dueDate, { required, requireWhenMarked: false })
+      setErrors((prev) => {
+        const next = { ...prev }
+        if (message) next.followUpDueDate = message
+        else delete next.followUpDueDate
+        return next
+      })
+    }
   }
 
   function validate() {
@@ -154,9 +181,10 @@ export default function CreateHealthAlert() {
     if (!form.clientId) next.clientId = 'Select a client.'
     if (!form.title.trim()) next.title = 'Alert title is required.'
     if (!form.reason.trim()) next.reason = 'Reason / professional notes are required.'
-    if (form.followUpRequired && !form.followUpDueDate) {
-      next.followUpDueDate = 'Due date is required when follow-up is marked.'
-    }
+    const dueDateError = followUpDateError(form.followUpDueDate, {
+      required: form.followUpRequired,
+    })
+    if (dueDateError) next.followUpDueDate = dueDateError
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -354,7 +382,9 @@ export default function CreateHealthAlert() {
             <Input
               type="date"
               label="Follow-up due date"
-              value={form.followUpDueDate}
+              required={form.followUpRequired}
+              min={localTodayIso()}
+              value={String(form.followUpDueDate || '').slice(0, 10)}
               onChange={(e) => update('followUpDueDate', e.target.value)}
               error={errors.followUpDueDate}
             />

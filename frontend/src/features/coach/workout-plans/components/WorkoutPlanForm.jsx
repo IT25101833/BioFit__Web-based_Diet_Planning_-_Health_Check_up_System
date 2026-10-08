@@ -12,7 +12,7 @@ function newDay() {
   return {
     id: `d-${Date.now()}`,
     day: 'Monday',
-    title: 'New session',
+    title: '',
     exercises: [],
   }
 }
@@ -29,11 +29,11 @@ const emptyForm = {
   name: '',
   clientId: '',
   goal: '',
-  difficulty: 'Beginner',
+  difficulty: '',
   startDate: '',
   endDate: '',
-  sessionsPerWeek: '3',
-  sessionDuration: '45 min',
+  sessionsPerWeek: '',
+  sessionDuration: '',
   description: '',
   status: 'Draft',
   weeks: [newWeek(1)],
@@ -62,7 +62,8 @@ export default function WorkoutPlanForm({
       setForm({
         ...emptyForm,
         ...initialValues,
-        sessionsPerWeek: String(initialValues.sessionsPerWeek || '3'),
+        sessionsPerWeek:
+          initialValues.sessionsPerWeek == null ? '' : String(initialValues.sessionsPerWeek),
         weeks: initialValues.weeks?.length ? initialValues.weeks : [newWeek(1)],
       })
     }
@@ -98,9 +99,9 @@ export default function WorkoutPlanForm({
     await onSubmit?.({
       ...form,
       status,
-      sessionsPerWeek: Number(form.sessionsPerWeek),
+      sessionsPerWeek: form.sessionsPerWeek === '' ? null : Number(form.sessionsPerWeek),
       clientName: client?.name || form.clientName,
-      programme: client?.programme || form.programme,
+      programme: form.programme || '',
       totalWeeks: form.weeks.length,
     })
   }
@@ -123,6 +124,11 @@ export default function WorkoutPlanForm({
           options={clientOptions.map(({ value, label }) => ({ value, label }))}
           error={errors.clientId}
         />
+        {clientOptions.length === 0 ? (
+          <p className="mt-2 text-[12px] text-[#6b7280]">
+            No attended clients yet. Mark today&apos;s appointment as attended before selecting a client.
+          </p>
+        ) : null}
         {selectedClient ? (
           <div className="mt-4 grid gap-3 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] p-4 sm:grid-cols-2">
             <Info label="Fitness goal" value={selectedClient.goals?.[0] || '—'} />
@@ -130,12 +136,15 @@ export default function WorkoutPlanForm({
             <Info
               label="Exercise restrictions"
               value={
-                selectedClient.safety.restrictions.length
+                selectedClient.safety?.restrictions?.length
                   ? selectedClient.safety.restrictions.join('; ')
-                  : 'None noted'
+                  : 'Not recorded'
               }
             />
-            <Info label="Medical clearance" value={selectedClient.safety.medicalClearance} />
+            <Info
+              label="Medical clearance"
+              value={selectedClient.safety?.medicalClearance || 'Not recorded'}
+            />
           </div>
         ) : null}
       </SectionCard>
@@ -143,14 +152,15 @@ export default function WorkoutPlanForm({
       {selectedClient ? (
         <SectionCard title="Client safety considerations">
           <div className="space-y-2 text-sm text-[#4b5563]">
-            <p>Medical Clearance: {selectedClient.safety.medicalClearance}</p>
             <p>
-              Restriction:{' '}
-              {selectedClient.safety.restrictions[0] || 'None noted for current plan'}
+              Medical clearance: {selectedClient.safety?.medicalClearance || 'Not recorded'}
             </p>
             <p>
-              Mobility note:{' '}
-              {selectedClient.safety.mobilityNotes[0] || 'None noted'}
+              Restriction:{' '}
+              {selectedClient.safety?.restrictions?.[0] || 'Not recorded'}
+            </p>
+            <p>
+              Mobility note: {selectedClient.safety?.mobilityNotes?.[0] || 'Not recorded'}
             </p>
           </div>
           {selectedClient.safety.reviewRequired ? (
@@ -186,6 +196,7 @@ export default function WorkoutPlanForm({
           />
           <Select
             label="Difficulty"
+            placeholder="Select difficulty"
             value={form.difficulty}
             onChange={(e) => update('difficulty', e.target.value)}
             options={[

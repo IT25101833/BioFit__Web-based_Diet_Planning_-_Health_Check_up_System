@@ -38,6 +38,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const reviewRequestId = searchParams.get('reviewRequestId') || ''
+  const requestedService = searchParams.get('service') || ''
 
   const [step, setStep] = useState(0)
   const [services, setServices] = useState([])
@@ -81,6 +82,13 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
       cancelled = true
     }
   }, [audience])
+
+  useEffect(() => {
+    if (reviewRequestId || !requestedService || services.length === 0) return
+    if (services.some((item) => item.id === requestedService)) {
+      setServiceId(requestedService)
+    }
+  }, [requestedService, reviewRequestId, services])
 
   useEffect(() => {
     if (audience !== 'CLIENT') return undefined
@@ -141,8 +149,10 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     filteredProfessionals.find((item) => item.id === professionalId) ||
     professionals.find((item) => item.id === professionalId)
 
+  const slotDuration = service?.duration || (reviewLocked ? reviewMeta?.duration || '30 min' : '')
+
   useEffect(() => {
-    if (!professionalId || !date || !service) {
+    if (!professionalId || !date || !slotDuration) {
       setAvailability(null)
       return undefined
     }
@@ -152,7 +162,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     fetchProfessionalAvailability({
       professionalId,
       date,
-      duration: service.duration || reviewMeta?.duration || '30 min',
+      duration: slotDuration,
       audience,
     })
       .then((data) => {
@@ -175,7 +185,7 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
     return () => {
       cancelled = true
     }
-  }, [professionalId, date, service, audience, reviewMeta?.duration])
+  }, [professionalId, date, slotDuration, audience])
 
   function canContinue() {
     if (step === 0) return Boolean(serviceId)
@@ -468,7 +478,16 @@ export default function BookAppointment({ audience = 'CLIENT', successPath } = {
         {step === 3 && (
           <div className="space-y-4">
             {reviewLocked ? (
-              <p className="text-sm font-semibold text-[#111827]">Choose a Time:</p>
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-[#111827]">Review date</p>
+                <button
+                  type="button"
+                  className="rounded-2xl border border-[#005a40] bg-[#e6f5f0] px-4 py-3 text-sm font-semibold text-[#005a40]"
+                >
+                  {reviewMeta?.reviewDateLabel || date}
+                </button>
+                <p className="text-sm font-semibold text-[#111827]">Choose a Time:</p>
+              </div>
             ) : null}
             {loadingSlots ? (
               <p className="text-sm text-[var(--bf-muted)]">Checking availability…</p>

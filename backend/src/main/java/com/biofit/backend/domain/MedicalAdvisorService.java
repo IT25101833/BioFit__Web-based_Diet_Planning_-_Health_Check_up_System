@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class MedicalAdvisorService {
-
+    //Encapsulation: private final variables are encapsulated and can only be accessed within the class
     private final MedicalHistoryEntryRepository medicalHistoryEntryRepository;
     private final SafetyValidationRepository safetyValidationRepository;
     private final HealthProfileRepository healthProfileRepository;

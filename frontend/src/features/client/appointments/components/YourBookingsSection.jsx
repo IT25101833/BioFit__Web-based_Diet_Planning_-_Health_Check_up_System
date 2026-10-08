@@ -20,14 +20,16 @@ import {
   formatAppointmentTimeRange,
   formatDurationLabel,
   getBookingDateOptions,
-  isPastAppointment,
+  isCancelledAppointment,
+  isLaterAppointment,
+  isTodayAppointment,
   isUpcomingAppointment,
   rescheduleClientAppointment,
 } from '../data/appointmentData'
 
 const tabs = [
+  { value: 'today', label: 'Today' },
   { value: 'upcoming', label: 'Upcoming' },
-  { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
@@ -55,7 +57,7 @@ export default function YourBookingsSection({
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('upcoming')
+  const [tab, setTab] = useState('today')
   const [viewTarget, setViewTarget] = useState(null)
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelError, setCancelError] = useState('')
@@ -91,11 +93,9 @@ export default function YourBookingsSection({
 
   const filtered = useMemo(() => {
     let list = items
-    if (tab === 'upcoming') list = items.filter((item) => isUpcomingAppointment(item))
-    else if (tab === 'completed') list = items.filter((item) => isPastAppointment(item))
-    else if (tab === 'cancelled') {
-      list = items.filter((item) => String(item.status).toLowerCase() === 'cancelled')
-    }
+    if (tab === 'today') list = items.filter((item) => isTodayAppointment(item))
+    else if (tab === 'upcoming') list = items.filter((item) => isLaterAppointment(item))
+    else if (tab === 'cancelled') list = items.filter((item) => isCancelledAppointment(item))
     return [...list].sort(sortByNearest)
   }, [items, tab])
 
@@ -273,9 +273,11 @@ export default function YourBookingsSection({
       ) : filtered.length === 0 ? (
         <SectionCard>
           <p className="text-sm text-[var(--bf-muted)]">
-            {tab === 'upcoming'
-              ? "You don't have any bookings yet. Book a service above to get started."
-              : `No ${tab} bookings.`}
+            {tab === 'today'
+              ? 'No appointments scheduled for today.'
+              : tab === 'upcoming'
+                ? "You don't have any upcoming bookings. Book a service above to get started."
+                : 'No cancelled bookings.'}
           </p>
         </SectionCard>
       ) : (

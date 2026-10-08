@@ -86,9 +86,13 @@ public class BookingAvailabilityService {
         return dayAvailability(professionalId, dateIso, durationLabel, null);
     }
 
+    @Transactional
     public Map<String, Object> dayAvailability(
             String professionalId, String dateIso, String durationLabel, String excludeAppointmentId) {
-        assertNotMedicalAdvisor(professionalId);
+        User professional = resolveUser(professionalId);
+        if (isMedicalAdvisor(professional)) {
+            ensureDefaultHours(professionalId, professional.getId());
+        }
         LocalDate date = LocalDate.parse(dateIso);
         int duration = parseDuration(durationLabel);
         // Java DayOfWeek Mon=1..Sun=7 → JS-style Sun=0
@@ -388,18 +392,10 @@ public class BookingAvailabilityService {
         return free;
     }
 
-    private void assertNotMedicalAdvisor(String professionalId) {
-        User user = resolveUser(professionalId);
-        boolean medical =
-                user != null
-                        && user.getRoles() != null
-                        && user.getRoles().stream().anyMatch(role -> role.getName() == RoleName.MEDICAL_ADVISOR);
-        if (medical) {
-            throw new ApiException(
-                    "VALIDATION_ERROR",
-                    "Medical Advisors are not available for appointment booking.",
-                    HttpStatus.BAD_REQUEST);
-        }
+    private static boolean isMedicalAdvisor(User user) {
+        return user != null
+                && user.getRoles() != null
+                && user.getRoles().stream().anyMatch(role -> role.getName() == RoleName.MEDICAL_ADVISOR);
     }
 
     private User resolveUser(String professionalId) {

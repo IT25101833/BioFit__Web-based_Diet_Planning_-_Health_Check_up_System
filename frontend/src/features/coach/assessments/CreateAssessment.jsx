@@ -7,6 +7,7 @@ import SectionCard from '../../../components/ui/SectionCard'
 import Select from '../../../components/ui/Select'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
+import { localTodayIso } from '../../booking/bookingEngine'
 import { getClientOptions } from '../workout-plans/data/workoutPlanData'
 import { createAssessment } from './data/assessmentData'
 
@@ -15,7 +16,7 @@ export default function CreateAssessment() {
   const [clients, setClients] = useState([])
   const [form, setForm] = useState({
     clientId: '',
-    date: '2026-09-09',
+    date: localTodayIso(),
     type: '',
     activityLevel: '',
     experience: '',
@@ -108,6 +109,11 @@ export default function CreateAssessment() {
               error={errors.type}
             />
           </div>
+          {clients.length === 0 ? (
+            <p className="mt-3 text-[12px] text-[#6b7280]">
+              No attended clients yet. Mark today&apos;s appointment as attended before selecting a client.
+            </p>
+          ) : null}
         </SectionCard>
 
         <SectionCard title="General fitness information">

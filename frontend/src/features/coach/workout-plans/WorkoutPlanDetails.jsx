@@ -71,15 +71,22 @@ export default function WorkoutPlanDetails() {
       />
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Summary label="Current week" value={`Week ${plan.currentWeek}`} />
-        <Summary label="Completion" value={`${plan.progress}%`} />
-        <Summary label="Sessions / week" value={plan.sessionsPerWeek} />
-        <Summary label="Difficulty" value={plan.difficulty} />
-        <Summary label="Goal" value={plan.goal} />
+        <Summary label="Current week" value={weekLabel(plan.currentWeek)} />
+        <Summary
+          label="Completion"
+          value={plan.progress == null || plan.progress === '' ? '—' : `${plan.progress}%`}
+        />
+        <Summary label="Sessions / week" value={plan.sessionsPerWeek || '—'} />
+        <Summary label="Difficulty" value={plan.difficulty || '—'} />
+        <Summary label="Goal" value={plan.goal || '—'} />
       </div>
 
       <SectionCard title="Plan summary" className="mb-4">
-        <ProgressBar value={plan.progress} label="Overall completion" />
+        {plan.progress == null || plan.progress === '' || Number(plan.progress) === 0 ? (
+          <p className="text-sm text-[#6b7280]">Completion has not been recorded.</p>
+        ) : (
+          <ProgressBar value={plan.progress} label="Overall completion" />
+        )}
         <p className="mt-3 text-sm text-[#4b5563]">{plan.description}</p>
       </SectionCard>
 
@@ -103,7 +110,7 @@ export default function WorkoutPlanDetails() {
                           }
                         >
                           <span className="text-sm font-semibold text-[#111827]">
-                            {day.day} · {day.title}
+                            {[day.day, day.title].filter(Boolean).join(' · ')}
                           </span>
                           <span className="text-[12px] text-[#005a40]">
                             {open ? 'Hide' : 'Expand'}
@@ -111,7 +118,7 @@ export default function WorkoutPlanDetails() {
                         </button>
                         {open ? (
                           <ul className="space-y-2 border-t border-[#eef2f0] px-4 py-3">
-                            {day.exercises.map((ex, index) => (
+                            {(Array.isArray(day.exercises) ? day.exercises : []).map((ex, index) => (
                               <li key={`${ex.exerciseId}-${index}`} className="text-sm text-[#4b5563]">
                                 <span className="font-semibold text-[#111827]">{ex.name}</span>
                                 {' · '}
@@ -142,6 +149,12 @@ export default function WorkoutPlanDetails() {
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
+}
+
+function weekLabel(value) {
+  if (value == null || String(value).trim() === '') return '—'
+  const text = String(value)
+  return /^week\s+/i.test(text) ? text : `Week ${text}`
 }
 
 function Summary({ label, value }) {

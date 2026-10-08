@@ -7,20 +7,7 @@ export const adminStats = [
   { label: 'Backup Status', value: 'Healthy', hint: 'Latest backup successful', icon: 'DatabaseBackup' },
 ]
 
-export const users = [
-  {
-    id: 'USR-10021',
-    name: 'Alex Morgan',
-    initials: 'AM',
-    role: 'CLIENT',
-    email: 'client@biofit.demo',
-    status: 'ACTIVE',
-    type: 'Client',
-    created: '12 Aug 2026',
-    lastLogin: 'Today',
-    verification: 'Verified',
-  },
-]
+export const users = []
 
 export const services = [
   { name: 'BioFit Web Application', status: 'Operational', checked: 'Just now', issue: 'No recent issues' },

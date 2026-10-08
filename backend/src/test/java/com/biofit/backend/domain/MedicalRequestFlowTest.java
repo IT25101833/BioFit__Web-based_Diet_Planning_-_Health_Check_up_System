@@ -103,6 +103,30 @@ class MedicalRequestFlowTest {
                 .andExpect(jsonPath("$.data.preferredDate").value(preferredDate.toString()))
                 .andExpect(jsonPath("$.data.preferredTime").value("10:30 AM"));
 
+        mockMvc.perform(
+                        get("/api/client/medical-requests/time-slots")
+                                .param("date", preferredDate.toString())
+                                .header("Authorization", "Bearer " + clientToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", not(hasItem("10:30 AM"))))
+                .andExpect(jsonPath("$.data", hasItem("09:00 AM")));
+
+        fundWallet(otherClient, "3000.00");
+        String otherClientToken =
+                jwtService.createAccessToken(otherClient.getId(), otherClient.getEmail(), List.of("CLIENT"));
+        mockMvc.perform(
+                        post("/api/client/medical-requests")
+                                .header("Authorization", "Bearer " + otherClientToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"medicalAdvisorId\":"
+                                                + advisor.getId()
+                                                + ",\"reason\":\"Medical consultation\",\"description\":\"Need the same time.\",\"preferredDate\":\""
+                                                + preferredDate
+                                                + "\",\"preferredTime\":\"10:30 AM\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.message").value("This time is already booked for that date. Please choose another time."));
+
         Map<String, Object> created =
                 medicalRequestService.listForClient(clientPrincipal).stream()
                         .filter(row -> advisor.getId().equals(((Number) row.get("medicalAdvisorId")).longValue()))

@@ -42,20 +42,6 @@ export function clearPendingVerificationEmail() {
 }
 
 const MOCK_USERS = {
-  'client@biofit.demo': {
-    id: 1,
-    email: 'client@biofit.demo',
-    firstName: 'Alex',
-    lastName: 'Morgan',
-    fullName: 'Alex Morgan',
-    contactNumber: '+94 77 100 2001',
-    specialization: null,
-    status: 'ACTIVE',
-    emailVerified: true,
-    roles: ['CLIENT'],
-    primaryRole: 'CLIENT',
-    password: 'Demo123!',
-  },
   'manager@biofit.demo': {
     id: 2,
     email: 'manager@biofit.demo',

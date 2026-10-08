@@ -1,6 +1,7 @@
 import {
   Bell,
   CalendarClock,
+  CalendarDays,
   CalendarPlus,
   ChartColumn,
   ClipboardCheck,
@@ -27,6 +28,7 @@ const navItems = [
   { label: 'Health Risk Alerts', to: '/coach/access-requests', icon: KeyRound },
   { label: 'Fitness Assessments', to: '/coach/assessments', icon: ClipboardCheck },
   { label: 'Progress Tracking', to: '/coach/progress', icon: ChartColumn },
+  { label: 'Appointments', to: '/coach/appointments', icon: CalendarDays },
   { label: 'My Availability', to: '/coach/availability', icon: CalendarClock },
   { label: 'Book Manager', to: '/coach/book-appointment', icon: CalendarPlus },
   { label: 'Escalations', to: '/coach/escalations', icon: ArrowUpRight },

@@ -19,7 +19,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class MedicalRequestService {
     private static final DateTimeFormatter TIME_LABEL = DateTimeFormatter.ofPattern("hh:mm a", Locale.US);
     private static final DateTimeFormatter DATE_LABEL = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
+    //Encapsulation: private final variables are encapsulated and can only be accessed within the class
     private final MedicalRequestRepository medicalRequestRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
@@ -62,6 +65,21 @@ public class MedicalRequestService {
         return timeSlots();
     }
 
+    /** Slots still open on this date: 9:00 AM–5:00 PM, and not already chosen by another client. */
+    public List<String> preferredTimeSlots(String dateText) {
+        if (dateText == null || dateText.isBlank()) {
+            return timeSlots();
+        }
+        LocalDate date;
+        try {
+            String raw = dateText.trim();
+            date = LocalDate.parse(raw.length() >= 10 ? raw.substring(0, 10) : raw);
+        } catch (DateTimeParseException ex) {
+            return List.of();
+        }
+        return availableSlots(date);
+    }
+
     @Transactional
     public Map<String, Object> create(
             UserPrincipal principal,
@@ -77,6 +95,7 @@ public class MedicalRequestService {
         String reasonText = required(reason, "Enter a reason for the request.", 200);
         String descriptionText = required(description, "Describe why you need medical assistance.", 2000);
         String timeText = validatePreferred(preferredDate, preferredTime);
+        assertSlotAvailable(preferredDate, timeText);
         if (medicalAdvisorId.equals(principal.getId())) {
             throw new ApiException("VALIDATION_ERROR", "Select a Medical Advisor.", HttpStatus.BAD_REQUEST);
         }
@@ -181,6 +200,25 @@ public class MedicalRequestService {
         return toMap(request);
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     @Transactional
     public Map<String, Object> accept(UserPrincipal principal, Long id) {
         MedicalRequest request = requireAssigned(principal, id);
@@ -199,16 +237,36 @@ public class MedicalRequestService {
         return toMap(request);
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
     @Transactional
     public Map<String, Object> reject(UserPrincipal principal, Long id, String rejectionReason) {
         MedicalRequest request = requireAssigned(principal, id);
         if (!MedicalRequest.PENDING.equals(request.getStatus())) {
             throw new ApiException("CONFLICT", "Only a pending medical request can be rejected.", HttpStatus.CONFLICT);
         }
-        request.setStatus(MedicalRequest.REJECTED);
-        request.setRejectionReason(blankToNull(rejectionReason, 500));
-        request.setRespondedAt(Instant.now());
-        medicalRequestRepository.save(request);
+        request.setStatus(MedicalRequest.REJECTED);//encapsulation: the Status field is encapsulated and can only be accessed within the class
+        request.setRejectionReason(blankToNull(rejectionReason, 500));//encapsulation: the RejectionReason field is encapsulated and can only be accessed within the class
+        request.setRespondedAt(Instant.now());//encapsulation: the RespondedAt field is encapsulated and can only be accessed within the class
+        medicalRequestRepository.save(request);//abstraction: the save method is abstracted and can be used to save a medical request
         String body = "Your medical request has been rejected.";
         if (request.getRejectionReason() != null) {
             body = body + " " + request.getRejectionReason();
@@ -217,6 +275,16 @@ public class MedicalRequestService {
         audit(principal.getId(), "MEDICAL_REQUEST_REJECT", request.getId(), "Medical Advisor rejected a medical request");
         return toMap(request);
     }
+
+
+
+
+
+
+
+
+
+
 
     @Transactional
     public Map<String, Object> start(UserPrincipal principal, Long id) {
@@ -230,6 +298,18 @@ public class MedicalRequestService {
         medicalRequestRepository.save(request);
         return toMap(request);
     }
+
+
+
+
+
+
+
+
+
+
+
+
 
     @Transactional
     public Map<String, Object> complete(UserPrincipal principal, Long id) {
@@ -250,6 +330,30 @@ public class MedicalRequestService {
                 "Medical Advisor completed a medical request");
         return toMap(request);
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
     private MedicalRequest requireAssigned(UserPrincipal principal, Long id) {
         requireAdvisorPrincipal(principal);
@@ -413,6 +517,49 @@ public class MedicalRequestService {
             }
         }
         return normalized;
+    }
+
+    private static final List<String> SLOT_HELD =
+            List.of(
+                    MedicalRequest.PENDING,
+                    MedicalRequest.ACCEPTED,
+                    MedicalRequest.ATTENDED,
+                    MedicalRequest.IN_PROGRESS,
+                    MedicalRequest.COMPLETED);
+
+    private List<String> availableSlots(LocalDate date) {
+        LocalDate today = LocalDate.now(ZONE);
+        if (date.isBefore(today) || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            return List.of();
+        }
+        Set<String> taken = takenTimes(date);
+        int nowMinutes = LocalTime.now(ZONE).getHour() * 60 + LocalTime.now(ZONE).getMinute();
+        List<String> open = new ArrayList<>();
+        for (String slot : timeSlots()) {
+            if (taken.contains(slot)) continue;
+            if (date.equals(today)) {
+                Integer slotMinutes = minutes(slot);
+                if (slotMinutes == null || slotMinutes <= nowMinutes) continue;
+            }
+            open.add(slot);
+        }
+        return open;
+    }
+
+    private Set<String> takenTimes(LocalDate date) {
+        return medicalRequestRepository.findByPreferredDateAndStatusIn(date, SLOT_HELD).stream()
+                .map(request -> normalizeTime(request.getPreferredTime()))
+                .filter(time -> time != null)
+                .collect(Collectors.toSet());
+    }
+
+    private void assertSlotAvailable(LocalDate date, String time) {
+        if (takenTimes(date).contains(time)) {
+            throw new ApiException(
+                    "CONFLICT",
+                    "This time is already booked for that date. Please choose another time.",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     private static List<String> timeSlots() {

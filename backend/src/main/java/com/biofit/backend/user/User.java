@@ -45,6 +45,24 @@ public class User {
     @Column(name = "contact_number", length = 40)
     private String contactNumber;
 
+    @Column(name = "date_of_birth")
+    private java.time.LocalDate dateOfBirth;
+
+    @Column(length = 40)
+    private String gender;
+
+    @Column(length = 500)
+    private String address;
+
+    @Column(name = "emergency_contact_name", length = 120)
+    private String emergencyContactName;
+
+    @Column(name = "emergency_contact_relationship", length = 80)
+    private String emergencyContactRelationship;
+
+    @Column(name = "emergency_contact_phone", length = 40)
+    private String emergencyContactPhone;
+
     @Column(length = 255)
     private String specialization;
 
