@@ -15,6 +15,7 @@ import com.biofit.backend.support.TicketStatus;
 import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
+import com.biofit.backend.user.UserStatus;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -901,16 +902,98 @@ public class DomainService {
                 .toList();
     }
 
-    public Map<String, Object> managerSchedules() {
+    @Transactional(readOnly = true)
+    public Map<String, Object> managerSchedules(Long actorId) {
+        User actor =
+                userRepository
+                        .findById(actorId)
+                        .orElseThrow(() -> new ApiException("NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+        boolean platformAdmin =
+                actor.getRoles().stream().anyMatch(role -> role.getName() == RoleName.ADMIN);
+        List<StaffScheduleEntity> schedules = staffScheduleRepository.findAll();
+        List<User> staff;
+        if (actor.getWellnessCentre() != null) {
+            staff =
+                    userRepository.findCentreStaff(
+                            actor.getWellnessCentre().getId(),
+                            List.of(
+                                    RoleName.MEDICAL_ADVISOR,
+                                    RoleName.NUTRITION_CONSULTANT,
+                                    RoleName.FITNESS_COACH));
+        } else if (platformAdmin) {
+            staff =
+                    userRepository.findByDeletedAtIsNull().stream()
+                            .filter(
+                                    user ->
+                                            user.getRoles().stream()
+                                                    .anyMatch(
+                                                            role ->
+                                                                    role.getName() == RoleName.MEDICAL_ADVISOR
+                                                                            || role.getName() == RoleName.NUTRITION_CONSULTANT
+                                                                            || role.getName() == RoleName.FITNESS_COACH))
+                            .toList();
+        } else {
+            staff = List.of();
+            schedules = List.of();
+        }
+
+        Set<String> names = new LinkedHashSet<>();
+        Set<String> ids = new LinkedHashSet<>();
+        List<Map<String, Object>> staffRows = new ArrayList<>();
+        for (User member : staff) {
+            String name = member.getFullName();
+            names.add(name.toLowerCase(Locale.ROOT));
+            ids.add(String.valueOf(member.getId()));
+            ids.add("USR-" + member.getId());
+            String optionId = String.valueOf(member.getId());
+            for (StaffScheduleEntity schedule : schedules) {
+                if (schedule.getStaffName() != null
+                        && schedule.getStaffName().equalsIgnoreCase(name)
+                        && schedule.getStaffId() != null) {
+                    optionId = schedule.getStaffId();
+                    ids.add(schedule.getStaffId());
+                    break;
+                }
+            }
+            RoleName roleName =
+                    member.getRoles().stream().map(role -> role.getName()).findFirst().orElse(RoleName.FITNESS_COACH);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", optionId);
+            row.put("name", name);
+            row.put("role", scheduleRoleLabel(roleName));
+            row.put("status", member.getStatus() == UserStatus.ACTIVE ? "Available" : member.getStatus().name());
+            staffRows.add(row);
+        }
+
+        List<Map<String, Object>> events =
+                schedules.stream()
+                        .filter(
+                                schedule -> {
+                                    if (platformAdmin && actor.getWellnessCentre() == null) {
+                                        return true;
+                                    }
+                                    String name =
+                                            schedule.getStaffName() == null
+                                                    ? ""
+                                                    : schedule.getStaffName().toLowerCase(Locale.ROOT);
+                                    String sid = schedule.getStaffId() == null ? "" : schedule.getStaffId();
+                                    return names.contains(name) || ids.contains(sid);
+                                })
+                        .map(this::scheduleEvent)
+                        .toList();
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put(
-                "staff",
-                List.of(
-                        Map.of("id", "st-coach", "name", "Daniel Perera", "role", "Fitness Coach", "status", "Available"),
-                        Map.of("id", "st-nutri", "name", "Maya Fernando", "role", "Nutrition Consultant", "status", "Available"),
-                        Map.of("id", "st-med", "name", "Elena Costa", "role", "Medical Advisor", "status", "Available")));
-        m.put("events", staffScheduleRepository.findAll().stream().map(this::scheduleEvent).toList());
+        m.put("staff", staffRows);
+        m.put("events", events);
         return m;
+    }
+
+    private static String scheduleRoleLabel(RoleName role) {
+        return switch (role) {
+            case FITNESS_COACH -> "Fitness Coach";
+            case NUTRITION_CONSULTANT -> "Nutrition Consultant";
+            case MEDICAL_ADVISOR -> "Medical Advisor";
+            default -> role.name();
+        };
     }
 
     @Transactional

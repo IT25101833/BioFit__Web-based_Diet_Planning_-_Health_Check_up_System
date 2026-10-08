@@ -44,6 +44,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             UserPrincipal principal =
                     (UserPrincipal) userDetailsService.loadUserByUsername(claims.get("email", String.class));
+            if (!principal.isEnabled() || !principal.isAccountNonLocked()) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
             // Always trust DB roles for authorization (JWT role claims can be empty/mismatched).
             var authorities = principal.getAuthorities();
             if (authorities == null || authorities.isEmpty()) {

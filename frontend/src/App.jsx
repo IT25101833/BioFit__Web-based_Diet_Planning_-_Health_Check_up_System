@@ -99,6 +99,7 @@ import ManagerProfilePage from './pages/manager/ManagerProfilePage'
 import ManagerProgrammeDetailsPage from './pages/manager/ManagerProgrammeDetailsPage'
 import ManagerProgrammesPage from './pages/manager/ManagerProgrammesPage'
 import ManagerReportsPage from './pages/manager/ManagerReportsPage'
+import ManagerStaffPage from './pages/manager/ManagerStaffPage'
 import ManagerStaffSchedulingPage from './pages/manager/ManagerStaffSchedulingPage'
 import ManagerAvailabilityPage from './pages/manager/ManagerAvailabilityPage'
 import CoachAvailabilityPage from './pages/coach/CoachAvailabilityPage'
@@ -202,6 +203,7 @@ function App() {
         <Route path="/manager/programmes/create" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerCreateProgrammePage />)} />
         <Route path="/manager/programmes/:id/edit" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerEditProgrammePage />)} />
         <Route path="/manager/programmes/:id" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerProgrammeDetailsPage />)} />
+        <Route path="/manager/staff" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerStaffPage />)} />
         <Route path="/manager/staff-scheduling" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerStaffSchedulingPage />)} />
         <Route path="/manager/availability" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerAvailabilityPage />)} />
         <Route path="/manager/enrolments" element={guard(['WELLNESS_CENTRE_MANAGER', 'ADMIN'], <ManagerEnrolmentsPage />)} />

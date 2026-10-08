@@ -17,9 +17,12 @@ import com.biofit.backend.user.RoleRepository;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import com.biofit.backend.user.UserStatus;
+import com.biofit.backend.user.WellnessCentre;
+import com.biofit.backend.user.WellnessCentreRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +41,7 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final WellnessCentreRepository wellnessCentreRepository;
     private final PasswordEncoder passwordEncoder;
     private final HealthProfileRepository healthProfileRepository;
     private final HealthMetricRepository healthMetricRepository;
@@ -57,6 +61,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             return;
         }
         seedUsers();
+        assignDefaultCentre();
         seedMedicalPortalClients();
         if (healthProfileRepository.count() == 0) {
             seedClientHealth();
@@ -124,13 +129,42 @@ public class DemoDataSeeder implements ApplicationRunner {
             user.setSpecialization(seed.specialization());
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerified(true);
-            user.setRoles(Set.of(role));
+            user.setRoles(new HashSet<>(Set.of(role)));
             userRepository.save(user);
             created++;
         }
 
         if (created > 0) {
             log.info("Seeded {} BioFit demo users (password: Demo123!)", created);
+        }
+    }
+
+    private void assignDefaultCentre() {
+        WellnessCentre centre =
+                wellnessCentreRepository
+                        .findByNameIgnoreCase("VitalLife Wellness Centre")
+                        .orElseGet(
+                                () -> {
+                                    WellnessCentre created = new WellnessCentre();
+                                    created.setName("VitalLife Wellness Centre");
+                                    return wellnessCentreRepository.save(created);
+                                });
+        Set<RoleName> centreRoles =
+                Set.of(
+                        RoleName.WELLNESS_CENTRE_MANAGER,
+                        RoleName.FITNESS_COACH,
+                        RoleName.NUTRITION_CONSULTANT,
+                        RoleName.MEDICAL_ADVISOR);
+        for (User user : userRepository.findByDeletedAtIsNull()) {
+            if (user.getWellnessCentre() != null) {
+                continue;
+            }
+            boolean belongs =
+                    user.getRoles().stream().anyMatch(role -> centreRoles.contains(role.getName()));
+            if (belongs) {
+                user.setWellnessCentre(centre);
+                userRepository.save(user);
+            }
         }
     }
 

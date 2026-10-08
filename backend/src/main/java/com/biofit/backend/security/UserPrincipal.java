@@ -2,6 +2,7 @@ package com.biofit.backend.security;
 
 import com.biofit.backend.user.RoleName;
 import com.biofit.backend.user.User;
+import com.biofit.backend.user.UserStatus;
 import java.util.Collection;
 import java.util.stream.Collectors;
 import lombok.Getter;
@@ -23,8 +24,8 @@ public class UserPrincipal implements UserDetails {
         this.id = user.getId();
         this.email = user.getEmail();
         this.password = user.getPasswordHash();
-        this.enabled = user.getDeletedAt() == null;
-        this.accountNonLocked = !user.isLocked();
+        this.enabled = user.getDeletedAt() == null && user.getStatus() == UserStatus.ACTIVE;
+        this.accountNonLocked = !user.isLocked() && user.getStatus() != UserStatus.LOCKED;
         this.authorities =
                 user.getRoles().stream()
                         .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName().name()))

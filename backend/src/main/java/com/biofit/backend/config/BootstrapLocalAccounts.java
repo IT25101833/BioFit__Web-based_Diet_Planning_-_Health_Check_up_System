@@ -6,6 +6,7 @@ import com.biofit.backend.user.RoleRepository;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
 import com.biofit.backend.user.UserStatus;
+import java.util.HashSet;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -93,7 +94,7 @@ public class BootstrapLocalAccounts implements ApplicationRunner {
         user.setSpecialization(specialization);
         user.setStatus(UserStatus.ACTIVE);
         user.setEmailVerified(true);
-        user.setRoles(Set.of(role));
+        user.setRoles(new HashSet<>(Set.of(role)));
         userRepository.save(user);
         log.info("Created bootstrap user {} ({})", email, roleName);
         return true;

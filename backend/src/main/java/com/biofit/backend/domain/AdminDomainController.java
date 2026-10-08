@@ -3,6 +3,9 @@ package com.biofit.backend.domain;
 import com.biofit.backend.common.ApiResponse;
 import com.biofit.backend.erasure.ErasureService;
 import com.biofit.backend.security.UserPrincipal;
+import com.biofit.backend.user.UserManagementService;
+import com.biofit.backend.user.UserStatus;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,6 +30,7 @@ public class AdminDomainController {
     private final DomainService domainService;
     private final CompletionService completionService;
     private final ErasureService erasureService;
+    private final UserManagementService userManagementService;
 
     @GetMapping("/overview")
     public ApiResponse<Map<String, Object>> overview() {
@@ -38,14 +43,77 @@ public class AdminDomainController {
     }
 
     @GetMapping("/users")
-    public ApiResponse<List<Map<String, Object>>> users() {
-        return ApiResponse.ok(completionService.adminUsers());
+    public ApiResponse<List<Map<String, Object>>> users(
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String sort) {
+        return ApiResponse.ok(userManagementService.listAdminUsers(role, status, type, q, sort));
+    }
+
+    @GetMapping("/users/{id}")
+    public ApiResponse<Map<String, Object>> user(@PathVariable Long id) {
+        return ApiResponse.ok(userManagementService.getAdminUser(id));
+    }
+
+    @PostMapping("/users")
+    public ApiResponse<Map<String, Object>> createUser(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.createAdminUser(principal, body, clientIp(http), http.getHeader("User-Agent")));
     }
 
     @PatchMapping("/users/{id}")
     public ApiResponse<Map<String, Object>> updateUser(
-            @PathVariable Long id, @RequestBody Map<String, Object> body) {
-        return ApiResponse.ok(completionService.updateAdminUser(id, body));
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.updateAdminUser(principal, id, body, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PatchMapping("/users/{id}/deactivate")
+    public ApiResponse<Map<String, Object>> deactivateUser(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id, HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.setAdminUserStatus(
+                        principal, id, UserStatus.INACTIVE, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PatchMapping("/users/{id}/activate")
+    public ApiResponse<Map<String, Object>> activateUser(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id, HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.setAdminUserStatus(
+                        principal, id, UserStatus.ACTIVE, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PatchMapping("/users/{id}/lock")
+    public ApiResponse<Map<String, Object>> lockUser(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id, HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.setAdminUserStatus(
+                        principal, id, UserStatus.LOCKED, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PatchMapping("/users/{id}/unlock")
+    public ApiResponse<Map<String, Object>> unlockUser(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id, HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.setAdminUserStatus(
+                        principal, id, UserStatus.ACTIVE, clientIp(http), http.getHeader("User-Agent")));
+    }
+
+    @PostMapping("/users/{id}/password-reset")
+    public ApiResponse<Map<String, Object>> passwordReset(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id, HttpServletRequest http) {
+        return ApiResponse.ok(
+                userManagementService.issuePasswordReset(
+                        principal, id, clientIp(http), http.getHeader("User-Agent")));
     }
 
     @GetMapping("/audit-logs")
@@ -114,5 +182,13 @@ public class AdminDomainController {
     public ApiResponse<Map<String, Object>> executeErasureRequest(
             @PathVariable Long id, @AuthenticationPrincipal UserPrincipal principal) {
         return ApiResponse.ok(erasureService.execute(id, principal));
+    }
+
+    private static String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

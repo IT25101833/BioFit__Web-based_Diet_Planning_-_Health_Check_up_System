@@ -10,6 +10,7 @@ import {
   Settings,
   UserRound,
   Users,
+  UserCog,
   ArrowUpRight,
 } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
@@ -19,6 +20,7 @@ import Avatar from '../ui/Avatar'
 const navItems = [
   { label: 'Dashboard', to: '/manager/dashboard', icon: LayoutDashboard },
   { label: 'Wellness Programmes', to: '/manager/programmes', icon: Activity },
+  { label: 'Centre Staff', to: '/manager/staff', icon: UserCog },
   { label: 'Staff Scheduling', to: '/manager/staff-scheduling', icon: CalendarDays },
   { label: 'Availability', to: '/manager/availability', icon: CalendarClock },
   { label: 'Enrolments', to: '/manager/enrolments', icon: Users },

@@ -67,12 +67,27 @@ export async function fetchAdminDashboard() {
   return apiRequest('/api/admin/dashboard')
 }
 
-export async function fetchAdminUsers() {
+export async function fetchAdminUsers(params = {}) {
   if (USE_MOCK) {
     await delay()
     return users.map((u) => ({ ...u }))
   }
-  return apiRequest('/api/admin/users')
+  const query = new URLSearchParams()
+  if (params.role) query.set('role', params.role)
+  if (params.status) query.set('status', params.status)
+  if (params.type) query.set('type', params.type)
+  if (params.q) query.set('q', params.q)
+  if (params.sort) query.set('sort', params.sort)
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return apiRequest(`/api/admin/users${suffix}`)
+}
+
+export async function fetchAdminUser(id) {
+  return apiRequest(`/api/admin/users/${id}`)
+}
+
+export async function createAdminUser(payload) {
+  return apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) })
 }
 
 export async function updateAdminUser(id, payload) {
@@ -81,6 +96,14 @@ export async function updateAdminUser(id, payload) {
     return { id, ...payload }
   }
   return apiRequest(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export async function setAdminUserStatus(id, action) {
+  return apiRequest(`/api/admin/users/${id}/${action}`, { method: 'PATCH' })
+}
+
+export async function issueAdminPasswordReset(id) {
+  return apiRequest(`/api/admin/users/${id}/password-reset`, { method: 'POST' })
 }
 
 export async function fetchAdminAuditLogs() {

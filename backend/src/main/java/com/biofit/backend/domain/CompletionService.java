@@ -51,6 +51,7 @@ public class CompletionService {
     private final NotificationRepository notificationRepository;
     private final MedicalReviewRequestService medicalReviewRequestService;
     private final MedicalAdvisorService medicalAdvisorService;
+    private final com.biofit.backend.user.UserManagementService userManagementService;
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -625,20 +626,17 @@ public class CompletionService {
     /* ---------- Admin ---------- */
 
     public Map<String, Object> adminDashboard() {
-        long users = userRepository.count();
-        long staff =
-                userRepository.findAll().stream()
-                        .filter(u -> u.getRoles().stream().anyMatch(r -> r.getName() != RoleName.CLIENT))
-                        .count();
+        Map<String, Object> metrics = userManagementService.dashboardMetrics();
         Map<String, Object> m = new LinkedHashMap<>();
+        m.put("metrics", metrics);
         m.put(
                 "stats",
                 List.of(
-                        Map.of("label", "Total Users", "value", String.valueOf(users), "hint", "Across all BioFit roles", "icon", "Users"),
-                        Map.of("label", "Active Staff Accounts", "value", String.valueOf(staff), "hint", "Currently enabled", "icon", "UserCheck"),
-                        Map.of("label", "Open Tickets", "value", String.valueOf(supportTicketRepository.count()), "hint", "Support load", "icon", "TriangleAlert"),
-                        Map.of("label", "Backup Status", "value", "Healthy", "hint", "Latest backup successful", "icon", "DatabaseBackup")));
-        m.put("users", adminUsers());
+                        Map.of("label", "Total Users", "value", String.valueOf(metrics.get("totalUsers")), "hint", "Accounts that are not deleted", "icon", "Users"),
+                        Map.of("label", "Active Staff Accounts", "value", String.valueOf(metrics.get("activeStaff")), "hint", "Active non-client accounts", "icon", "UserCheck"),
+                        Map.of("label", "Open Tickets", "value", String.valueOf(metrics.get("openTickets")), "hint", "Not resolved or closed", "icon", "TriangleAlert"),
+                        Map.of("label", "Inactive Accounts", "value", String.valueOf(metrics.get("inactiveAccounts")), "hint", "Administratively inactive", "icon", "DatabaseBackup")));
+        m.put("users", userManagementService.listAdminUsers());
         m.put("auditLogs", adminAuditLogs());
         m.put(
                 "services",
@@ -678,35 +676,11 @@ public class CompletionService {
                             m.put("status", u.getStatus() == null ? "ACTIVE" : u.getStatus().name());
                             m.put("type", role.equals("CLIENT") ? "Client" : "Staff");
                             m.put("created", u.getCreatedAt() == null ? "" : u.getCreatedAt().toString());
-                            m.put("lastLogin", "-");
+                            m.put("lastLogin", u.getLastLoginAt() == null ? null : u.getLastLoginAt().toString());
                             m.put("verification", u.isEmailVerified() ? "Verified" : "Pending");
                             return m;
                         })
                 .toList();
-    }
-
-    @Transactional
-    public Map<String, Object> updateAdminUser(Long id, Map<String, Object> body) {
-        User u =
-                userRepository
-                        .findById(id)
-                        .orElseThrow(() -> new ApiException("NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
-        if (body.get("status") != null) {
-            u.setStatus(UserStatus.valueOf(str(body.get("status")).toUpperCase()));
-        }
-        if (body.get("firstName") != null) u.setFirstName(str(body.get("firstName")));
-        if (body.get("lastName") != null) u.setLastName(str(body.get("lastName")));
-        if (body.get("role") != null) {
-            RoleName rn = RoleName.valueOf(str(body.get("role")).toUpperCase());
-            Role role =
-                    roleRepository
-                            .findByName(rn)
-                            .orElseThrow(() -> new ApiException("ROLE_MISSING", "Role missing", HttpStatus.BAD_REQUEST));
-            u.getRoles().clear();
-            u.getRoles().add(role);
-        }
-        userRepository.save(u);
-        return adminUsers().stream().filter(x -> id.equals(x.get("userId"))).findFirst().orElseThrow();
     }
 
     public List<Map<String, Object>> adminAuditLogs() {

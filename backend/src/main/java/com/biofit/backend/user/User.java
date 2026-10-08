@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -73,6 +74,9 @@ public class User {
     @Column(name = "locked_until")
     private Instant lockedUntil;
 
+    @Column(name = "last_login_at")
+    private Instant lastLoginAt;
+
     @Column(name = "password_reset_token")
     private String passwordResetToken;
 
@@ -87,6 +91,10 @@ public class User {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "wellness_centre_id")
+    private WellnessCentre wellnessCentre;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(

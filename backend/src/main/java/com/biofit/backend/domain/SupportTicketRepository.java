@@ -1,5 +1,6 @@
 package com.biofit.backend.domain;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +14,8 @@ public interface SupportTicketRepository extends JpaRepository<SupportTicketEnti
     List<SupportTicketEntity> findByClientIdOrderByUpdatedAtDesc(String clientId);
 
     long countByClientId(String clientId);
+
+    long countByStatusIn(Collection<String> statuses);
 
     Optional<SupportTicketEntity> findByIdAndClientUserId(String id, Long clientUserId);
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, ClipboardList, DatabaseBackup, LockKeyhole, MonitorCog, Plus, Search, ShieldCheck, Users, UserCheck } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Activity, AlertTriangle, ClipboardList, DatabaseBackup, LockKeyhole, MonitorCog, ShieldCheck, Users, UserCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import StatCard from '../../components/ui/StatCard'
 import SectionCard from '../../components/ui/SectionCard'
 import StatusBadge from '../../components/ui/StatusBadge'
@@ -10,7 +10,6 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import PageHeader from '../../components/ui/PageHeader'
 import ErrorState from '../../components/ui/ErrorState'
 import {
-  adminStats as fallbackStats,
   approveErasureRequest,
   auditLogs as fallbackAudit,
   backups,
@@ -18,13 +17,10 @@ import {
   executeErasureRequest,
   fetchAdminAuditLogs,
   fetchAdminDashboard,
-  fetchAdminUsers,
   fetchErasureRequests,
   notifications,
   rejectErasureRequest,
-  roles,
   services,
-  users as fallbackUsers,
 } from './data/adminData'
 import Toast from '../../components/ui/Toast'
 import Input from '../../components/ui/Input'
@@ -37,31 +33,55 @@ const TinyChart = ({ label, values = [35, 52, 42, 68, 58, 76, 66, 85] }) => <div
 
 function Table({ children, heads }) { return <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="border-b border-[#e8ecf1] text-[11px] font-semibold tracking-wide text-[#8b93a1] uppercase"><tr>{heads.map((h) => <th key={h} className="px-3 py-3 first:pl-0 last:pr-0">{h}</th>)}</tr></thead><tbody className="divide-y divide-[#eef2f0]">{children}</tbody></table></div> }
 
+const ROLE_LABELS = {
+  CLIENT: 'Clients',
+  WELLNESS_CENTRE_MANAGER: 'Wellness Centre Managers',
+  FITNESS_COACH: 'Fitness Coaches',
+  NUTRITION_CONSULTANT: 'Nutrition Consultants',
+  MEDICAL_ADVISOR: 'Medical Advisors',
+  CUSTOMER_EXPERIENCE_OFFICER: 'Support Officers',
+  DIGITAL_OPERATIONS_EXECUTIVE: 'Digital Operations',
+  ADMIN: 'Administrators',
+}
+
 export function AdminDashboard() {
-  const [adminStats, setAdminStats] = useState(fallbackStats)
-  const [users, setUsers] = useState(fallbackUsers)
-  const [auditLogs, setAuditLogs] = useState(fallbackAudit)
+  const [adminStats, setAdminStats] = useState([])
+  const [users, setUsers] = useState([])
+  const [auditLogs, setAuditLogs] = useState([])
+  const [metrics, setMetrics] = useState(null)
+  const [servicesLive, setServicesLive] = useState(services)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   function load() {
     setError('')
+    setLoading(true)
     fetchAdminDashboard()
       .then((data) => {
         if (!data) return
         if (Array.isArray(data.stats)) setAdminStats(data.stats)
         if (Array.isArray(data.users)) setUsers(data.users)
         if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs)
+        if (data.metrics) setMetrics(data.metrics)
+        if (Array.isArray(data.services)) setServicesLive(data.services)
       })
       .catch(() => setError('We couldn’t load the admin dashboard.'))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
     load()
   }, [])
 
-  const statsList = Array.isArray(adminStats) ? adminStats : fallbackStats
-  const userList = Array.isArray(users) ? users : fallbackUsers
-  const activityList = (Array.isArray(auditLogs) && auditLogs.length ? auditLogs : fallbackAudit).slice(0, 5)
+  const statsList = Array.isArray(adminStats) ? adminStats : []
+  const userList = Array.isArray(users) ? users : []
+  const activityList = (Array.isArray(auditLogs) ? auditLogs : []).slice(0, 5)
+  const roleRows = Array.isArray(metrics?.usersByRole) ? metrics.usersByRole : []
+  const roleMax = Math.max(1, ...roleRows.map((row) => Number(row.count) || 0))
+
+  if (loading) {
+    return <p className="text-sm text-[#6b7280]">Loading dashboard…</p>
+  }
 
   if (error) {
     return (
@@ -97,11 +117,11 @@ export function AdminDashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {[
-          ['New Users This Month', String(userList.length)],
-          ['Inactive Accounts', '0'],
-          ['Locked Accounts', '0'],
-          ['Failed Login Attempts', '9'],
-          ['Pending Notifications', '3'],
+          ['New Users This Month', String(metrics?.newUsersThisMonth ?? 0)],
+          ['Inactive Accounts', String(metrics?.inactiveAccounts ?? 0)],
+          ['Locked Accounts', String(metrics?.lockedAccounts ?? 0)],
+          ['Failed Login Attempts', String(metrics?.failedLoginAttempts ?? 0)],
+          ['Open Tickets', String(metrics?.openTickets ?? 0)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-2xl border border-[#e8ecf1] bg-white p-4">
             <p className="text-xs text-[#6b7280]">{label}</p>
@@ -113,32 +133,29 @@ export function AdminDashboard() {
       <div className="grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
         <SectionCard title="Users by Role" icon={Users} description="Current active users across BioFit">
           <div className="space-y-3">
-            {[
-              ['Clients', 75],
-              ['Wellness Centre Managers', 18],
-              ['Fitness Coaches', 40],
-              ['Nutrition Consultants', 26],
-              ['Medical Advisors', 16],
-              ['Support Officers', 30],
-              ['Digital Operations', 12],
-            ].map(([label, width]) => (
-              <div key={label}>
-                <div className="mb-1 flex justify-between text-xs">
-                  <span>{label}</span>
-                  <span className="font-semibold">
-                    {width === 75 ? 362 : Math.round(width * 0.46)}
-                  </span>
+            {roleRows.length === 0 ? (
+              <p className="text-sm text-[#6b7280]">No accounts yet.</p>
+            ) : (
+              roleRows.map((row) => (
+                <div key={row.role}>
+                  <div className="mb-1 flex justify-between text-xs">
+                    <span>{ROLE_LABELS[row.role] || row.role}</span>
+                    <span className="font-semibold">{row.count}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-[#eef2f0]">
+                    <div
+                      className="h-2 rounded-full bg-[#0d9488]"
+                      style={{ width: `${Math.round((Number(row.count) / roleMax) * 100)}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 rounded-full bg-[#eef2f0]">
-                  <div className="h-2 rounded-full bg-[#0d9488]" style={{ width: `${width}%` }} />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </SectionCard>
         <SectionCard title="System Health" icon={MonitorCog}>
           <div className="space-y-2">
-            {services.map((s) => (
+            {servicesLive.map((s) => (
               <div
                 key={s.name}
                 className="flex items-center justify-between rounded-xl bg-[#f8faf9] px-3 py-3"
@@ -172,7 +189,7 @@ export function AdminDashboard() {
                   <StatusBadge status={u.status} />
                 </td>
                 <td>
-                  <Link className="text-[#005a40]" to={`/admin/users/${u.id}`}>
+                  <Link className="text-[#005a40]" to={`/admin/users/${u.userId || u.id}`}>
                     View
                   </Link>
                 </td>
@@ -198,10 +215,10 @@ export function AdminDashboard() {
         <SectionCard title="Security & Access" icon={ShieldCheck}>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <p>
-              Failed attempts <strong className="block text-xl">9</strong>
+              Failed attempts <strong className="block text-xl">{metrics?.failedLoginAttempts ?? 0}</strong>
             </p>
             <p>
-              Locked accounts <strong className="block text-xl">0</strong>
+              Locked accounts <strong className="block text-xl">{metrics?.lockedAccounts ?? 0}</strong>
             </p>
             <Link className="font-semibold text-[#005a40]" to="/admin/users">
               Review accounts
@@ -221,200 +238,16 @@ export function AdminDashboard() {
           }
         >
           <p className="text-sm">
-            <strong>Last backup:</strong> Today, 02:00 · Successful
+            Backup history is not recorded by the user-management service.
           </p>
-          <p className="mt-2 text-sm text-[#6b7280]">Next scheduled backup: Tomorrow, 02:00</p>
+          <p className="mt-2 text-sm text-[#6b7280]">Open Backup Management to review the operational screen.</p>
         </SectionCard>
       </div>
     </div>
   )
 }
 
-export function UserManagement() {
-  const [search, setSearch] = useState('')
-  const [tab, setTab] = useState('All Users')
-  const [selected, setSelected] = useState(null)
-  const [action, setAction] = useState(null)
-  const [users, setUsers] = useState(fallbackUsers)
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    fetchAdminUsers()
-      .then((list) => {
-        if (Array.isArray(list)) setUsers(list)
-      })
-      .catch(() => {})
-  }, [])
-
-  const filtered = useMemo(
-    () =>
-      (Array.isArray(users) ? users : []).filter(
-        (u) =>
-          (!search ||
-            `${u.name} ${u.id} ${u.email} ${u.role}`.toLowerCase().includes(search.toLowerCase())) &&
-          (tab === 'All Users' ||
-            (tab === 'Clients' && u.type === 'Client') ||
-            (tab === 'Staff' && u.type === 'Staff') ||
-            String(u.status || '').toUpperCase() === tab.toUpperCase()),
-      ),
-    [search, tab, users],
-  )
-
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title="User Management"
-        description="Manage BioFit client and staff accounts, roles and access status."
-        actions={
-          <Button onClick={() => navigate('/admin/users/create')}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            Create Staff Account
-          </Button>
-        }
-      />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {[
-          ['Total Users', String(users.length)],
-          ['Clients', String(users.filter((u) => u.type === 'Client').length)],
-          ['Staff Accounts', String(users.filter((u) => u.type === 'Staff').length)],
-          ['Inactive / Suspended', '0'],
-          ['Locked Accounts', '0'],
-        ].map(([l, v]) => (
-          <div key={l} className="rounded-2xl border border-[#e8ecf1] bg-white p-4">
-            <p className="text-xs text-[#6b7280]">{l}</p>
-            <p className="mt-1 text-2xl font-bold">{v}</p>
-          </div>
-        ))}
-      </div>
-      <div className="flex gap-2 overflow-x-auto border-b border-[#e8ecf1]">
-        {['All Users', 'Clients', 'Staff', 'Inactive', 'Suspended', 'Locked'].map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={[
-              'shrink-0 border-b-2 px-3 py-3 text-sm font-semibold',
-              tab === t ? 'border-[#005a40] text-[#005a40]' : 'border-transparent text-[#6b7280]',
-            ].join(' ')}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      <div className="rounded-2xl border border-[#e8ecf1] bg-white p-4">
-        <div className="mb-4 flex flex-wrap gap-3">
-          <label className="relative min-w-[260px] flex-1">
-            <Search className="absolute top-3 left-3 h-4 w-4 text-[#8b93a1]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="bf-input !py-2.5 !pl-9"
-              placeholder="Search name, user ID, email or role"
-            />
-          </label>
-          <select className="rounded-xl border border-[#e8ecf1] px-3 text-sm">
-            <option>All roles</option>
-            {roles.map((r) => (
-              <option key={r}>{r}</option>
-            ))}
-          </select>
-          <select className="rounded-xl border border-[#e8ecf1] px-3 text-sm">
-            <option>Recently created</option>
-            <option>Name A–Z</option>
-            <option>Recently active</option>
-          </select>
-        </div>
-        <Table
-          heads={[
-            'User',
-            'User ID',
-            'Role',
-            'Email',
-            'Account Status',
-            'Created',
-            'Last Login',
-            'Actions',
-          ]}
-        >
-          {filtered.map((u) => (
-            <tr key={u.id} className="hover:bg-[#f8faf9]">
-              <td className="py-3 font-semibold">
-                <button className="text-left" onClick={() => setSelected(u)}>
-                  {u.name}
-                </button>
-              </td>
-              <td>{u.id}</td>
-              <td>{u.role}</td>
-              <td>{u.email}</td>
-              <td>
-                <StatusBadge status={u.status} />
-              </td>
-              <td>{u.created}</td>
-              <td>{u.lastLogin}</td>
-              <td>
-                <button
-                  onClick={() => navigate(`/admin/users/${u.id}`)}
-                  className="font-semibold text-[#005a40]"
-                >
-                  View
-                </button>
-              </td>
-            </tr>
-          ))}
-        </Table>
-      </div>
-      <Drawer
-        open={!!selected}
-        onClose={() => setSelected(null)}
-        title="User account preview"
-        description="Administrative information only"
-        footer={
-          <Button onClick={() => navigate(`/admin/users/${selected?.id}`)}>Open User Details</Button>
-        }
-      >
-        {selected && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-xl font-bold">{selected.name}</p>
-              <p className="text-sm text-[#6b7280]">
-                {selected.id} · {selected.role}
-              </p>
-            </div>
-            {[
-              ['Email', selected.email],
-              ['Account Status', selected.status],
-              ['Created', selected.created],
-              ['Last Login', selected.lastLogin],
-              ['Verification', selected.verification],
-            ].map(([a, b]) => (
-              <p key={a} className="flex justify-between border-b border-[#eef2f0] py-2 text-sm">
-                <span className="text-[#6b7280]">{a}</span>
-                <span className="font-medium">{b}</span>
-              </p>
-            ))}
-            <Button variant="outline" onClick={() => setAction('Deactivate')}>
-              Deactivate account
-            </Button>
-          </div>
-        )}
-      </Drawer>
-      <ConfirmDialog
-        open={!!action}
-        onClose={() => setAction(null)}
-        onConfirm={() => setAction(null)}
-        title="Deactivate User Account?"
-        description="The user will no longer be able to sign in, but historical BioFit records will remain preserved."
-        confirmLabel="Deactivate Account"
-        tone="danger"
-      />
-    </div>
-  )
-}
-
-export function UserForm({ edit = false }) { const navigate = useNavigate(); const { id } = useParams(); const user = fallbackUsers.find((u) => u.id === id); const [complete, setComplete] = useState(false); if (complete) return <div className="space-y-6"><PageHeader title="Staff Account Created Successfully" description="The account is ready for secure setup." /><SectionCard><p className="text-sm">Staff ID <strong className="ml-2">STF-2058</strong></p><p className="mt-2 text-sm">Role <strong className="ml-2">Senior Fitness Coach</strong></p><p className="mt-2 text-sm">Status <StatusBadge className="ml-2" status="Active" /></p><div className="mt-6 flex gap-3"><Button onClick={() => navigate('/admin/users')}>Back to User Management</Button><Button variant="outline" onClick={() => setComplete(false)}>Create Another</Button></div></SectionCard></div>; return <div className="space-y-6"><PageHeader title={edit ? 'Edit User Account' : 'Create Staff Account'} description={edit ? 'Update permitted account information and access.' : 'Create an authorized BioFit staff account.'} /><form onSubmit={(e) => { e.preventDefault(); setComplete(true) }} className="space-y-5"><SectionCard title="Basic Information"><div className="grid gap-4 sm:grid-cols-2">{[['Full Name', user?.name || ''],['Email', user?.email || ''],['Contact Number','+94 77 123 4567']].map(([label, value]) => <label key={label} className="block text-sm font-semibold">{label}<input required defaultValue={value} className="bf-input mt-1 !px-3" /></label>)}<label className="block text-sm font-semibold">Staff Role<select className="bf-input mt-1 !px-3" defaultValue={user?.role || ''}>{roles.slice(1).map((r) => <option key={r}>{r}</option>)}</select></label></div>{edit && <p className="mt-4 text-xs text-[#6b7280]">User ID: {user?.id} (read-only)</p>}</SectionCard><SectionCard title="Account Details" description="A secure setup link will be sent instead of displaying a password."><label className="flex items-center gap-2 text-sm"><input type="radio" defaultChecked name="setup" /> Send Secure Setup Link</label><label className="mt-3 block text-sm font-semibold">Initial Account Status<select className="bf-input mt-1 !px-3"><option>Active</option><option>Inactive</option></select></label></SectionCard><SectionCard title="Review & Create"><p className="text-sm text-[#6b7280]">Role determines which BioFit modules and information this user can access.</p><div className="mt-5 flex gap-3"><Button type="submit">{edit ? 'Save Account Changes' : 'Create Staff Account'}</Button><Button type="button" variant="outline" onClick={() => navigate('/admin/users')}>Cancel</Button></div></SectionCard></form></div> }
-
-export function UserDetails() { const { id } = useParams(); const navigate = useNavigate(); const user = fallbackUsers.find((u) => u.id === id) || fallbackUsers[0]; const [dialog, setDialog] = useState(''); return <div className="space-y-6"><PageHeader title={user.name} description={`${user.id} · ${user.role} · ${user.verification}`} actions={<div className="flex gap-2"><Button variant="outline" onClick={() => navigate(`/admin/users/${user.id}/edit`)}>Edit Account</Button><Button onClick={() => setDialog(user.status === 'Active' ? 'Deactivate' : 'Activate')}>{user.status === 'Active' ? 'Deactivate' : 'Activate'}</Button></div>} /><SectionCard><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[['Account Status',user.status],['Verification',user.verification],['Created',user.created],['Last Login',user.lastLogin]].map(([a,b]) => <div key={a}><p className="text-xs text-[#6b7280]">{a}</p><p className="mt-1 font-semibold">{b}</p></div>)}</div></SectionCard><div className="grid gap-6 lg:grid-cols-2"><SectionCard title="Personal Information"><div className="space-y-3 text-sm"><p>Email <strong className="float-right">{user.email}</strong></p><p>Contact <strong className="float-right">+94 77 123 4567</strong></p><p>Account Type <strong className="float-right">{user.type}</strong></p></div></SectionCard><SectionCard title="Account & Access"><div className="space-y-3 text-sm"><p>Login Identifier <strong className="float-right">{user.email}</strong></p><p>Role <strong className="float-right">{user.role}</strong></p><p>Lock Status <strong className="float-right">{user.status === 'Locked' ? 'Locked' : 'Not locked'}</strong></p><div className="flex flex-wrap gap-2 pt-3"><Button variant="outline" onClick={() => setDialog('Role')}>Change Role</Button><Button variant="outline" onClick={() => setDialog('Reset')}>Send Password Reset</Button>{user.status === 'Locked' && <Button variant="outline" onClick={() => setDialog('Unlock')}>Unlock Account</Button>}</div></div></SectionCard></div><SectionCard title="Administrative History"><p className="text-sm text-[#6b7280]">Account and access activity is retained for traceability. Clinical and programme records are intentionally unavailable in this portal.</p></SectionCard><ConfirmDialog open={!!dialog} onClose={() => setDialog('')} onConfirm={() => setDialog('')} title={dialog === 'Reset' ? 'Send Password Reset?' : dialog === 'Role' ? 'Change User Role?' : `${dialog} User Account?`} description={dialog === 'Reset' ? "A secure password reset link will be sent to the user's registered email address." : 'This authorized action preserves historical BioFit records and is recorded in the audit history.'} confirmLabel={dialog === 'Reset' ? 'Send Reset Link' : 'Confirm'} /></div> }
-
-export function RolesAccess() { const modules = ['Dashboard','Profile','Programmes','Appointments','Workout Plans','Meal Plans','Medical Records','Health Risk Alerts','Support Tickets','User Management','Audit Logs','Backups','System Monitoring']; return <div className="space-y-6"><PageHeader title="Roles & Access" description="Review BioFit roles and the modules available to each user type." /><SectionCard className="!border-[#bfe9dc] !bg-[#f2fbf7]" title="Administrative Access Does Not Mean Unlimited Clinical Access" icon={ShieldCheck}><p className="text-sm text-[#475569]">Digital Operations users manage accounts and system operations. Sensitive clinical information remains protected by BioFit role-based access controls.</p></SectionCard><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{roles.map((r, i) => <SectionCard key={r} title={r}><p className="text-sm text-[#6b7280]">{[452,6,12,8,4,5,3][i]} users</p><p className="mt-3 text-sm">Accessible modules: Dashboard, Profile{r.includes('Admin') && ', User Management, Audit Logs'}</p><Link to="/admin/users" className="mt-4 inline-block text-sm font-semibold text-[#005a40]">Manage Users</Link></SectionCard>)}</div><SectionCard title="Role Permission Matrix"><Table heads={['Module / Feature','Client','Manager','Coach','Nutrition','Medical','Support','Admin']}>{modules.map((m) => <tr key={m}><td className="py-3 font-medium">{m}</td>{Array.from({ length: 7 }).map((_, i) => <td key={i} className="text-xs">{m === 'Medical Records' && i === 6 ? 'Restricted' : ['Audit Logs','Backups','System Monitoring'].includes(m) ? (i === 6 ? 'Allowed' : 'Not applicable') : i === 6 ? 'Restricted' : 'Allowed'}</td>)}</tr>)}</Table></SectionCard></div> }
+export { UserManagement, UserForm, UserDetails, RolesAccess } from './UserManagementPanels'
 
 export function SystemMonitoring() { const [detail, setDetail] = useState(null); return <div className="space-y-6"><PageHeader title="System Monitoring" description="Monitor BioFit service availability and operational health." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{services.map((s) => <button key={s.name} onClick={() => setDetail(s)} className="rounded-2xl border border-[#e8ecf1] bg-white p-4 text-left hover:bg-[#f8faf9]"><p className="text-xs text-[#6b7280]">{s.name}</p><p className={'mt-2 font-semibold ' + tone(s.status)}>{s.status}</p><p className="mt-2 text-xs text-[#8b93a1]">Checked {s.checked}</p></button>)}</div><div className="grid gap-6 lg:grid-cols-2"><SectionCard title="Average Response Time"><TinyChart label="246 ms average" /></SectionCard><SectionCard title="Successful Requests"><TinyChart label="99.8% successful" values={[42,55,49,62,70,74,80,88]} /></SectionCard></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[['Application Status','Operational'],['Database Status','Connected'],['Active Sessions','124'],['System Availability','99.98%']].map(([a,b]) => <StatCard key={a} label={a} value={b} hint="High-level operational metric" icon={Activity} />)}</div><SectionCard title="Operational Alerts"><Table heads={['Severity','Service','Summary','Time','Action']}><tr><td><StatusBadge status="Attention Required" /></td><td>Notification Service</td><td>Delayed email delivery is being monitored.</td><td>4 min ago</td><td><button className="text-[#005a40]">View details</button></td></tr><tr><td><StatusBadge status="Monitoring" /></td><td>Authentication Service</td><td>Elevated failed sign-in attempts.</td><td>42 min ago</td><td><button className="text-[#005a40]">View details</button></td></tr></Table></SectionCard><Drawer open={!!detail} onClose={() => setDetail(null)} title={detail?.name} description="Service details">{detail && <div className="space-y-4 text-sm"><p>Status <strong className="float-right">{detail.status}</strong></p><p>Last checked <strong className="float-right">{detail.checked}</strong></p><p>Recent issues <strong className="float-right">{detail.issue}</strong></p><p className="rounded-xl bg-[#f8faf9] p-3 text-xs text-[#6b7280]">This summary intentionally excludes infrastructure secrets, credentials and raw stack traces.</p></div>}</Drawer></div> }
 
