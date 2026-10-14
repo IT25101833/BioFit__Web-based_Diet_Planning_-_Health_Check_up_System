@@ -23,8 +23,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/medical")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('MEDICAL_ADVISOR','ADMIN')")
+//Inheritance: the MedicalDomainController class inherits from the RestController class
 public class MedicalDomainController {
-
+//Encapsulation: private final variables are encapsulated and can only be accessed within the class
     private final DomainService domainService;
     private final CompletionService completionService;
     private final MedicalAdvisorService medicalAdvisorService;
@@ -216,6 +217,19 @@ public class MedicalDomainController {
         return ApiResponse.ok(row);
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
     @PostMapping("/health-records")
     public ApiResponse<Map<String, Object>> createRecord(
             @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
@@ -225,6 +239,11 @@ public class MedicalDomainController {
         body.put("advisorUserId", principal.getId());
         return ApiResponse.ok(completionService.saveHealthRecord(null, body));
     }
+
+
+
+
+
 
     @PutMapping("/health-records/{id}")
     public ApiResponse<Map<String, Object>> updateRecord(
@@ -241,12 +260,45 @@ public class MedicalDomainController {
         return ApiResponse.ok(completionService.saveHealthRecord(Long.parseLong(numeric), body));
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     @PatchMapping("/health-records/{id}/deactivate")
     public ApiResponse<Map<String, Object>> deactivateRecord(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id) {
         String numeric = id.startsWith("hr-") ? id.substring(3) : id;
         return ApiResponse.ok(medicalAdvisorService.deactivateHealthRecord(Long.parseLong(numeric), principal));
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
     @GetMapping("/clients")
     public ApiResponse<List<Map<String, Object>>> clients(
@@ -364,6 +416,7 @@ public class MedicalDomainController {
             @AuthenticationPrincipal UserPrincipal principal, @RequestBody Map<String, Object> body) {
         Long clientUserId = asLong(body.get("clientUserId"));
         if (clientUserId == null) clientUserId = asLong(body.get("userId"));
+        //abstraction: the requestAccess method is abstracted and can be used to request access to a resource
         return ApiResponse.ok(
                 planAccessService.requestAccess(
                         principal,
@@ -390,6 +443,7 @@ public class MedicalDomainController {
         return ApiResponse.ok(planAccessService.viewNutritionPlan(principal, clientUserId));
     }
 
+    //polymorphism: the asLong method is polymorphic and can be used to convert an object to a long
     private static Long asLong(Object value) {
         if (value instanceof Number n) return n.longValue();
         if (value instanceof String s && !s.isBlank()) {

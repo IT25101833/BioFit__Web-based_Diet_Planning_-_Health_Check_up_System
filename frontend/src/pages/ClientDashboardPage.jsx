@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import CareRecommendationCard from '../components/dashboard/CareRecommendationCard'
 import DashboardShell from '../components/dashboard/DashboardShell'
 import MedicalReviewRequestCard from '../components/dashboard/MedicalReviewRequestCard'
 import PlanAccessRequestCard from '../components/dashboard/PlanAccessRequestCard'
@@ -58,7 +59,8 @@ export default function ClientDashboardPage() {
           {data.pendingReview ? (
             <MedicalReviewRequestCard review={data.pendingReview} />
           ) : null}
-          <PlanAccessRequestCard requests={planRequests} />
+          <CareRecommendationCard recommendation={data.recommendation} />
+          <PlanAccessRequestCard requests={planRequests} onChange={setPlanRequests} />
           <SummaryMetrics cards={data.summary} />
           <ProgrammeAppointment
             programme={data.programme}

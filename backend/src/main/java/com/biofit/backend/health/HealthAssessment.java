@@ -11,7 +11,7 @@ import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
 
-@Entity
+@Entity//abstraction: the Entity annotation is abstracted and can be used to create a JPA entity
 @Table(name = "health_assessments")
 @Getter
 @Setter
@@ -19,7 +19,7 @@ public class HealthAssessment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Long id;//encapsulation: the id field is encapsulated and can only be accessed within the class
 
     @Column(name = "user_id", nullable = false)
     private Long userId;

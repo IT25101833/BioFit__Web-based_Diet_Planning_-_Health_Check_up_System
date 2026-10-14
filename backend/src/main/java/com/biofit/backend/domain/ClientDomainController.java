@@ -95,6 +95,14 @@ public class ClientDomainController {
         return ApiResponse.ok(domainService.clientWorkoutPlan(principal.getId()));
     }
 
+    @PatchMapping("/workout-plan/sessions/{sessionId}")
+    public ApiResponse<Map<String, Object>> completeWorkoutSession(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        return ApiResponse.ok(domainService.updateClientWorkoutSession(principal.getId(), sessionId, body));
+    }
+
     @GetMapping("/fitness-progress")
     public ApiResponse<Map<String, Object>> fitnessProgress(@AuthenticationPrincipal UserPrincipal principal) {
         return ApiResponse.ok(domainService.clientFitnessProgress(principal.getId()));
@@ -240,8 +248,12 @@ public class ClientDomainController {
     }
 
     @GetMapping("/medical-requests/time-slots")
-    public ApiResponse<List<String>> medicalRequestTimeSlots() {
-        return ApiResponse.ok(medicalRequestService.preferredTimeSlots());
+    public ApiResponse<List<String>> medicalRequestTimeSlots(
+            @RequestParam(required = false) String date) {
+        return ApiResponse.ok(
+                date == null || date.isBlank()
+                        ? medicalRequestService.preferredTimeSlots()
+                        : medicalRequestService.preferredTimeSlots(date));
     }
 
     @GetMapping("/medical-requests")

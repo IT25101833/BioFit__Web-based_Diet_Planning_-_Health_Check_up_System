@@ -53,12 +53,16 @@ export default function FitnessAssessments() {
   }, [items, search, status])
 
   const summary = useMemo(
-    () => ({
-      month: items.filter((i) => i.date.startsWith('2026-09')).length,
-      due: items.filter((i) => i.status === 'Follow-up').length,
-      completed: items.filter((i) => i.status === 'Completed').length,
-      followups: items.filter((i) => i.reviewRequired).length,
-    }),
+    () => {
+      const now = new Date()
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      return {
+        month: items.filter((i) => String(i.date || '').startsWith(monthKey)).length,
+        due: items.filter((i) => i.status === 'Follow-up').length,
+        completed: items.filter((i) => i.status === 'Completed').length,
+        followups: items.filter((i) => i.reviewRequired).length,
+      }
+    },
     [items],
   )
 

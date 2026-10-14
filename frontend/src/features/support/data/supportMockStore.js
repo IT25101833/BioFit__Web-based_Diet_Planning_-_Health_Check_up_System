@@ -86,8 +86,8 @@ export function getMockClientProfile() {
     return {
       id,
       clientId: `BF-C${id}`,
-      name: id === 1 ? 'Alex Morgan' : `Client ${id}`,
-      email: id === 1 ? 'client@biofit.demo' : `client${id}@biofit.demo`,
+      name: `Client ${id}`,
+      email: `client${id}@biofit.local`,
       phone: '+94 77 100 2001',
       programme: 'Personal Wellness Programme',
     }
@@ -95,8 +95,8 @@ export function getMockClientProfile() {
     return {
       id: 1,
       clientId: 'BF-C1',
-      name: 'Alex Morgan',
-      email: 'client@biofit.demo',
+      name: 'Client',
+      email: 'client@biofit.local',
       phone: '+94 77 100 2001',
       programme: 'Personal Wellness Programme',
     }

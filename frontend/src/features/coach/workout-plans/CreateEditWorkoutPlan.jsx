@@ -19,6 +19,7 @@ export default function CreateEditWorkoutPlan({ mode = 'create' }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState('')
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     if (mode !== 'edit') return
@@ -58,6 +59,11 @@ export default function CreateEditWorkoutPlan({ mode = 'create' }) {
         title={mode === 'edit' ? 'Edit Workout Plan' : 'Create Workout Plan'}
         description="Build a personalized fitness plan based on the client’s goals and safety considerations."
       />
+      {saveError ? (
+        <p className="mb-3 text-sm text-[#b45309]" role="alert">
+          {saveError}
+        </p>
+      ) : null}
       <WorkoutPlanForm
         mode={mode}
         initialValues={initial}

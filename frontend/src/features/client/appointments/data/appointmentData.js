@@ -53,6 +53,16 @@ export function isPastAppointment(appointment, todayIso = new Date().toISOString
   return String(appointment.date) < todayIso
 }
 
+export function isTodayAppointment(appointment, todayIso = new Date().toISOString().slice(0, 10)) {
+  if (!appointment || isCancelledAppointment(appointment)) return false
+  return String(appointment.date || '') === todayIso
+}
+
+export function isLaterAppointment(appointment, todayIso = new Date().toISOString().slice(0, 10)) {
+  if (!isUpcomingAppointment(appointment, todayIso)) return false
+  return String(appointment.date || '') > todayIso
+}
+
 export function isUpcomingAppointment(appointment, todayIso = new Date().toISOString().slice(0, 10)) {
   if (!appointment) return false
   if (isAdvisorUnavailableAppointment(appointment)) return false

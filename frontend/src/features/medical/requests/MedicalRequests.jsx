@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
+import FilterTabs from '../../../components/ui/FilterTabs'
 import PageHeader from '../../../components/ui/PageHeader'
 import SectionCard from '../../../components/ui/SectionCard'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
+import { localTodayIso } from '../../booking/bookingEngine'
+import { fetchHealthRecords } from '../health-records/data/healthRecordData'
 import {
   acceptMedicalRequest,
   completeMedicalRequest,
@@ -15,16 +18,62 @@ import {
   startMedicalRequest,
 } from './data/medicalRequestData'
 
+const requestTabs = [
+  { value: 'today', label: 'Today' },
+  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'attended', label: 'Attended' },
+]
+
+function requestGroup(request, today) {
+  const status = String(request?.status || '').toUpperCase()
+  const date = String(request?.preferredDate || '').slice(0, 10)
+  if (status === 'SCHEDULED') return date === today ? 'today' : 'upcoming'
+  if (status === 'CANCELLED' || status === 'REJECTED') return 'cancelled'
+  if (status === 'ATTENDED' || status === 'ACCEPTED' || status === 'IN_PROGRESS' || status === 'COMPLETED') {
+    return 'attended'
+  }
+  if (date && date === today) return 'today'
+  return 'upcoming'
+}
+
+function scheduledReviews(records, today) {
+  return (Array.isArray(records) ? records : [])
+    .map((record) => {
+      const date = String(record?.nextCheckup || '').slice(0, 10)
+      return {
+        id: `review-${record.id}`,
+        kind: 'review',
+        clientName: record.clientName,
+        clientId: record.clientId,
+        clientUserId: record.userId,
+        reason: 'Scheduled check-up',
+        preferredDate: date,
+        preferredTime: '',
+        status: 'SCHEDULED',
+        recordPath: `/medical/health-records/${record.id}`,
+      }
+    })
+    .filter((row) => row.preferredDate && row.preferredDate >= today)
+}
+
 export default function MedicalRequests() {
   const [requests, setRequests] = useState([])
+  const [reviews, setReviews] = useState([])
   const [selected, setSelected] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState('today')
+  const today = localTodayIso()
 
   async function load() {
-    const rows = await fetchAdvisorMedicalRequests()
+    const [rows, records] = await Promise.all([
+      fetchAdvisorMedicalRequests(),
+      fetchHealthRecords().catch(() => []),
+    ])
     setRequests(Array.isArray(rows) ? rows : [])
+    setReviews(scheduledReviews(records, localTodayIso()))
   }
 
   useEffect(() => {
@@ -70,6 +119,27 @@ export default function MedicalRequests() {
     : ''
   const canWork =
     selected && ['ACCEPTED', 'ATTENDED', 'IN_PROGRESS', 'COMPLETED'].includes(selected.status)
+  const grouped = useMemo(
+    () =>
+      [...reviews, ...requests].map((request) => ({
+        request,
+        group: requestGroup(request, today),
+      })),
+    [reviews, requests, today],
+  )
+  const visible = grouped.filter((item) => item.group === tab).map((item) => item.request)
+  const tabs = requestTabs.map((item) => ({
+    ...item,
+    count: grouped.filter((row) => row.group === item.value).length,
+  }))
+  const emptyLabel =
+    tab === 'today'
+      ? 'No medical requests for today.'
+      : tab === 'upcoming'
+        ? 'No upcoming medical requests.'
+        : tab === 'cancelled'
+          ? 'No cancelled medical requests.'
+          : 'No attended medical requests.'
 
   return (
     <div className="space-y-5">
@@ -80,9 +150,11 @@ export default function MedicalRequests() {
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
+      <FilterTabs ariaLabel="Medical request filters" value={tab} onChange={setTab} options={tabs} />
+
       <SectionCard title="Medical Requests">
-        {requests.length === 0 ? (
-          <p className="text-sm text-[#6b7280]">No medical requests yet.</p>
+        {visible.length === 0 ? (
+          <p className="text-sm text-[#6b7280]">{emptyLabel}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
@@ -97,7 +169,7 @@ export default function MedicalRequests() {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((request) => (
+                {visible.map((request) => (
                   <tr key={request.id} className="border-b border-[#f4f6fb]">
                     <td className="px-2 py-3 font-semibold text-[#111827]">
                       {request.clientName || 'Client'}
@@ -111,15 +183,26 @@ export default function MedicalRequests() {
                       <StatusBadge status={request.status} />
                     </td>
                     <td className="px-2 py-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="!text-[#005a40]"
-                        disabled={busy}
-                        onClick={() => openRequest(request.id)}
-                      >
-                        View Request
-                      </Button>
+                      {request.kind === 'review' ? (
+                        <Button
+                          to={request.recordPath}
+                          size="sm"
+                          variant="outline"
+                          className="!text-[#005a40]"
+                        >
+                          View record
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="!text-[#005a40]"
+                          disabled={busy}
+                          onClick={() => openRequest(request.id)}
+                        >
+                          View Request
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -199,6 +282,9 @@ export default function MedicalRequests() {
               </Link>
               <Link className="text-[#005a40] hover:underline" to={`/medical/health-alerts/create${clientQuery}`}>
                 Create Health Risk Alert
+              </Link>
+              <Link className="text-[#005a40] hover:underline" to={`/medical/assessments/create${clientQuery}`}>
+                Create Health Assessment
               </Link>
             </div>
           ) : null}

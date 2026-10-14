@@ -31,11 +31,11 @@ public class MedicalRequest {
 
     /** Statuses that allow the assigned Medical Advisor to open this client's medical information. */
     public static final List<String> CLINICAL_ACCESS = List.of(ACCEPTED, ATTENDED, IN_PROGRESS, COMPLETED);
-
+    //abstraction: the grantsClinicalAccess method is abstracted and can be used to check if a status grants clinical access
     public static boolean grantsClinicalAccess(String status) {
         return status != null && CLINICAL_ACCESS.contains(status);
     }
-
+    //Encapsulation: private final variables are encapsulated and can only be accessed within the class
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

@@ -36,6 +36,7 @@ public class DomainSeedService {
 
     @Transactional
     public void seedIfEmpty() {
+        removeCoachDemoRecords();
         User client =
                 userRepository
                         .findByEmailIgnoreCaseAndDeletedAtIsNull("client@biofit.demo")
@@ -51,6 +52,95 @@ public class DomainSeedService {
             seedCoreDomain(clientId, clientCode, clientName);
         }
         completionService.seedExtrasIfEmpty(clientId, clientCode, clientName);
+    }
+
+    private void removeCoachDemoRecords() {
+        workoutPlanRepository
+                .findById("wp-2026-09")
+                .filter(plan -> "Balanced Movement Week".equals(plan.getName()))
+                .ifPresent(workoutPlanRepository::delete);
+        exerciseRepository
+                .findById("ex-1")
+                .filter(exercise -> "Bodyweight squat".equals(exercise.getName()))
+                .ifPresent(exerciseRepository::delete);
+        appointmentRepository
+                .findById("apt-1")
+                .filter(appointment -> "Fitness Consultation".equals(appointment.getServiceType()))
+                .filter(appointment -> LocalDate.of(2026, 9, 12).equals(appointment.getAppointmentDate()))
+                .ifPresent(appointmentRepository::delete);
+        notificationRepository.findById("n-co1").ifPresent(notificationRepository::delete);
+        staffScheduleRepository.findById("sch-1").ifPresent(staffScheduleRepository::delete);
+        completionService.removeDemoFitnessAssessment();
+        clearInjectedCoachPlanDefaults();
+    }
+
+    private void clearInjectedCoachPlanDefaults() {
+        for (WorkoutPlanEntity plan : workoutPlanRepository.findAll()) {
+            boolean changed = false;
+            if (isSeedProgramme(plan.getProgramme())) {
+                plan.setProgramme("");
+                changed = true;
+            }
+            boolean placeholderPlan =
+                    "45 min".equalsIgnoreCase(plan.getSessionDuration())
+                            && plan.getProgress() != null
+                            && plan.getProgress() == 0;
+            if (placeholderPlan) {
+                plan.setSessionDuration("");
+                plan.setProgress(null);
+                if (plan.getSessionsPerWeek() != null && plan.getSessionsPerWeek() == 3) {
+                    plan.setSessionsPerWeek(null);
+                }
+                if ("Beginner".equalsIgnoreCase(plan.getDifficulty())) {
+                    plan.setDifficulty("");
+                }
+                if ("Week 1".equalsIgnoreCase(plan.getCurrentWeek())) {
+                    plan.setCurrentWeek("");
+                }
+                changed = true;
+            }
+            if (clearPlaceholderSessionTitles(plan)) {
+                changed = true;
+            }
+            if (changed) {
+                workoutPlanRepository.save(plan);
+            }
+        }
+    }
+
+    private boolean clearPlaceholderSessionTitles(WorkoutPlanEntity plan) {
+        Object parsed = mapper.parseJson(plan.getPlanJson(), null);
+        if (!(parsed instanceof Map<?, ?> raw)) return false;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> map = (Map<String, Object>) raw;
+        Object weeks = map.get("weeks");
+        if (!(weeks instanceof List<?> weekList)) return false;
+        boolean changed = false;
+        for (Object weekObj : weekList) {
+            if (!(weekObj instanceof Map<?, ?> week)) continue;
+            Object days = week.get("days");
+            if (!(days instanceof List<?> dayList)) continue;
+            for (Object dayObj : dayList) {
+                if (!(dayObj instanceof Map<?, ?> day)) continue;
+                if ("New session".equals(String.valueOf(day.get("title")))) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> dayMap = (Map<String, Object>) day;
+                    dayMap.put("title", "");
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            plan.setPlanJson(mapper.toJson(map));
+        }
+        return changed;
+    }
+
+    private static boolean isSeedProgramme(String name) {
+        if (name == null || name.isBlank()) return false;
+        return name.equalsIgnoreCase("Weight Management Programme")
+                || name.equalsIgnoreCase("Energy & Recovery Reset")
+                || name.equalsIgnoreCase("Wellness Starter Pathway");
     }
 
     private void seedCoreDomain(Long clientId, String clientCode, String clientName) {
@@ -73,47 +163,10 @@ public class DomainSeedService {
         enrolmentRepository.saveAll(List.of(e1, e2));
 
         appointmentRepository.saveAll(List.of(
-                appointment("apt-1", clientId, clientCode, clientName, "Fitness Consultation", "Daniel Perera", "Fitness Coach",
-                        wm.getName(), LocalDate.of(2026, 9, 12), "10:00 AM", "Upcoming"),
                 appointment("apt-2", clientId, clientCode, clientName, "Nutrition Consultation", "Maya Fernando", "Nutrition Consultant",
                         wm.getName(), LocalDate.of(2026, 9, 18), "2:30 PM", "Upcoming"),
                 appointment("apt-3", clientId, clientCode, clientName, "Health Check-up", "Elena Costa", "Medical Advisor",
                         wm.getName(), LocalDate.of(2026, 8, 20), "9:15 AM", "Completed")));
-
-        String workoutJson = mapper.toJson(Map.of(
-                "days", List.of(
-                        Map.of("id", "mon", "day", "Monday", "focus", "Mobility & breath", "completed", true,
-                                "exercises", List.of(
-                                        Map.of("name", "Gentle joint mobility", "detail", "10 min", "completed", true),
-                                        Map.of("name", "Breathing reset", "detail", "5 min", "completed", true))),
-                        Map.of("id", "tue", "day", "Tuesday", "focus", "Strength foundations", "completed", true,
-                                "exercises", List.of(
-                                        Map.of("name", "Bodyweight squat", "detail", "3 × 10", "completed", true))),
-                        Map.of("id", "thu", "day", "Thursday", "focus", "Steady cardio", "completed", false,
-                                "exercises", List.of(
-                                        Map.of("name", "Brisk walk or cycle", "detail", "25 min", "completed", false)))),
-                "weeks", List.of()));
-
-        WorkoutPlanEntity wp = new WorkoutPlanEntity();
-        wp.setId("wp-2026-09");
-        wp.setName("Balanced Movement Week");
-        wp.setClientUserId(clientId);
-        wp.setClientId(clientCode);
-        wp.setClientName(clientName);
-        wp.setProgramme(wm.getName());
-        wp.setGoal("Sustainable movement habits");
-        wp.setDifficulty("Moderate");
-        wp.setStartDate(LocalDate.of(2026, 7, 1));
-        wp.setEndDate(LocalDate.of(2026, 9, 30));
-        wp.setSessionsPerWeek(4);
-        wp.setSessionDuration("45 min");
-        wp.setDescription("Gentle progressive plan");
-        wp.setCurrentWeek("Week 10 · 1–7 September");
-        wp.setTotalWeeks(12);
-        wp.setProgress(62);
-        wp.setStatus("Active");
-        wp.setPlanJson(workoutJson);
-        workoutPlanRepository.save(wp);
 
         String mealJson = mapper.toJson(Map.of(
                 "consultant", "Maya Fernando",
@@ -191,49 +244,16 @@ public class DomainSeedService {
         supportTicketRepository.save(ticket);
 
         notificationRepository.saveAll(List.of(
-                note("n-c1", clientId, "CLIENT", "appointment", "Upcoming fitness session",
-                        "Your fitness consultation is on 12 Sep at 10:00 AM.", "/appointments"),
                 note("n-c2", clientId, "CLIENT", "nutrition", "Meal plan tip",
                         "Keep hydration steady through the afternoon.", "/nutrition"),
                 note("n-m1", null, "MANAGER", "operations", "Capacity check",
                         "Weight Management programme is near capacity.", "/manager/programmes"),
-                note("n-co1", null, "COACH", "progress", "Client progress due",
-                        "Review movement consistency for Alex Morgan.", "/coach/progress"),
                 note("n-nu1", null, "NUTRITION", "restriction", "Restriction review",
-                        "Lactose sensitivity noted for Alex Morgan.", "/nutrition/dietary-restrictions"),
+                        "A dietary restriction is ready for review.", "/nutrition/dietary-restrictions"),
                 note("n-med1", null, "MEDICAL", "alert", "Follow-up reminder",
                         "Resting metrics follow-up is due.", "/medical/health-alerts"),
                 note("n-s1", null, "SUPPORT", "ticket", "New scheduling ticket",
                         "Client requested a nutrition reschedule.", "/support/tickets")));
-
-        ExerciseEntity ex = new ExerciseEntity();
-        ex.setId("ex-1");
-        ex.setName("Bodyweight squat");
-        ex.setCategory("Strength");
-        ex.setDifficulty("Beginner");
-        ex.setTargetArea("Lower body");
-        ex.setEquipment("None");
-        ex.setInstructions("Feet shoulder-width, sit back, stand tall.");
-        ex.setSafetyNotes("Stop if knees feel sharp discomfort.");
-        ex.setSetsLabel("3");
-        ex.setRepsLabel("10");
-        ex.setDurationLabel("—");
-        ex.setRestLabel("60 sec");
-        exerciseRepository.save(ex);
-
-        StaffScheduleEntity sch = new StaffScheduleEntity();
-        sch.setId("sch-1");
-        sch.setScheduleDate(LocalDate.of(2026, 9, 12));
-        sch.setStartTime("10:00");
-        sch.setEndTime("10:45");
-        sch.setStaffId("st-coach");
-        sch.setStaffName("Daniel Perera");
-        sch.setRoleLabel("Fitness Coach");
-        sch.setServiceLabel("Fitness Consultation");
-        sch.setClientName(clientName);
-        sch.setProgramme(wm.getName());
-        sch.setStatus("Scheduled");
-        staffScheduleRepository.save(sch);
 
         SubscriptionEntity sub = new SubscriptionEntity();
         sub.setId("sub-1");

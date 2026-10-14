@@ -1,6 +1,8 @@
 package com.biofit.backend.domain;
 
 import com.biofit.backend.common.ApiException;
+import com.biofit.backend.health.HealthProfile;
+import com.biofit.backend.health.HealthProfileRepository;
 import com.biofit.backend.security.UserPrincipal;
 import com.biofit.backend.user.User;
 import com.biofit.backend.user.UserRepository;
@@ -15,6 +17,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class MedicalReviewRequestService {
 
+    private static final Logger log = LoggerFactory.getLogger(MedicalReviewRequestService.class);
     private static final DateTimeFormatter DISPLAY_DATE =
             DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final String DURATION = "30 min";
@@ -32,6 +39,7 @@ public class MedicalReviewRequestService {
     private final AppointmentRepository appointmentRepository;
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final HealthProfileRepository healthProfileRepository;
     private final BookingAvailabilityService bookingAvailabilityService;
     private final DomainMapper mapper;
     private final WalletService walletService;
@@ -64,7 +72,10 @@ public class MedicalReviewRequestService {
         }
 
         if (latest != null && MedicalReviewRequest.STATUS_BOOKED.equalsIgnoreCase(latest.getStatus())) {
-            // Already booked — do not silently move the appointment.
+            if (Objects.equals(latest.getReviewDate(), reviewDate)) {
+                return;
+            }
+            moveBookedReview(latest, reviewDate, advisorUserId, advisorName(advisorUserId));
             return;
         }
 
@@ -108,6 +119,98 @@ public class MedicalReviewRequestService {
         created.setUpdatedAt(Instant.now());
         reviewRequestRepository.save(created);
         notifyReviewRequested(created, false);
+    }
+
+    private void moveBookedReview(
+            MedicalReviewRequest req, LocalDate reviewDate, Long advisorUserId, String advisorName) {
+        Appointment appointment =
+                isBlank(req.getAppointmentId())
+                        ? null
+                        : appointmentRepository.findById(req.getAppointmentId()).orElse(null);
+        if (appointment != null && canMoveAppointment(appointment)) {
+            String time = appointment.getAppointmentTime();
+            String duration = firstNonBlank(appointment.getDuration(), DURATION);
+            if (!isBlank(time)) {
+                bookingAvailabilityService.assertSlotAvailable(
+                        "user-" + advisorUserId, reviewDate, time, duration, appointment.getId());
+            }
+            appointment.setAppointmentDate(reviewDate);
+            appointment.setUpdatedAt(Instant.now());
+            appointmentRepository.save(appointment);
+            req.setReviewDate(reviewDate);
+            req.setAdvisorUserId(advisorUserId);
+            req.setAdvisorName(advisorName);
+            req.setUpdatedAt(Instant.now());
+            reviewRequestRepository.save(req);
+            notifyReviewMoved(req, time);
+            return;
+        }
+
+        req.setStatus(MedicalReviewRequest.STATUS_CANCELLED);
+        req.setUpdatedAt(Instant.now());
+        reviewRequestRepository.save(req);
+
+        MedicalReviewRequest created = new MedicalReviewRequest();
+        created.setId("mrr-" + UUID.randomUUID().toString().substring(0, 8));
+        created.setClientUserId(req.getClientUserId());
+        created.setAdvisorUserId(advisorUserId);
+        created.setAdvisorName(advisorName);
+        created.setReviewDate(reviewDate);
+        created.setSourceType(req.getSourceType());
+        created.setSourceRecordId(req.getSourceRecordId());
+        created.setStatus(MedicalReviewRequest.STATUS_PENDING);
+        created.setCreatedAt(Instant.now());
+        created.setUpdatedAt(Instant.now());
+        reviewRequestRepository.save(created);
+        notifyReviewRequested(created, true);
+    }
+
+    private static boolean canMoveAppointment(Appointment appointment) {
+        String status = appointment.getStatus() == null ? "" : appointment.getStatus().trim().toLowerCase(Locale.ROOT);
+        if (status.startsWith("cancel") || status.equals("completed") || status.equals("attended")) {
+            return false;
+        }
+        String attendance = appointment.getAttendance() == null ? "" : appointment.getAttendance().trim();
+        return !attendance.equalsIgnoreCase("ATTENDED");
+    }
+
+    private String advisorName(Long advisorUserId) {
+        return displayAdvisorName(userRepository.findById(advisorUserId).orElse(null));
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void alignBookedReviewsWithMedicalRecords() {
+        for (MedicalReviewRequest req :
+                reviewRequestRepository.findByStatusIgnoreCase(MedicalReviewRequest.STATUS_BOOKED)) {
+            if (!MedicalReviewRequest.SOURCE_MEDICAL_RECORD.equalsIgnoreCase(req.getSourceType())) {
+                continue;
+            }
+            Long profileId;
+            try {
+                profileId = Long.valueOf(req.getSourceRecordId());
+            } catch (NumberFormatException ex) {
+                continue;
+            }
+            HealthProfile profile = healthProfileRepository.findById(profileId).orElse(null);
+            LocalDate desired = profile == null ? null : toLocalDate(profile.getNextCheckupAt());
+            if (desired == null || desired.equals(req.getReviewDate())) {
+                continue;
+            }
+            try {
+                moveBookedReview(
+                        req,
+                        desired,
+                        req.getAdvisorUserId(),
+                        firstNonBlank(req.getAdvisorName(), advisorName(req.getAdvisorUserId())));
+            } catch (RuntimeException ex) {
+                log.warn(
+                        "Could not move medical review {} to {}: {}",
+                        req.getId(),
+                        desired,
+                        ex.getMessage());
+            }
+        }
     }
 
     public List<Map<String, Object>> pendingForClient(Long clientUserId) {
@@ -262,6 +365,21 @@ public class MedicalReviewRequestService {
                 title,
                 body,
                 "/client/appointments/book?reviewRequestId=" + req.getId());
+    }
+
+    private void notifyReviewMoved(MedicalReviewRequest req, String time) {
+        String dateLabel =
+                req.getReviewDate() == null ? "the new date" : DISPLAY_DATE.format(req.getReviewDate());
+        String when = isBlank(time) ? dateLabel : dateLabel + " at " + time;
+        createClientNotification(
+                req.getClientUserId(),
+                "appointment",
+                "Medical Review Moved",
+                firstNonBlank(req.getAdvisorName(), "Your Medical Advisor")
+                        + " moved your medical review to "
+                        + when
+                        + ".",
+                "/client/appointments");
     }
 
     private void notifyReviewConfirmed(MedicalReviewRequest req, String time, String advisorName) {

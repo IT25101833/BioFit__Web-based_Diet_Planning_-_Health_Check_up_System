@@ -70,7 +70,7 @@ export default function CoachClients() {
     <div>
       <PageHeader
         title="My Clients"
-        description="View and manage clients currently assigned to you."
+        description="Clients appear here after you mark today's appointment as attended."
       />
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -172,8 +172,12 @@ export default function CoachClients() {
                       </td>
                       <td className="px-4 py-3.5 text-[#4b5563]">{client.id}</td>
                       <td className="px-4 py-3.5 text-[#4b5563]">{client.programme}</td>
-                      <td className="px-4 py-3.5 text-[#4b5563]">{client.workoutPlan}</td>
-                      <td className="px-4 py-3.5 text-[#4b5563]">{client.planProgress}%</td>
+                      <td className="px-4 py-3.5 text-[#4b5563]">{client.workoutPlan || '—'}</td>
+                      <td className="px-4 py-3.5 text-[#4b5563]">
+                        {client.planProgress == null || client.planProgress === ''
+                          ? '—'
+                          : `${client.planProgress}%`}
+                      </td>
                       <td className="px-4 py-3.5 text-[#4b5563]">
                         {formatCoachDate(client.lastAssessment)}
                       </td>
@@ -232,7 +236,10 @@ export default function CoachClients() {
                     </div>
                     <p className="mt-2 text-sm text-[#4b5563]">{client.programme}</p>
                     <p className="mt-1 text-[12px] text-[#6b7280]">
-                      {client.workoutPlan} · {client.planProgress}%
+                      {client.workoutPlan || 'No workout plan'}
+                      {client.planProgress == null || client.planProgress === ''
+                        ? ''
+                        : ` · ${client.planProgress}%`}
                     </p>
                     <p className="mt-1 text-[12px] text-[#6b7280]">
                       Next: {formatCoachDate(client.nextSession)}

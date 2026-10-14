@@ -12,6 +12,7 @@ import Select from '../../../components/ui/Select'
 import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import Toast from '../../../components/ui/Toast'
+import { localTodayIso } from '../../booking/bookingEngine'
 import { fetchCoachClientById } from '../clients/data/clientFitnessData'
 import { fetchClientProgress, saveProgressRecord } from './data/progressData'
 
@@ -24,7 +25,7 @@ export default function ClientProgressDetails() {
   const [open, setOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [form, setForm] = useState({
-    date: '2026-09-09',
+    date: localTodayIso(),
     completedSessions: '',
     observation: '',
     feedback: '',
@@ -71,8 +72,10 @@ export default function ClientProgressDetails() {
     )
   }
 
-  const maxCompletion = Math.max(...progress.weeklyCompletion, 1)
-  const maxAttendance = Math.max(...progress.attendanceTrend, 1)
+  const completionSeries = chartValues(progress.weeklyCompletion)
+  const attendanceSeries = chartValues(progress.attendanceTrend)
+  const maxCompletion = Math.max(...completionSeries, 1)
+  const maxAttendance = Math.max(...attendanceSeries, 1)
 
   return (
     <div>
@@ -94,20 +97,33 @@ export default function ClientProgressDetails() {
 
       <div className="mb-5 grid gap-4 sm:grid-cols-3">
         <SectionCard title="Plan completion">
-          <ProgressBar value={progress.completion} />
+          {progress.completion == null || progress.completion === '' ? (
+            <p className="text-sm text-[#6b7280]">Not recorded.</p>
+          ) : (
+            <ProgressBar value={progress.completion} />
+          )}
         </SectionCard>
         <SectionCard title="Session attendance">
-          <ProgressBar value={progress.attendance} />
+          {progress.attendance == null || progress.attendance === '' ? (
+            <p className="text-sm text-[#6b7280]">Not recorded.</p>
+          ) : (
+            <ProgressBar value={progress.attendance} />
+          )}
         </SectionCard>
         <SectionCard title="Current week">
-          <p className="text-sm font-semibold text-[#111827]">{progress.currentWeek}</p>
+          <p className="text-sm font-semibold text-[#111827]">
+            {progress.currentWeek || 'Not recorded'}
+          </p>
         </SectionCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard title="Workout completion by week">
+          {completionSeries.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No weekly progress recorded yet.</p>
+          ) : (
           <div className="flex h-40 items-end gap-2 pt-2">
-            {progress.weeklyCompletion.map((value, index) => (
+            {completionSeries.map((value, index) => (
               <div key={index} className="flex flex-1 flex-col items-center gap-2">
                 <div
                   className="w-full rounded-t-md bg-[#005a40]/85"
@@ -117,10 +133,14 @@ export default function ClientProgressDetails() {
               </div>
             ))}
           </div>
+          )}
         </SectionCard>
         <SectionCard title="Session attendance trend">
+          {attendanceSeries.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No attendance recorded yet.</p>
+          ) : (
           <div className="flex h-40 items-end gap-2 pt-2">
-            {progress.attendanceTrend.map((value, index) => (
+            {attendanceSeries.map((value, index) => (
               <div key={index} className="flex flex-1 flex-col items-center gap-2">
                 <div
                   className="w-full rounded-t-md bg-[#0f766e]/75"
@@ -130,15 +150,16 @@ export default function ClientProgressDetails() {
               </div>
             ))}
           </div>
+          )}
         </SectionCard>
       </div>
 
       <SectionCard className="mt-4" title="Assessment history">
-        {client.recentAssessments.length === 0 ? (
+        {(client.recentAssessments || []).length === 0 ? (
           <p className="text-sm text-[#6b7280]">No assessments yet.</p>
         ) : (
           <ul className="space-y-2">
-            {client.recentAssessments.map((item) => (
+            {(client.recentAssessments || []).map((item) => (
               <li key={item.id} className="rounded-xl bg-[#f8faf9] px-4 py-3 text-sm">
                 <p className="font-semibold text-[#111827]">{item.type}</p>
                 <p className="mt-1 text-[#6b7280]">{item.summary}</p>
@@ -236,4 +257,11 @@ export default function ClientProgressDetails() {
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
+}
+
+function chartValues(series) {
+  if (!Array.isArray(series)) return []
+  return series
+    .map((item) => (typeof item === 'number' ? item : Number(item?.value)))
+    .filter((value) => Number.isFinite(value))
 }

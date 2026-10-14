@@ -70,7 +70,7 @@ export default function CoachDashboard() {
           {todayLabel}
         </p>
         <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-[#111827] sm:text-[1.75rem]">
-          Good morning, {data.greetingName}
+          {greetingForNow()}, {data.greetingName}
         </h1>
         <p className="mt-1.5 text-sm text-[#6b7280]">
           Here’s an overview of your clients, sessions and fitness plans today.
@@ -106,6 +106,9 @@ export default function CoachDashboard() {
 
       <div className="mb-5 grid gap-4 lg:grid-cols-3">
         <SectionCard title="Today’s Schedule" className="lg:col-span-2">
+          {todaysSchedule.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No sessions scheduled for today.</p>
+          ) : (
           <div className="space-y-3">
             {todaysSchedule.map((session) => (
               <div
@@ -117,28 +120,47 @@ export default function CoachDashboard() {
                     {session.time} · {session.client || session.clientName}
                   </p>
                   <p className="mt-1 text-[12px] text-[#6b7280]">
-                    {session.sessionType || session.serviceType || session.service} ·{' '}
-                    {session.workout || session.programme || 'Fitness session'} ·{' '}
-                    {session.duration || '45 min'}
+                    {[
+                      session.sessionType || session.serviceType || session.service,
+                      session.workout || session.programme,
+                      session.duration,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={session.status} />
-                  <Button
-                    to={`/coach/clients/${session.clientId || 'BF-C1024'}`}
-                    size="sm"
-                    variant="outline"
-                    className="!text-[#005a40]"
-                  >
-                    View Client
-                  </Button>
+                  {String(session.attendance || '').toUpperCase() === 'ATTENDED' && session.clientId ? (
+                    <Button
+                      to={`/coach/clients/${session.clientId}`}
+                      size="sm"
+                      variant="outline"
+                      className="!text-[#005a40]"
+                    >
+                      View Client
+                    </Button>
+                  ) : (
+                    <Button
+                      to={`/coach/appointments?id=${encodeURIComponent(session.id || '')}`}
+                      size="sm"
+                      variant="outline"
+                      className="!text-[#005a40]"
+                    >
+                      Mark attendance
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
+          )}
         </SectionCard>
 
         <SectionCard title="Clients requiring attention">
+          {attention.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No clients need attention right now.</p>
+          ) : (
           <ul className="space-y-3">
             {attention.map((item) => (
               <li key={item.id || item.client} className="rounded-2xl bg-[#f8faf9] px-3 py-3">
@@ -151,22 +173,28 @@ export default function CoachDashboard() {
                 <p className="mt-1 text-[11px] font-semibold text-[#005a40]">
                   {item.due || item.priority || ''}
                 </p>
-                <Button
-                  to={`/coach/clients/${item.clientId || 'BF-C1024'}`}
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 !text-[#005a40]"
-                >
-                  View Client
-                </Button>
+                {item.clientId ? (
+                  <Button
+                    to={`/coach/clients/${item.clientId}`}
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 !text-[#005a40]"
+                  >
+                    View Client
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>
+          )}
         </SectionCard>
       </div>
 
       <div className="mb-5 grid gap-4 lg:grid-cols-3">
         <SectionCard title="Client progress overview">
+          {progressTrend.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No weekly progress recorded yet.</p>
+          ) : (
           <div className="flex h-44 items-end gap-2 pt-2">
             {progressTrend.map((item) => (
               <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
@@ -178,7 +206,10 @@ export default function CoachDashboard() {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-[12px] text-[#6b7280]">Weekly workout completion %</p>
+          )}
+          {progressTrend.length > 0 ? (
+            <p className="mt-3 text-[12px] text-[#6b7280]">Weekly workout completion %</p>
+          ) : null}
         </SectionCard>
 
         <SectionCard
@@ -190,6 +221,9 @@ export default function CoachDashboard() {
             </Button>
           }
         >
+          {activePlans.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No workout plans yet.</p>
+          ) : (
           <div className="space-y-3">
             {activePlans.map((plan) => (
               <div key={plan.id} className="rounded-2xl border border-[#eef2f0] px-4 py-3">
@@ -197,18 +231,23 @@ export default function CoachDashboard() {
                   <div>
                     <p className="font-semibold text-[#111827]">{plan.name}</p>
                     <p className="mt-0.5 text-[12px] text-[#6b7280]">
-                      {plan.client || plan.clientName} ·{' '}
-                      {plan.weekLabel || plan.currentWeek || 'In progress'}
+                      {[plan.client || plan.clientName, plan.weekLabel || plan.currentWeek]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </p>
                   </div>
                   <StatusBadge status={plan.status} />
                 </div>
-                <div className="mt-3">
-                  <ProgressBar
-                    value={Number(plan.progress) || 0}
-                    label={`${Number(plan.progress) || 0}% Complete`}
-                  />
-                </div>
+                {plan.progress == null || plan.progress === '' || Number(plan.progress) === 0 ? (
+                  <p className="mt-3 text-sm text-[#6b7280]">Progress not recorded.</p>
+                ) : (
+                  <div className="mt-3">
+                    <ProgressBar
+                      value={Number(plan.progress)}
+                      label={`${Number(plan.progress)}% Complete`}
+                    />
+                  </div>
+                )}
                 <Button
                   to={`/coach/workout-plans/${plan.id}`}
                   size="sm"
@@ -220,6 +259,7 @@ export default function CoachDashboard() {
               </div>
             ))}
           </div>
+          )}
         </SectionCard>
       </div>
 
@@ -244,6 +284,9 @@ export default function CoachDashboard() {
       </div>
 
       <SectionCard title="Recent client activity">
+        {recentActivity.length === 0 ? (
+          <p className="text-sm text-[#6b7280]">No recent activity yet.</p>
+        ) : (
         <ul className="space-y-3">
           {recentActivity.map((item) => (
             <li
@@ -255,7 +298,15 @@ export default function CoachDashboard() {
             </li>
           ))}
         </ul>
+        )}
       </SectionCard>
     </div>
   )
+}
+
+function greetingForNow() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
 }

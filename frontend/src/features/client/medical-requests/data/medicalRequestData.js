@@ -4,8 +4,9 @@ export function fetchMedicalAdvisors() {
   return apiRequest('/api/client/medical-advisors')
 }
 
-export function fetchMedicalRequestTimeSlots() {
-  return apiRequest('/api/client/medical-requests/time-slots')
+export function fetchMedicalRequestTimeSlots(date) {
+  const query = date ? `?date=${encodeURIComponent(date)}` : ''
+  return apiRequest(`/api/client/medical-requests/time-slots${query}`)
 }
 
 export function fetchClientMedicalRequests() {
@@ -45,4 +46,29 @@ export function todayIsoDate() {
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const day = String(now.getDate()).padStart(2, '0')
   return `${now.getFullYear()}-${month}-${day}`
+}
+
+/** Monday–Saturday, 9:00 AM through 4:30 PM. Today's past times are left out. */
+export function buildPreferredTimeSlots(isoDate) {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return []
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const selected = new Date(year, month - 1, day)
+  if (Number.isNaN(selected.getTime()) || selected.getDay() === 0) return []
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  if (selected < startOfToday) return []
+  const now = new Date()
+  const isToday = selected.getTime() === startOfToday.getTime()
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const slots = []
+  for (let minutes = 9 * 60; minutes < 17 * 60; minutes += 30) {
+    if (isToday && minutes <= nowMinutes) continue
+    let hour = Math.floor(minutes / 60)
+    const minute = minutes % 60
+    const suffix = hour >= 12 ? 'PM' : 'AM'
+    hour %= 12
+    if (hour === 0) hour = 12
+    slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${suffix}`)
+  }
+  return slots
 }

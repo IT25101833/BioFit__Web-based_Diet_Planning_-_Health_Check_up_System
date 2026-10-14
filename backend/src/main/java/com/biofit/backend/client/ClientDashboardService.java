@@ -1,6 +1,7 @@
 package com.biofit.backend.client;
 
 import com.biofit.backend.client.dto.ClientDashboardDtos.ActivityItem;
+import com.biofit.backend.client.dto.ClientDashboardDtos.CareRecommendation;
 import com.biofit.backend.client.dto.ClientDashboardDtos.DashboardResponse;
 import com.biofit.backend.client.dto.ClientDashboardDtos.HealthItem;
 import com.biofit.backend.client.dto.ClientDashboardDtos.MetricCard;
@@ -13,6 +14,8 @@ import com.biofit.backend.domain.DomainMapper;
 import com.biofit.backend.domain.NotificationEntity;
 import com.biofit.backend.domain.NotificationRepository;
 import com.biofit.backend.domain.MedicalReviewRequestService;
+import com.biofit.backend.health.HealthAssessment;
+import com.biofit.backend.health.HealthAssessmentRepository;
 import com.biofit.backend.health.HealthGoalRepository;
 import com.biofit.backend.health.HealthMetricRepository;
 import com.biofit.backend.health.HealthProfile;
@@ -57,6 +60,7 @@ public class ClientDashboardService {
     private final NotificationRepository notificationRepository;
     private final DomainMapper domainMapper;
     private final MedicalReviewRequestService medicalReviewRequestService;
+    private final HealthAssessmentRepository healthAssessmentRepository;
 
     @Transactional(readOnly = true)
     public DashboardResponse dashboard(Long userId) {
@@ -231,7 +235,37 @@ public class ClientDashboardService {
                 health,
                 upcoming,
                 notifications,
-                pendingReview);
+                pendingReview,
+                careRecommendation(userId));
+    }
+
+    private CareRecommendation careRecommendation(Long userId) {
+        HealthAssessment latest =
+                healthAssessmentRepository.findFirstByUserIdOrderByAssessedAtDesc(userId).orElse(null);
+        if (latest == null) return null;
+        Object observations = domainMapper.parseJson(latest.getObservationsJson(), Map.of());
+        boolean nutrition = recommendationFlag(observations, "recommendNutrition");
+        boolean fitness = recommendationFlag(observations, "recommendFitness");
+        if (!nutrition && !fitness) return null;
+        String assessmentDate = null;
+        if (latest.getAssessedAt() != null) {
+            assessmentDate =
+                    DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
+                            .format(latest.getAssessedAt().atZone(ZoneId.of("UTC")));
+        }
+        return new CareRecommendation(
+                latest.getId() == null ? null : String.valueOf(latest.getId()),
+                blankToNull(latest.getAdvisorName()),
+                assessmentDate,
+                nutrition,
+                fitness);
+    }
+
+    private static boolean recommendationFlag(Object observations, String key) {
+        if (!(observations instanceof Map<?, ?> map)) return false;
+        Object value = map.get(key);
+        if (value instanceof Boolean flag) return flag;
+        return value != null && "true".equalsIgnoreCase(String.valueOf(value).trim());
     }
 
     private static String str(Object o) {

@@ -45,17 +45,16 @@ export default function ProgressTracking() {
     })
   }, [rows, search, status])
 
-  const summary = useMemo(
-    () => ({
-      onTrack: rows.filter((r) => r.status === 'On Track').length,
-      updateDue: rows.filter((r) => r.status === 'Update Due').length,
-      avgCompletion: Math.round(
-        rows.reduce((sum, r) => sum + r.completion, 0) / Math.max(rows.length, 1),
-      ),
-      assessmentsDue: rows.filter((r) => r.status !== 'On Track').length,
-    }),
-    [rows],
-  )
+  const summary = useMemo(() => {
+    const recorded = rows.filter((r) => r.completion != null && r.completion !== '')
+    return {
+      clients: rows.length,
+      recorded: recorded.length,
+      avgCompletion: recorded.length
+        ? Math.round(recorded.reduce((sum, r) => sum + Number(r.completion), 0) / recorded.length)
+        : 0,
+    }
+  }, [rows])
 
   if (loading) return <LoadingSkeleton rows={4} />
   if (error) {
@@ -70,10 +69,9 @@ export default function ProgressTracking() {
       />
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Clients On Track" value={summary.onTrack} />
-        <StatCard label="Progress Updates Due" value={summary.updateDue} />
-        <StatCard label="Workout Completion" value={`${summary.avgCompletion}%`} />
-        <StatCard label="Assessments Due" value={summary.assessmentsDue} />
+        <StatCard label="Clients" value={summary.clients} />
+        <StatCard label="Progress recorded" value={summary.recorded} />
+        <StatCard label="Average completion" value={summary.recorded ? `${summary.avgCompletion}%` : '—'} />
       </div>
 
       <div className="mb-4 grid gap-3 rounded-[1.25rem] border border-[#e8ecf1] bg-white p-4 sm:grid-cols-3">
@@ -87,10 +85,10 @@ export default function ProgressTracking() {
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           options={[
-            { value: 'On Track', label: 'On Track' },
-            { value: 'Needs Review', label: 'Needs Review' },
-            { value: 'Update Due', label: 'Update Due' },
-            { value: 'Plan Completed', label: 'Plan Completed' },
+            { value: 'Active', label: 'Active' },
+            { value: 'Draft', label: 'Draft' },
+            { value: 'Completed', label: 'Completed' },
+            { value: 'Archived', label: 'Archived' },
           ]}
           placeholder="Progress status"
         />
@@ -122,8 +120,12 @@ export default function ProgressTracking() {
                     </td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{row.workoutPlan}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{row.currentWeek}</td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">{row.completion}%</td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">{row.attendance}%</td>
+                    <td className="px-4 py-3.5 text-[#4b5563]">
+                      {row.completion == null || row.completion === '' ? '—' : `${row.completion}%`}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#4b5563]">
+                      {row.attendance == null || row.attendance === '' ? '—' : `${row.attendance}%`}
+                    </td>
                     <td className="px-4 py-3.5 text-[#4b5563]">
                       {formatCoachDate(row.lastUpdate)}
                     </td>

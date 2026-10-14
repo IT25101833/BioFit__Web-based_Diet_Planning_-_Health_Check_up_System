@@ -102,6 +102,7 @@ import ManagerReportsPage from './pages/manager/ManagerReportsPage'
 import ManagerStaffPage from './pages/manager/ManagerStaffPage'
 import ManagerStaffSchedulingPage from './pages/manager/ManagerStaffSchedulingPage'
 import ManagerAvailabilityPage from './pages/manager/ManagerAvailabilityPage'
+import CoachAppointmentsPage from './pages/coach/CoachAppointmentsPage'
 import CoachAvailabilityPage from './pages/coach/CoachAvailabilityPage'
 import CoachAccessRequestsPage from './pages/coach/CoachAccessRequestsPage'
 import CoachBookAppointmentPage from './pages/coach/CoachBookAppointmentPage'
@@ -231,6 +232,7 @@ function App() {
         <Route path="/coach/progress/:clientId" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachClientProgressPage />)} />
         <Route path="/coach/escalations" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachEscalationsPage />)} />
         <Route path="/coach/notifications" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachNotificationsPage />)} />
+        <Route path="/coach/appointments" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAppointmentsPage />)} />
         <Route path="/coach/availability" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachAvailabilityPage />)} />
         <Route path="/coach/book-appointment" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachBookAppointmentPage />)} />
         <Route path="/coach/profile" element={guard(['FITNESS_COACH', 'ADMIN'], <CoachProfilePage />)} />

@@ -5,6 +5,12 @@ import Input from '../../../../components/ui/Input'
 import SectionCard from '../../../../components/ui/SectionCard'
 import Select from '../../../../components/ui/Select'
 import TextArea from '../../../../components/ui/TextArea'
+import {
+  PAST_DATE_MESSAGE,
+  isDateBeforeToday,
+  isValidIsoDate,
+  localTodayIso,
+} from '../../../booking/bookingEngine'
 import { fetchDietaryRestrictionsByClient } from '../../dietary-restrictions/data/dietaryRestrictionData'
 import { getMealPlanClientOptions } from '../data/mealPlanData'
 
@@ -28,6 +34,34 @@ function newDay(label = 'Monday') {
     day: label,
     meals: [newMeal('Breakfast')],
   }
+}
+
+function isoDate(value) {
+  return String(value || '').trim().slice(0, 10)
+}
+
+function dateFieldErrors(
+  startValue,
+  endValue,
+  { mode = 'create', originalStart = '', requireBoth = true } = {},
+) {
+  const next = {}
+  const start = isoDate(startValue)
+  const end = isoDate(endValue)
+  const keptOriginalStart = mode === 'edit' && start && start === isoDate(originalStart)
+
+  if (!start) {
+    if (requireBoth) next.startDate = 'Start date is required.'
+  } else if (!isValidIsoDate(start)) next.startDate = 'Please enter a valid start date.'
+  else if (!keptOriginalStart && isDateBeforeToday(start)) next.startDate = PAST_DATE_MESSAGE
+
+  if (!end) {
+    if (requireBoth) next.endDate = 'End date is required.'
+  } else if (!isValidIsoDate(end)) next.endDate = 'Please enter a valid end date.'
+  else if (start && isValidIsoDate(start) && end < start) {
+    next.endDate = 'End date cannot be before the start date.'
+  }
+  return next
 }
 
 const emptyForm = {
@@ -78,14 +112,32 @@ export default function MealPlanForm({
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'startDate' || field === 'endDate') {
+      const start = field === 'startDate' ? value : form.startDate
+      const end = field === 'endDate' ? value : form.endDate
+      const dateErrors = dateFieldErrors(start, end, {
+        mode,
+        originalStart: initialValues?.startDate,
+        requireBoth: false,
+      })
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next.startDate
+        delete next.endDate
+        return { ...next, ...dateErrors }
+      })
+    }
   }
 
   function validate(status) {
-    const next = {}
+    const next = {
+      ...dateFieldErrors(form.startDate, form.endDate, {
+        mode,
+        originalStart: initialValues?.startDate,
+      }),
+    }
     if (!form.clientId) next.clientId = 'Select a client.'
     if (!form.name.trim()) next.name = 'Meal plan name is required.'
-    if (!form.startDate) next.startDate = 'Start date is required.'
-    if (!form.endDate) next.endDate = 'End date is required.'
     if (!form.goal.trim()) next.goal = 'Plan goal is required.'
     if (!form.days.length) next.days = 'Add at least one day.'
     if (!form.days.some((day) => day.meals?.length)) next.meals = 'Add at least one meal.'
@@ -157,8 +209,24 @@ export default function MealPlanForm({
           <SectionCard title="Plan information">
             <div className="grid gap-4 sm:grid-cols-2">
               <Input className="sm:col-span-2" label="Meal plan name" required value={form.name} onChange={(e) => update('name', e.target.value)} error={errors.name} />
-              <Input type="date" label="Start date" required value={form.startDate} onChange={(e) => update('startDate', e.target.value)} error={errors.startDate} />
-              <Input type="date" label="End date" required value={form.endDate} onChange={(e) => update('endDate', e.target.value)} error={errors.endDate} />
+              <Input
+                type="date"
+                label="Start date"
+                required
+                min={mode === 'create' ? localTodayIso() : undefined}
+                value={isoDate(form.startDate)}
+                onChange={(e) => update('startDate', e.target.value)}
+                error={errors.startDate}
+              />
+              <Input
+                type="date"
+                label="End date"
+                required
+                min={isValidIsoDate(isoDate(form.startDate)) ? isoDate(form.startDate) : localTodayIso()}
+                value={isoDate(form.endDate)}
+                onChange={(e) => update('endDate', e.target.value)}
+                error={errors.endDate}
+              />
               <Input className="sm:col-span-2" label="Plan goal" required value={form.goal} onChange={(e) => update('goal', e.target.value)} error={errors.goal} />
               <TextArea className="sm:col-span-2" label="Description" value={form.description} onChange={(e) => update('description', e.target.value)} />
             </div>

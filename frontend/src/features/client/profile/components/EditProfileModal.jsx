@@ -35,6 +35,23 @@ function validate(form) {
   return errors
 }
 
+function profileForm(profile) {
+  return {
+    firstName: profile?.firstName || '',
+    lastName: profile?.lastName || '',
+    dateOfBirth: profile?.dateOfBirth || '',
+    gender: profile?.gender || '',
+    email: profile?.email || '',
+    contactNumber: profile?.contactNumber || '',
+    address: profile?.address || '',
+    emergencyContact: {
+      name: profile?.emergencyContact?.name || '',
+      relationship: profile?.emergencyContact?.relationship || '',
+      contactNumber: profile?.emergencyContact?.contactNumber || '',
+    },
+  }
+}
+
 export default function EditProfileModal({
   open,
   profile,
@@ -42,26 +59,13 @@ export default function EditProfileModal({
   onRequestClose,
   onSave,
 }) {
-  const [form, setForm] = useState(profile)
+  const [form, setForm] = useState(() => profileForm(profile))
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setForm({
-        firstName: profile.firstName || '',
-        lastName: profile.lastName || '',
-        dateOfBirth: profile.dateOfBirth || '',
-        gender: profile.gender || '',
-        email: profile.email || '',
-        contactNumber: profile.contactNumber || '',
-        address: profile.address || '',
-        emergencyContact: {
-          name: profile.emergencyContact?.name || '',
-          relationship: profile.emergencyContact?.relationship || '',
-          contactNumber: profile.emergencyContact?.contactNumber || '',
-        },
-      })
+      setForm(profileForm(profile))
       setErrors({})
       setSaving(false)
     }
@@ -80,19 +84,18 @@ export default function EditProfileModal({
   }
 
   function isDirty() {
+    const saved = profileForm(profile)
     return (
-      form.firstName !== (profile.firstName || '') ||
-      form.lastName !== (profile.lastName || '') ||
-      form.dateOfBirth !== (profile.dateOfBirth || '') ||
-      form.gender !== (profile.gender || '') ||
-      form.email !== (profile.email || '') ||
-      form.contactNumber !== (profile.contactNumber || '') ||
-      form.address !== (profile.address || '') ||
-      form.emergencyContact.name !== (profile.emergencyContact?.name || '') ||
-      form.emergencyContact.relationship !==
-        (profile.emergencyContact?.relationship || '') ||
-      form.emergencyContact.contactNumber !==
-        (profile.emergencyContact?.contactNumber || '')
+      form.firstName !== saved.firstName ||
+      form.lastName !== saved.lastName ||
+      form.dateOfBirth !== saved.dateOfBirth ||
+      form.gender !== saved.gender ||
+      form.email !== saved.email ||
+      form.contactNumber !== saved.contactNumber ||
+      form.address !== saved.address ||
+      form.emergencyContact.name !== saved.emergencyContact.name ||
+      form.emergencyContact.relationship !== saved.emergencyContact.relationship ||
+      form.emergencyContact.contactNumber !== saved.emergencyContact.contactNumber
     )
   }
 

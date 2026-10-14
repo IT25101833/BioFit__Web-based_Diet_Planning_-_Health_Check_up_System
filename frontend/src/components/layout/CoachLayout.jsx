@@ -15,8 +15,6 @@ export default function CoachLayout({ children, title = 'Dashboard', breadcrumb 
           breadcrumb={breadcrumb}
           notificationsTo="/coach/notifications"
           profileTo="/coach/profile"
-          fallbackName="Daniel Perera"
-          fallbackRole="Fitness Coach"
           onOpenMenu={() => setMobileOpen(true)}
         />
         {mobileOpen ? (

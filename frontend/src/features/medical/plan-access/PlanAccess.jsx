@@ -22,7 +22,11 @@ export default function PlanAccess() {
           }))
           .filter((client) => client.value)
         setClients(options)
-        if (preset && findClientOption(options, preset)) setClientUserId(String(preset))
+        if (preset && findClientOption(options, preset)) {
+          setClientUserId(String(preset))
+        } else if (!preset && options.length > 0) {
+          setClientUserId((prev) => (prev ? prev : options[0].value))
+        }
       })
       .catch(() => setClients([]))
   }, [preset])

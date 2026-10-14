@@ -158,12 +158,16 @@ export default function WorkoutPlans() {
                   <tr key={plan.id} className="border-t border-[#eef2f0]">
                     <td className="px-4 py-3.5 font-semibold text-[#111827]">{plan.name}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">{plan.clientName}</td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">{plan.programme}</td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">{plan.totalWeeks} weeks</td>
+                    <td className="px-4 py-3.5 text-[#4b5563]">{plan.programme || '—'}</td>
                     <td className="px-4 py-3.5 text-[#4b5563]">
-                      Week {plan.currentWeek} of {plan.totalWeeks}
+                      {plan.totalWeeks ? `${plan.totalWeeks} weeks` : '—'}
                     </td>
-                    <td className="px-4 py-3.5 text-[#4b5563]">{plan.progress}%</td>
+                    <td className="px-4 py-3.5 text-[#4b5563]">
+                      {plan.currentWeek || '—'}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#4b5563]">
+                      {plan.progress == null || plan.progress === '' ? '—' : `${plan.progress}%`}
+                    </td>
                     <td className="px-4 py-3.5 text-[#4b5563]">
                       {formatCoachDate(plan.startDate)}
                     </td>

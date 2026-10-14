@@ -97,7 +97,7 @@ export default function LoginForm() {
             type="email"
             name="email"
             autoComplete="email"
-            placeholder="client@biofit.demo"
+            placeholder="you@email.com"
             leftIcon={Mail}
             value={email}
             onChange={(e) => {
@@ -220,14 +220,14 @@ export default function LoginForm() {
             type="button"
             className="mt-2 w-full rounded-lg bg-[var(--bf-surface)] px-3 py-2 text-left transition-colors hover:bg-[var(--bf-surface-2,rgba(0,0,0,0.04))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             onClick={() => {
-              setEmail('client@biofit.demo')
+              setEmail('client@biofit.local')
               setPassword('Demo123!')
               setErrors({ email: '', password: '', form: '' })
               setNeedsVerification(false)
             }}
           >
             <p className="font-mono text-[12px] text-[var(--bf-ink)]">
-              client@biofit.demo
+              client@biofit.local
             </p>
             <p className="font-mono text-[12px] text-[var(--bf-ink)]">Demo123!</p>
             <p className="mt-1 text-[11px] text-[var(--bf-muted)]">

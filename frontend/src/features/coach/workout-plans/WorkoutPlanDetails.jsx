@@ -71,15 +71,26 @@ export default function WorkoutPlanDetails() {
       />
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Summary label="Current week" value={`Week ${plan.currentWeek}`} />
-        <Summary label="Completion" value={`${plan.progress}%`} />
-        <Summary label="Sessions / week" value={plan.sessionsPerWeek} />
-        <Summary label="Difficulty" value={plan.difficulty} />
-        <Summary label="Goal" value={plan.goal} />
+        <Summary label="Current week" value={weekLabel(plan.currentWeek)} />
+        <Summary
+          label="Completion"
+          value={
+            Number(plan.scheduledSessions || 0) === 0 || plan.completionPercent == null
+              ? 'Not recorded'
+              : `${plan.completionPercent}%`
+          }
+        />
+        <Summary label="Sessions / week" value={plan.sessionsPerWeek || '—'} />
+        <Summary label="Difficulty" value={plan.difficulty || '—'} />
+        <Summary label="Goal" value={plan.goal || '—'} />
       </div>
 
       <SectionCard title="Plan summary" className="mb-4">
-        <ProgressBar value={plan.progress} label="Overall completion" />
+        {Number(plan.scheduledSessions || 0) === 0 || plan.completionPercent == null ? (
+          <p className="text-sm text-[#6b7280]">Completion has not been recorded.</p>
+        ) : (
+          <ProgressBar value={plan.completionPercent} label="Overall completion" />
+        )}
         <p className="mt-3 text-sm text-[#4b5563]">{plan.description}</p>
       </SectionCard>
 
@@ -90,7 +101,7 @@ export default function WorkoutPlanDetails() {
               <div key={week.id} className="rounded-2xl border border-[#eef2f0] p-4">
                 <h3 className="font-display text-base font-bold text-[#111827]">{week.label}</h3>
                 <div className="mt-3 space-y-2">
-                  {week.days.map((day) => {
+                  {(week.days || []).map((day) => {
                     const key = `${week.id}-${day.id}`
                     const open = expanded[key]
                     return (
@@ -103,29 +114,43 @@ export default function WorkoutPlanDetails() {
                           }
                         >
                           <span className="text-sm font-semibold text-[#111827]">
-                            {day.day} · {day.title}
+                            {[day.day, day.title].filter(Boolean).join(' · ')}
                           </span>
-                          <span className="text-[12px] text-[#005a40]">
-                            {open ? 'Hide' : 'Expand'}
+                          <span className="flex items-center gap-2">
+                            <StatusBadge status={day.status || 'SCHEDULED'} />
+                            <span className="text-[12px] text-[#005a40]">
+                              {open ? 'Hide' : 'Expand'}
+                            </span>
                           </span>
                         </button>
                         {open ? (
+                          (Array.isArray(day.exercises) ? day.exercises : []).length === 0 ? (
+                            <p className="border-t border-[#eef2f0] px-4 py-3 text-sm text-[#6b7280]">
+                              No exercises have been added to this session.
+                            </p>
+                          ) : (
                           <ul className="space-y-2 border-t border-[#eef2f0] px-4 py-3">
                             {day.exercises.map((ex, index) => (
-                              <li key={`${ex.exerciseId}-${index}`} className="text-sm text-[#4b5563]">
-                                <span className="font-semibold text-[#111827]">{ex.name}</span>
+                              <li key={`${ex.exerciseId || ex.name}-${index}`} className="text-sm text-[#4b5563]">
+                                <span className="font-semibold text-[#111827]">{ex.name || 'Exercise'}</span>
                                 {' · '}
                                 {[
                                   ex.sets && `${ex.sets} sets`,
-                                  ex.reps && `${ex.reps} reps`,
+                                  (ex.reps || ex.repetitions) && `${ex.reps || ex.repetitions} reps`,
                                   ex.duration,
                                   ex.rest && `Rest ${ex.rest}`,
                                 ]
                                   .filter(Boolean)
                                   .join(' · ')}
+                                {ex.notes || ex.instructions ? (
+                                  <p className="mt-1 text-[12px] text-[#6b7280]">
+                                    {ex.notes || ex.instructions}
+                                  </p>
+                                ) : null}
                               </li>
                             ))}
                           </ul>
+                          )
                         ) : null}
                       </div>
                     )
@@ -142,6 +167,12 @@ export default function WorkoutPlanDetails() {
       <Toast open={Boolean(toast)} message={toast} onClose={() => setToast('')} />
     </div>
   )
+}
+
+function weekLabel(value) {
+  if (value == null || String(value).trim() === '') return '—'
+  const text = String(value)
+  return /^week\s+/i.test(text) ? text : `Week ${text}`
 }
 
 function Summary({ label, value }) {

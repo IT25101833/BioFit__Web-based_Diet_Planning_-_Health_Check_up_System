@@ -47,7 +47,7 @@ export default function ClientFitnessProfile() {
       </p>
       <PageHeader
         title="Client Fitness Profile"
-        description={`${client.id} · ${client.programme}`}
+        description={[client.id, client.programme].filter(Boolean).join(' · ')}
         actions={
           <div className="flex flex-wrap gap-2.5">
             <Button
@@ -75,7 +75,7 @@ export default function ClientFitnessProfile() {
               <StatusBadge status={client.status} />
             </div>
             <p className="mt-1 text-sm text-[#6b7280]">
-              Age {client.age} · Assigned coach: Maya Fernando
+              {client.age ? `Age ${client.age}` : 'Age not recorded'}
             </p>
           </div>
         </div>
@@ -83,28 +83,38 @@ export default function ClientFitnessProfile() {
 
       <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SectionCard title="Fitness goals">
-          <ul className="space-y-2">
-            {client.goals.map((goal) => (
-              <li key={goal} className="rounded-xl bg-[#f8faf9] px-3 py-2 text-sm text-[#4b5563]">
-                {goal}
-              </li>
-            ))}
-          </ul>
+          {(client.goals || []).length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No goals recorded yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {client.goals.map((goal) => (
+                <li key={goal} className="rounded-xl bg-[#f8faf9] px-3 py-2 text-sm text-[#4b5563]">
+                  {goal}
+                </li>
+              ))}
+            </ul>
+          )}
         </SectionCard>
         <SectionCard title="Activity level">
-          <p className="text-sm font-semibold text-[#111827]">{client.activityLevel}</p>
+          <p className="text-sm font-semibold text-[#111827]">
+            {client.activityLevel || 'Not recorded'}
+          </p>
         </SectionCard>
         <SectionCard title="Fitness experience">
           <StatusBadge status={client.experience} />
         </SectionCard>
         <SectionCard title="Workout preferences">
-          <ul className="space-y-2">
-            {client.preferences.map((item) => (
-              <li key={item} className="text-sm text-[#4b5563]">
-                {item}
-              </li>
-            ))}
-          </ul>
+          {(client.preferences || []).length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No preferences recorded yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {client.preferences.map((item) => (
+                <li key={item} className="text-sm text-[#4b5563]">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          )}
         </SectionCard>
       </div>
 
@@ -115,29 +125,33 @@ export default function ClientFitnessProfile() {
         description="Only information needed for safe exercise planning is shown here."
       >
         <div className="grid gap-3 md:grid-cols-2">
-          <SafetyItem label="Medical Clearance" value={client.safety.medicalClearance} />
+          <SafetyItem label="Medical Clearance" value={client.safety?.medicalClearance || 'Not recorded'} />
           <SafetyItem
             label="Exercise restrictions"
             value={
-              client.safety.restrictions.length
+              client.safety?.restrictions?.length
                 ? client.safety.restrictions.join('; ')
-                : 'None noted for current plan'
+                : 'Not recorded'
             }
           />
           <SafetyItem
             label="Mobility notes"
             value={
-              client.safety.mobilityNotes.length
+              client.safety?.mobilityNotes?.length
                 ? client.safety.mobilityNotes.join('; ')
-                : 'None noted'
+                : 'Not recorded'
             }
           />
           <SafetyItem
             label="Professional review"
-            value={client.safety.reviewRequired ? 'Review required before intensity changes' : 'Not required'}
+            value={
+              client.safety?.reviewRequired
+                ? 'Review required before intensity changes'
+                : 'Not recorded'
+            }
           />
         </div>
-        {client.safety.reviewRequired ? (
+        {client.safety?.reviewRequired ? (
           <p className="mt-4 rounded-2xl bg-[#fff7ed] px-4 py-3 text-sm text-[#b45309]">
             Medical review required before modifying this client’s exercise intensity.
           </p>
@@ -146,16 +160,25 @@ export default function ClientFitnessProfile() {
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <SectionCard title="Current workout plan">
-          {client.currentPlan ? (
+          {client.currentPlan?.id ? (
             <>
               <p className="font-semibold text-[#111827]">{client.currentPlan.name}</p>
               <p className="mt-1 text-sm text-[#6b7280]">
                 {formatCoachDate(client.currentPlan.startDate)} –{' '}
                 {formatCoachDate(client.currentPlan.endDate)}
               </p>
-              <p className="mt-1 text-sm text-[#6b7280]">
-                Week {client.currentPlan.currentWeek} of {client.currentPlan.totalWeeks}
-              </p>
+              {client.currentPlan.currentWeek || client.currentPlan.totalWeeks ? (
+                <p className="mt-1 text-sm text-[#6b7280]">
+                  {[
+                    client.currentPlan.currentWeek
+                      ? `Week ${String(client.currentPlan.currentWeek).replace(/^week\s+/i, '')}`
+                      : '',
+                    client.currentPlan.totalWeeks ? `of ${client.currentPlan.totalWeeks}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                </p>
+              ) : null}
               <div className="mt-3">
                 <ProgressBar
                   value={client.currentPlan.progress}
@@ -188,20 +211,24 @@ export default function ClientFitnessProfile() {
         </SectionCard>
 
         <SectionCard title="Fitness progress">
-          <div className="space-y-4">
-            {client.progressMetrics.map((metric) => (
-              <ProgressBar key={metric.label} value={metric.value} label={metric.label} />
-            ))}
-          </div>
+          {(client.progressMetrics || []).length === 0 ? (
+            <p className="text-sm text-[#6b7280]">No progress recorded yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {client.progressMetrics.map((metric) => (
+                <ProgressBar key={metric.label} value={metric.value} label={metric.label} />
+              ))}
+            </div>
+          )}
         </SectionCard>
       </div>
 
       <SectionCard title="Recent assessments">
-        {client.recentAssessments.length === 0 ? (
+        {(client.recentAssessments || []).length === 0 ? (
           <p className="text-sm text-[#6b7280]">No assessments recorded yet.</p>
         ) : (
           <div className="space-y-3">
-            {client.recentAssessments.map((item) => (
+            {(client.recentAssessments || []).map((item) => (
               <div
                 key={item.id}
                 className="flex flex-col gap-2 rounded-2xl border border-[#eef2f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"

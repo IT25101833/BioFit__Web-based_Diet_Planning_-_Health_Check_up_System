@@ -9,7 +9,6 @@ import {
   FUTURE_DATE_MESSAGE,
   REQUIRED_DATE_MESSAGE,
   isDateAfterToday,
-  isDateBeforeToday,
   isValidIsoDate,
   localTodayIso,
 } from '../../../booking/bookingEngine'
@@ -26,9 +25,10 @@ const emptyForm = {
   safety: '',
   professionalNotes: '',
   followUpRequired: false,
-  nextReview: '',
   alertRequired: false,
   guidanceRequired: false,
+  recommendNutrition: false,
+  recommendFitness: false,
 }
 
 export default function HealthAssessmentForm({
@@ -65,11 +65,10 @@ export default function HealthAssessmentForm({
       safety: obs.safety || '',
       professionalNotes: initialValues.professionalNotes || '',
       followUpRequired: Boolean(initialValues.followUpRequired),
-      nextReview: initialValues.nextReview
-        ? String(initialValues.nextReview).slice(0, 10)
-        : '',
       alertRequired: Boolean(initialValues.alertRequired),
       guidanceRequired: Boolean(initialValues.guidanceRequired),
+      recommendNutrition: Boolean(initialValues.recommendNutrition ?? obs.recommendNutrition),
+      recommendFitness: Boolean(initialValues.recommendFitness ?? obs.recommendFitness),
     })
     setErrors({})
   }, [initialValues])
@@ -93,17 +92,6 @@ export default function HealthAssessmentForm({
     update('date', value)
   }
 
-  function handleNextReviewChange(value) {
-    if (value && isDateBeforeToday(value, today)) {
-      setErrors((prev) => ({
-        ...prev,
-        nextReview: 'Follow-up date cannot be in the past.',
-      }))
-      return
-    }
-    update('nextReview', value)
-  }
-
   function validate() {
     const next = {}
     if (!form.clientId) next.clientId = 'Select a client.'
@@ -111,14 +99,6 @@ export default function HealthAssessmentForm({
     else if (!isValidIsoDate(form.date)) next.date = 'Please enter a valid date.'
     else if (isDateAfterToday(form.date, today)) next.date = FUTURE_DATE_MESSAGE
     if (!form.type) next.type = 'Assessment type is required.'
-    if (form.followUpRequired && !form.nextReview) {
-      next.nextReview = 'Follow-up date is required when follow-up is marked.'
-    } else if (form.nextReview) {
-      if (!isValidIsoDate(form.nextReview)) next.nextReview = 'Please enter a valid date.'
-      else if (isDateBeforeToday(form.nextReview, today)) {
-        next.nextReview = 'Follow-up date cannot be in the past.'
-      }
-    }
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -142,17 +122,19 @@ export default function HealthAssessmentForm({
       followUpRequired: form.followUpRequired,
       alertRequired: form.alertRequired,
       guidanceRequired: form.guidanceRequired,
+      recommendNutrition: form.recommendNutrition,
+      recommendFitness: form.recommendFitness,
       status: form.followUpRequired ? 'Follow-up Required' : 'Completed',
+      nextReview: null,
       observations: {
         general: form.general || '',
         concerns: form.concerns || '',
         restrictions: form.restrictions || '',
         allergyReview: form.allergyReview || '',
         safety: form.safety || '',
+        recommendNutrition: form.recommendNutrition,
+        recommendFitness: form.recommendFitness,
       },
-    }
-    if (form.nextReview) {
-      payload.nextReview = form.nextReview
     }
     await onSubmit?.(payload)
   }
@@ -281,14 +263,26 @@ export default function HealthAssessmentForm({
             onChange={(e) => update('guidanceRequired', e.target.checked)}
             label="Wellness guidance required"
           />
-          <Input
-            type="date"
-            label="Follow-up date"
-            value={form.nextReview}
-            min={today}
-            onChange={(e) => handleNextReviewChange(e.target.value)}
-            error={errors.nextReview}
-          />
+          <div className="sm:col-span-2 rounded-2xl border border-[#eef2f0] bg-[#f8faf9] p-4">
+            <p className="text-sm font-semibold text-[#111827]">Recommend next support</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-[#6b7280]">
+              Recommend nutrition, fitness, or both. The client sees this on their dashboard.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Checkbox
+                id="ha-recommend-nutrition"
+                checked={form.recommendNutrition}
+                onChange={(e) => update('recommendNutrition', e.target.checked)}
+                label="Recommend nutrition"
+              />
+              <Checkbox
+                id="ha-recommend-fitness"
+                checked={form.recommendFitness}
+                onChange={(e) => update('recommendFitness', e.target.checked)}
+                label="Recommend fitness"
+              />
+            </div>
+          </div>
         </div>
       </SectionCard>
 

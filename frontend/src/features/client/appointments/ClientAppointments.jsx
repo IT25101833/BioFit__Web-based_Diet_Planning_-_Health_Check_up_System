@@ -15,13 +15,13 @@ import {
   formatAppointmentDate,
   formatAppointmentTimeRange,
   isCancelledAppointment,
-  isPastAppointment,
-  isUpcomingAppointment,
+  isLaterAppointment,
+  isTodayAppointment,
 } from './data/appointmentData'
 
 const tabs = [
+  { value: 'today', label: 'Today' },
   { value: 'upcoming', label: 'Upcoming' },
-  { value: 'past', label: 'Past' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
@@ -29,7 +29,7 @@ export default function ClientAppointments() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('upcoming')
+  const [tab, setTab] = useState('today')
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [toast, setToast] = useState('')
@@ -52,11 +52,9 @@ export default function ClientAppointments() {
   }, [])
 
   const filtered = useMemo(() => {
-    if (tab === 'upcoming') return items.filter((item) => isUpcomingAppointment(item))
-    if (tab === 'past') return items.filter((item) => isPastAppointment(item))
-    if (tab === 'cancelled') {
-      return items.filter((item) => isCancelledAppointment(item))
-    }
+    if (tab === 'today') return items.filter((item) => isTodayAppointment(item))
+    if (tab === 'upcoming') return items.filter((item) => isLaterAppointment(item))
+    if (tab === 'cancelled') return items.filter((item) => isCancelledAppointment(item))
     return items
   }, [items, tab])
 
@@ -94,13 +92,13 @@ export default function ClientAppointments() {
   }
 
   const emptyCopy = {
+    today: {
+      title: 'No appointments scheduled for today.',
+      description: 'Sessions booked for today will appear here.',
+    },
     upcoming: {
       title: "You don't have any upcoming appointments.",
       description: 'Book a consultation when you are ready for your next visit.',
-    },
-    past: {
-      title: 'No past appointments yet',
-      description: 'Completed and previous visits will appear here.',
     },
     cancelled: {
       title: 'No cancelled appointments',
@@ -112,7 +110,7 @@ export default function ClientAppointments() {
     <div>
       <PageHeader
         title="My Appointments"
-        description="Review upcoming sessions, revisit past visits, and manage your bookings."
+        description="Review today's sessions, upcoming visits, and cancelled bookings."
         actions={
           <Button
             to="/client/appointments/book"
@@ -138,8 +136,8 @@ export default function ClientAppointments() {
           icon={CalendarPlus}
           title={emptyCopy[tab].title}
           description={emptyCopy[tab].description}
-          actionLabel={tab === 'upcoming' ? 'Book Appointment' : undefined}
-          actionTo={tab === 'upcoming' ? '/client/appointments/book' : undefined}
+          actionLabel={tab === 'today' || tab === 'upcoming' ? 'Book Appointment' : undefined}
+          actionTo={tab === 'today' || tab === 'upcoming' ? '/client/appointments/book' : undefined}
         />
       ) : (
         <div className="space-y-4">

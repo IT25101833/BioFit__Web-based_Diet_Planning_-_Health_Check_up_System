@@ -15,6 +15,13 @@ public class ClientDashboardDtos {
 
     public record NotificationItem(String icon, String title, String detail, String time, String tone) {}
 
+    public record CareRecommendation(
+            String assessmentId,
+            String advisorName,
+            String assessmentDate,
+            boolean nutrition,
+            boolean fitness) {}
+
     public record ReviewRequestItem(
             String id,
             String advisorName,
@@ -40,5 +47,6 @@ public class ClientDashboardDtos {
             List<HealthItem> health,
             List<ActivityItem> upcoming,
             List<NotificationItem> notifications,
-            ReviewRequestItem pendingReview) {}
+            ReviewRequestItem pendingReview,
+            CareRecommendation recommendation) {}
 }
