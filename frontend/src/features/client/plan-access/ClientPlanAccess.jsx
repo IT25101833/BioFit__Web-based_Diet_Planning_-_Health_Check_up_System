@@ -117,7 +117,7 @@ export default function ClientPlanAccess() {
                 </div>
               </div>
             ) : null}
-            {item.status === 'APPROVED' ? (
+            {item.status === 'ACCEPTED' || item.status === 'APPROVED' ? (
               <Button
                 type="button"
                 variant="outline"

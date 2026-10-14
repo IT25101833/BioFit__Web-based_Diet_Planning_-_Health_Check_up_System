@@ -60,7 +60,7 @@ export default function ClientDashboardPage() {
             <MedicalReviewRequestCard review={data.pendingReview} />
           ) : null}
           <CareRecommendationCard recommendation={data.recommendation} />
-          <PlanAccessRequestCard requests={planRequests} />
+          <PlanAccessRequestCard requests={planRequests} onChange={setPlanRequests} />
           <SummaryMetrics cards={data.summary} />
           <ProgrammeAppointment
             programme={data.programme}

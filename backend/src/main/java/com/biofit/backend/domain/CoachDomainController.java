@@ -114,6 +114,7 @@ public class CoachDomainController {
         existing.put("name", existing.get("name") + " (copy)");
         existing.put("status", "Draft");
         existing.remove("progress");
+        existing.put("resetSessionCompletion", true);
         return ApiResponse.ok(domainService.saveWorkoutPlanForCoach(principal, null, existing));
     }
 

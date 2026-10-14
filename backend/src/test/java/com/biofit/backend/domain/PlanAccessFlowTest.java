@@ -2,6 +2,7 @@ package com.biofit.backend.domain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -154,7 +155,7 @@ class PlanAccessFlowTest {
                 planAccessService.requestAccess(advisorPrincipal, client.getId(), PlanAccessRequest.NUTRITION_PLAN, null);
         assertTrue(
                 planAccessService.listForClient(clientPrincipal).stream()
-                        .anyMatch(row -> "Nutrition Plan".equals(row.get("resource")) && row.get("reason") != null));
+                        .anyMatch(row -> "Nutrition Plan".equals(row.get("resource")) && "PENDING".equals(row.get("status"))));
         planAccessService.decide(clientPrincipal, ((Number) nutritionRequest.get("id")).longValue(), "REJECTED", "Not now");
         assertDenied(advisorPrincipal, client.getId(), false, "Nutrition Plan access denied by client.");
 
@@ -174,6 +175,64 @@ class PlanAccessFlowTest {
         assertTrue(actions.contains("PLAN_ACCESS_APPROVE_NUTRITION"));
         assertTrue(actions.contains("PLAN_ACCESS_VIEW_NUTRITION"));
         assertTrue(actions.contains("PLAN_ACCESS_REVOKE_NUTRITION"));
+    }
+
+    @Test
+    void acceptedFitnessDoesNotGrantNutrition() {
+        User client = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull("nimali.silva@biofit.demo").orElseThrow();
+        User other = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull("sahan.desilva@biofit.demo").orElseThrow();
+        User advisor = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull("medical@biofit.local").orElseThrow();
+        attended(client, advisor, "apt-access-scope");
+
+        UserPrincipal advisorPrincipal = new UserPrincipal(advisor);
+        UserPrincipal clientPrincipal = new UserPrincipal(client);
+        UserPrincipal otherPrincipal = new UserPrincipal(other);
+
+        Map<String, Object> fitness =
+                planAccessService.requestAccess(advisorPrincipal, client.getId(), "FITNESS", "Review training load.");
+        Map<String, Object> nutrition =
+                planAccessService.requestAccess(advisorPrincipal, client.getId(), "NUTRITION", "Review meals.");
+        assertEquals("PENDING", fitness.get("status"));
+        assertEquals("Fitness Information", fitness.get("categoryLabel"));
+        assertEquals("Nutrition Information", nutrition.get("categoryLabel"));
+        assertTrue(
+                planAccessService.listForClient(clientPrincipal).stream()
+                        .anyMatch(row -> String.valueOf(fitness.get("id")).equals(String.valueOf(row.get("id"))) && "PENDING".equals(row.get("status"))));
+        assertTrue(
+                planAccessService.listForClient(clientPrincipal).stream()
+                        .anyMatch(row -> String.valueOf(nutrition.get("id")).equals(String.valueOf(row.get("id"))) && "PENDING".equals(row.get("status"))));
+
+        assertThrows(ApiException.class, () -> planAccessService.viewWorkoutPlan(advisorPrincipal, client.getId()));
+        assertThrows(
+                ApiException.class,
+                () ->
+                        planAccessService.decide(
+                                otherPrincipal, ((Number) fitness.get("id")).longValue(), "ACCEPTED", null));
+
+        Map<String, Object> accepted =
+                planAccessService.decide(
+                        clientPrincipal, ((Number) fitness.get("id")).longValue(), "ACCEPTED", null);
+        assertEquals("ACCEPTED", accepted.get("status"));
+        assertNotNull(planAccessService.viewWorkoutPlan(advisorPrincipal, client.getId()));
+        ApiException nutritionDenied =
+                assertThrows(ApiException.class, () -> planAccessService.viewNutritionPlan(advisorPrincipal, client.getId()));
+        assertEquals(HttpStatus.FORBIDDEN, nutritionDenied.getStatus());
+
+        Map<String, Object> rejected =
+                planAccessService.decide(
+                        clientPrincipal, ((Number) nutrition.get("id")).longValue(), "REJECTED", null);
+        assertEquals("REJECTED", rejected.get("status"));
+        assertThrows(
+                ApiException.class,
+                () -> planAccessService.viewNutritionPlan(advisorPrincipal, client.getId()));
+        ApiException duplicate =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                planAccessService.decide(
+                                        clientPrincipal, ((Number) fitness.get("id")).longValue(), "ACCEPTED", null));
+        assertEquals(HttpStatus.CONFLICT, duplicate.getStatus());
+        assertThrows(ApiException.class, () -> planAccessService.viewWorkoutPlan(advisorPrincipal, other.getId()));
     }
 
     private void attended(User client, User advisor, String id) {

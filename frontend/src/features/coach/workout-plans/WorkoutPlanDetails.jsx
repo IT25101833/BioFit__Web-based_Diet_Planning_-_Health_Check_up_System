@@ -74,7 +74,11 @@ export default function WorkoutPlanDetails() {
         <Summary label="Current week" value={weekLabel(plan.currentWeek)} />
         <Summary
           label="Completion"
-          value={plan.progress == null || plan.progress === '' ? '—' : `${plan.progress}%`}
+          value={
+            Number(plan.scheduledSessions || 0) === 0 || plan.completionPercent == null
+              ? 'Not recorded'
+              : `${plan.completionPercent}%`
+          }
         />
         <Summary label="Sessions / week" value={plan.sessionsPerWeek || '—'} />
         <Summary label="Difficulty" value={plan.difficulty || '—'} />
@@ -82,10 +86,10 @@ export default function WorkoutPlanDetails() {
       </div>
 
       <SectionCard title="Plan summary" className="mb-4">
-        {plan.progress == null || plan.progress === '' || Number(plan.progress) === 0 ? (
+        {Number(plan.scheduledSessions || 0) === 0 || plan.completionPercent == null ? (
           <p className="text-sm text-[#6b7280]">Completion has not been recorded.</p>
         ) : (
-          <ProgressBar value={plan.progress} label="Overall completion" />
+          <ProgressBar value={plan.completionPercent} label="Overall completion" />
         )}
         <p className="mt-3 text-sm text-[#4b5563]">{plan.description}</p>
       </SectionCard>
@@ -97,7 +101,7 @@ export default function WorkoutPlanDetails() {
               <div key={week.id} className="rounded-2xl border border-[#eef2f0] p-4">
                 <h3 className="font-display text-base font-bold text-[#111827]">{week.label}</h3>
                 <div className="mt-3 space-y-2">
-                  {week.days.map((day) => {
+                  {(week.days || []).map((day) => {
                     const key = `${week.id}-${day.id}`
                     const open = expanded[key]
                     return (
@@ -112,27 +116,41 @@ export default function WorkoutPlanDetails() {
                           <span className="text-sm font-semibold text-[#111827]">
                             {[day.day, day.title].filter(Boolean).join(' · ')}
                           </span>
-                          <span className="text-[12px] text-[#005a40]">
-                            {open ? 'Hide' : 'Expand'}
+                          <span className="flex items-center gap-2">
+                            <StatusBadge status={day.status || 'SCHEDULED'} />
+                            <span className="text-[12px] text-[#005a40]">
+                              {open ? 'Hide' : 'Expand'}
+                            </span>
                           </span>
                         </button>
                         {open ? (
+                          (Array.isArray(day.exercises) ? day.exercises : []).length === 0 ? (
+                            <p className="border-t border-[#eef2f0] px-4 py-3 text-sm text-[#6b7280]">
+                              No exercises have been added to this session.
+                            </p>
+                          ) : (
                           <ul className="space-y-2 border-t border-[#eef2f0] px-4 py-3">
-                            {(Array.isArray(day.exercises) ? day.exercises : []).map((ex, index) => (
-                              <li key={`${ex.exerciseId}-${index}`} className="text-sm text-[#4b5563]">
-                                <span className="font-semibold text-[#111827]">{ex.name}</span>
+                            {day.exercises.map((ex, index) => (
+                              <li key={`${ex.exerciseId || ex.name}-${index}`} className="text-sm text-[#4b5563]">
+                                <span className="font-semibold text-[#111827]">{ex.name || 'Exercise'}</span>
                                 {' · '}
                                 {[
                                   ex.sets && `${ex.sets} sets`,
-                                  ex.reps && `${ex.reps} reps`,
+                                  (ex.reps || ex.repetitions) && `${ex.reps || ex.repetitions} reps`,
                                   ex.duration,
                                   ex.rest && `Rest ${ex.rest}`,
                                 ]
                                   .filter(Boolean)
                                   .join(' · ')}
+                                {ex.notes || ex.instructions ? (
+                                  <p className="mt-1 text-[12px] text-[#6b7280]">
+                                    {ex.notes || ex.instructions}
+                                  </p>
+                                ) : null}
                               </li>
                             ))}
                           </ul>
+                          )
                         ) : null}
                       </div>
                     )

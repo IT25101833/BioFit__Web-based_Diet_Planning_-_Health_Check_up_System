@@ -5,8 +5,42 @@ import Input from '../../../../components/ui/Input'
 import SectionCard from '../../../../components/ui/SectionCard'
 import Select from '../../../../components/ui/Select'
 import TextArea from '../../../../components/ui/TextArea'
-import { fetchExercises } from '../../exercises/data/exerciseData'
+import {
+  PAST_DATE_MESSAGE,
+  isDateBeforeToday,
+  isValidIsoDate,
+  localTodayIso,
+} from '../../../booking/bookingEngine'
 import { getClientOptions } from '../data/workoutPlanData'
+import { fetchExercises } from '../../exercises/data/exerciseData'
+
+function isoDate(value) {
+  return String(value || '').trim().slice(0, 10)
+}
+
+function dateFieldErrors(
+  startValue,
+  endValue,
+  { mode = 'create', originalStart = '', requireBoth = true } = {},
+) {
+  const next = {}
+  const start = isoDate(startValue)
+  const end = isoDate(endValue)
+  const keptOriginalStart = mode === 'edit' && start && start === isoDate(originalStart)
+
+  if (!start) {
+    if (requireBoth) next.startDate = 'Start date is required.'
+  } else if (!isValidIsoDate(start)) next.startDate = 'Please enter a valid start date.'
+  else if (!keptOriginalStart && isDateBeforeToday(start)) next.startDate = PAST_DATE_MESSAGE
+
+  if (!end) {
+    if (requireBoth) next.endDate = 'End date is required.'
+  } else if (!isValidIsoDate(end)) next.endDate = 'Please enter a valid end date.'
+  else if (start && isValidIsoDate(start) && end < start) {
+    next.endDate = 'End date cannot be before the start date.'
+  }
+  return next
+}
 
 function newDay() {
   return {
@@ -48,13 +82,13 @@ export default function WorkoutPlanForm({
 }) {
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState({})
-  const [exercises, setExercises] = useState([])
   const [clientOptions, setClientOptions] = useState([])
+  const [exerciseLibrary, setExerciseLibrary] = useState([])
   const selectedClient = clientOptions.find((c) => c.value === form.clientId)?.client
 
   useEffect(() => {
-    fetchExercises().then(setExercises).catch(() => setExercises([]))
     getClientOptions().then(setClientOptions).catch(() => setClientOptions([]))
+    fetchExercises().then(setExerciseLibrary).catch(() => setExerciseLibrary([]))
   }, [])
 
   useEffect(() => {
@@ -71,15 +105,33 @@ export default function WorkoutPlanForm({
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'startDate' || field === 'endDate') {
+      const start = field === 'startDate' ? value : form.startDate
+      const end = field === 'endDate' ? value : form.endDate
+      const dateErrors = dateFieldErrors(start, end, {
+        mode,
+        originalStart: initialValues?.startDate,
+        requireBoth: false,
+      })
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next.startDate
+        delete next.endDate
+        return { ...next, ...dateErrors }
+      })
+    }
   }
 
   function validate(status) {
-    const next = {}
+    const next = {
+      ...dateFieldErrors(form.startDate, form.endDate, {
+        mode,
+        originalStart: initialValues?.startDate,
+      }),
+    }
     if (!form.clientId) next.clientId = 'Select a client.'
     if (!form.name.trim()) next.name = 'Plan name is required.'
     if (!form.goal.trim()) next.goal = 'Goal is required.'
-    if (!form.startDate) next.startDate = 'Start date is required.'
-    if (!form.endDate) next.endDate = 'End date is required.'
     if (status === 'Active' && !form.weeks?.some((w) => w.days?.length)) {
       next.weeks = 'Add at least one session before activating.'
     }
@@ -110,6 +162,22 @@ export default function WorkoutPlanForm({
     setForm((prev) => ({
       ...prev,
       weeks: prev.weeks.map((week) => (week.id === weekId ? updater(week) : week)),
+    }))
+  }
+
+  function patchExercise(weekId, dayId, index, patch) {
+    updateWeek(weekId, (week) => ({
+      ...week,
+      days: week.days.map((day) =>
+        day.id === dayId
+          ? {
+              ...day,
+              exercises: day.exercises.map((item, itemIndex) =>
+                itemIndex === index ? { ...item, ...patch } : item,
+              ),
+            }
+          : day,
+      ),
     }))
   }
 
@@ -209,7 +277,8 @@ export default function WorkoutPlanForm({
             type="date"
             label="Start date"
             required
-            value={form.startDate}
+            min={mode === 'create' ? localTodayIso() : undefined}
+            value={isoDate(form.startDate)}
             onChange={(e) => update('startDate', e.target.value)}
             error={errors.startDate}
           />
@@ -217,7 +286,12 @@ export default function WorkoutPlanForm({
             type="date"
             label="End date"
             required
-            value={form.endDate}
+            min={
+              isValidIsoDate(isoDate(form.startDate))
+                ? isoDate(form.startDate)
+                : localTodayIso()
+            }
+            value={isoDate(form.endDate)}
             onChange={(e) => update('endDate', e.target.value)}
             error={errors.endDate}
           />
@@ -320,125 +394,96 @@ export default function WorkoutPlanForm({
                     </div>
 
                     <div className="mt-3 space-y-2">
-                      {day.exercises.map((ex, index) => (
+                      {day.exercises.map((ex, index) => {
+                        const listId = `exercise-library-${day.id}-${index}`
+                        return (
                         <div
                           key={`${day.id}-${index}`}
-                          className="grid gap-2 rounded-xl border border-[#e8ecf1] bg-white p-3 sm:grid-cols-6"
+                          className="space-y-2 rounded-xl border border-[#e8ecf1] bg-white p-3"
                         >
-                          <Select
-                            className="sm:col-span-2"
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+                          <div className="sm:col-span-2">
+                          <Input
                             label="Exercise"
-                            value={ex.exerciseId}
+                            value={ex.name}
+                            list={listId}
+                            placeholder="Type a name or choose from the library"
                             onChange={(e) => {
-                              const selected = exercises.find((item) => item.id === e.target.value)
-                              updateWeek(week.id, (w) => ({
-                                ...w,
-                                days: w.days.map((d) =>
-                                  d.id === day.id
-                                    ? {
-                                        ...d,
-                                        exercises: d.exercises.map((item, i) =>
-                                          i === index
-                                            ? {
-                                                ...item,
-                                                exerciseId: e.target.value,
-                                                name: selected?.name || '',
-                                              }
-                                            : item,
-                                        ),
-                                      }
-                                    : d,
-                                ),
-                              }))
+                              const name = e.target.value
+                              const match = exerciseLibrary.find(
+                                (item) => item.name?.toLowerCase() === name.trim().toLowerCase(),
+                              )
+                              patchExercise(week.id, day.id, index, {
+                                name,
+                                exerciseId: match?.id || '',
+                                sets: ex.sets || match?.sets || '',
+                                reps: ex.reps || match?.reps || '',
+                                duration: ex.duration || match?.duration || '',
+                                rest: ex.rest || match?.rest || '',
+                                notes: ex.notes || match?.instructions || '',
+                              })
                             }}
-                            options={exercises.map((item) => ({
-                              value: item.id,
-                              label: item.name,
-                            }))}
                           />
+                          <datalist id={listId}>
+                            {exerciseLibrary.map((item) => (
+                              <option key={item.id} value={item.name} />
+                            ))}
+                          </datalist>
+                          </div>
                           <Input
                             label="Sets"
                             value={ex.sets}
-                            onChange={(e) =>
-                              updateWeek(week.id, (w) => ({
-                                ...w,
-                                days: w.days.map((d) =>
-                                  d.id === day.id
-                                    ? {
-                                        ...d,
-                                        exercises: d.exercises.map((item, i) =>
-                                          i === index ? { ...item, sets: e.target.value } : item,
-                                        ),
-                                      }
-                                    : d,
-                                ),
-                              }))
-                            }
+                            onChange={(e) => patchExercise(week.id, day.id, index, { sets: e.target.value })}
                           />
                           <Input
                             label="Reps"
                             value={ex.reps}
-                            onChange={(e) =>
-                              updateWeek(week.id, (w) => ({
-                                ...w,
-                                days: w.days.map((d) =>
-                                  d.id === day.id
-                                    ? {
-                                        ...d,
-                                        exercises: d.exercises.map((item, i) =>
-                                          i === index ? { ...item, reps: e.target.value } : item,
-                                        ),
-                                      }
-                                    : d,
-                                ),
-                              }))
-                            }
+                            onChange={(e) => patchExercise(week.id, day.id, index, { reps: e.target.value })}
                           />
                           <Input
                             label="Duration"
                             value={ex.duration}
                             onChange={(e) =>
+                              patchExercise(week.id, day.id, index, { duration: e.target.value })
+                            }
+                          />
+                          <Input
+                            label="Rest"
+                            value={ex.rest}
+                            onChange={(e) => patchExercise(week.id, day.id, index, { rest: e.target.value })}
+                          />
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                          <TextArea
+                            label="Instructions"
+                            rows={2}
+                            value={ex.notes || ''}
+                            onChange={(e) => patchExercise(week.id, day.id, index, { notes: e.target.value })}
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="!bg-[#fff7ed] !text-[#b45309]"
+                            onClick={() =>
                               updateWeek(week.id, (w) => ({
                                 ...w,
                                 days: w.days.map((d) =>
                                   d.id === day.id
                                     ? {
                                         ...d,
-                                        exercises: d.exercises.map((item, i) =>
-                                          i === index
-                                            ? { ...item, duration: e.target.value }
-                                            : item,
-                                        ),
+                                        exercises: d.exercises.filter((_, i) => i !== index),
                                       }
                                     : d,
                                 ),
                               }))
                             }
-                          />
-                          <div className="flex items-end">
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="!bg-[#fff7ed] !text-[#b45309]"
-                              onClick={() =>
-                                updateWeek(week.id, (w) => ({
-                                  ...w,
-                                  days: w.days.map((d) =>
-                                    d.id === day.id
-                                      ? {
-                                          ...d,
-                                          exercises: d.exercises.filter((_, i) => i !== index),
-                                        }
-                                      : d,
-                                  ),
-                                }))
-                              }
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
 
                     <Button

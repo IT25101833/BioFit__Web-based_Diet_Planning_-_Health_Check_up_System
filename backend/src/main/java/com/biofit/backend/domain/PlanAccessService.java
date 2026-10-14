@@ -52,7 +52,7 @@ public class PlanAccessService {
         if (latest != null && PlanAccessRequest.PENDING.equals(latest.getStatus())) {
             return mapRequest(latest);
         }
-        if (latest != null && PlanAccessRequest.APPROVED.equals(latest.getStatus())) {
+        if (latest != null && isGranted(latest.getStatus())) {
             throw new ApiException("CONFLICT", "Access is already approved.", HttpStatus.CONFLICT);
         }
         User client = userRepository.findById(clientUserId).orElse(null);
@@ -65,7 +65,7 @@ public class PlanAccessService {
         request.setResourceType(type);
         request.setStatus(PlanAccessRequest.PENDING);
         request.setRequestedAt(Instant.now());
-        request.setReason(reasonText(reason, type));
+        request.setReason(blankToNull(reason));
         planAccessRequestRepository.save(request);
         notifyClient(request);
         audit(
@@ -117,12 +117,14 @@ public class PlanAccessService {
             request.setRejectionReason(blankToNull(rejectionReason));
         }
         planAccessRequestRepository.save(request);
+        boolean granted = isGranted(next);
         boolean workout = isWorkout(request.getResourceType());
         String action =
-                PlanAccessRequest.APPROVED.equals(next)
+                granted
                         ? (workout ? "PLAN_ACCESS_APPROVE_WORKOUT" : "PLAN_ACCESS_APPROVE_NUTRITION")
                         : (workout ? "PLAN_ACCESS_REJECT_WORKOUT" : "PLAN_ACCESS_REJECT_NUTRITION");
         audit(principal.getId(), action, String.valueOf(request.getId()), next + " " + label(request.getResourceType()));
+        notifyAdvisor(request, granted);
         return mapRequest(request);
     }
 
@@ -130,7 +132,7 @@ public class PlanAccessService {
     public Map<String, Object> revoke(UserPrincipal principal, Long requestId) {
         PlanAccessRequest request = require(requestId);
         assertClientOwner(principal, request);
-        if (!PlanAccessRequest.APPROVED.equals(request.getStatus())) {
+        if (!isGranted(request.getStatus())) {
             throw new ApiException("CONFLICT", "Only approved access can be revoked.", HttpStatus.CONFLICT);
         }
         request.setStatus(PlanAccessRequest.REVOKED);
@@ -185,12 +187,12 @@ public class PlanAccessService {
 
     private void assertApproved(Long advisorUserId, Long clientUserId, String resourceType) {
         PlanAccessRequest latest = latest(advisorUserId, clientUserId, resourceType).orElse(null);
-        if (latest != null && PlanAccessRequest.APPROVED.equals(latest.getStatus())) return;
+        if (latest != null && isGranted(latest.getStatus())) return;
         throw new ApiException("FORBIDDEN", denialMessage(latest, resourceType), HttpStatus.FORBIDDEN);
     }
 
     private String denialMessage(PlanAccessRequest latest, String resourceType) {
-        if (latest != null && PlanAccessRequest.APPROVED.equals(latest.getStatus())) return null;
+        if (latest != null && isGranted(latest.getStatus())) return null;
         boolean workout = isWorkout(resourceType);
         if (latest != null && PlanAccessRequest.PENDING.equals(latest.getStatus())) {
             return workout
@@ -222,7 +224,7 @@ public class PlanAccessService {
             block.put("message", "Access required");
             return block;
         }
-        block.put("status", latest.getStatus());
+        block.put("status", displayStatus(latest.getStatus()));
         block.put("requestId", latest.getId());
         block.put("requestedAt", latest.getRequestedAt() == null ? null : latest.getRequestedAt().toString());
         block.put("respondedAt", latest.getRespondedAt() == null ? null : latest.getRespondedAt().toString());
@@ -240,10 +242,13 @@ public class PlanAccessService {
         row.put("clientName", request.getClientName());
         row.put("requestedBy", request.getAdvisorName() == null ? "Medical Advisor" : request.getAdvisorName());
         row.put("advisorUserId", request.getAdvisorUserId());
+        boolean workout = isWorkout(request.getResourceType());
         row.put("resourceType", request.getResourceType());
         row.put("resource", label(request.getResourceType()));
+        row.put("category", workout ? "FITNESS" : "NUTRITION");
+        row.put("categoryLabel", workout ? "Fitness Information" : "Nutrition Information");
         row.put("planType", request.getResourceType());
-        row.put("status", request.getStatus());
+        row.put("status", displayStatus(request.getStatus()));
         row.put("reason", request.getReason());
         row.put("requestedAt", request.getRequestedAt() == null ? null : request.getRequestedAt().toString());
         row.put("respondedAt", request.getRespondedAt() == null ? null : request.getRespondedAt().toString());
@@ -319,26 +324,50 @@ public class PlanAccessService {
             throw new ApiException("VALIDATION_ERROR", "Decision is required.", HttpStatus.BAD_REQUEST);
         }
         String value = raw.trim().toUpperCase(Locale.ROOT);
-        if ("APPROVE".equals(value) || PlanAccessRequest.APPROVED.equals(value)) return PlanAccessRequest.APPROVED;
+        if ("APPROVE".equals(value)
+                || PlanAccessRequest.APPROVED.equals(value)
+                || "ACCEPT".equals(value)
+                || PlanAccessRequest.ACCEPTED.equals(value)) {
+            return PlanAccessRequest.ACCEPTED;
+        }
         if ("REJECT".equals(value) || PlanAccessRequest.REJECTED.equals(value)) return PlanAccessRequest.REJECTED;
-        throw new ApiException("VALIDATION_ERROR", "Decision must be APPROVED or REJECTED.", HttpStatus.BAD_REQUEST);
+        throw new ApiException("VALIDATION_ERROR", "Decision must be ACCEPTED or REJECTED.", HttpStatus.BAD_REQUEST);
     }
 
     private static boolean isWorkout(String resourceType) {
         return PlanAccessRequest.WORKOUT_PLAN.equals(resourceType);
     }
 
-    private static String label(String resourceType) {
-        return isWorkout(resourceType) ? "Workout Plan" : "Nutrition Plan";
+    private static boolean isGranted(String status) {
+        return PlanAccessRequest.ACCEPTED.equals(status) || PlanAccessRequest.APPROVED.equals(status);
     }
 
-    private static String reasonText(String reason, String resourceType) {
-        String trimmed = blankToNull(reason);
-        if (trimmed != null) return trimmed;
-        if (isWorkout(resourceType)) {
-            return "Medical Advisor requested access to review your workout plan for health and safety purposes.";
-        }
-        return "Medical Advisor requested access to review your nutrition plan for health and safety purposes.";
+    private static String displayStatus(String status) {
+        return isGranted(status) ? PlanAccessRequest.ACCEPTED : status;
+    }
+
+    private void notifyAdvisor(PlanAccessRequest request, boolean accepted) {
+        NotificationEntity notice = new NotificationEntity();
+        notice.setId("ntf-" + UUID.randomUUID().toString().substring(0, 8));
+        notice.setUserId(request.getAdvisorUserId());
+        notice.setAudience("MEDICAL");
+        notice.setType("plan-access");
+        notice.setTitle(accepted ? "Access request accepted" : "Access request rejected");
+        String clientName = request.getClientName() == null ? "The client" : request.getClientName();
+        notice.setBody(
+                clientName
+                        + (accepted ? " accepted" : " rejected")
+                        + " your request to view their "
+                        + label(request.getResourceType())
+                        + ".");
+        notice.setLink("/medical/plan-access?clientUserId=" + request.getClientUserId());
+        notice.setReadFlag(false);
+        notice.setCreatedAt(Instant.now());
+        notificationRepository.save(notice);
+    }
+
+    private static String label(String resourceType) {
+        return isWorkout(resourceType) ? "Workout Plan" : "Nutrition Plan";
     }
 
     private void notifyClient(PlanAccessRequest request) {

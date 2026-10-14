@@ -24,6 +24,8 @@ public class PlanAccessRequest {
     public static final String NUTRITION_PLAN = "NUTRITION_PLAN";
 
     public static final String PENDING = "PENDING";
+    /** Current client decision. Older rows may still store APPROVED. */
+    public static final String ACCEPTED = "ACCEPTED";
     public static final String APPROVED = "APPROVED";
     public static final String REJECTED = "REJECTED";
     public static final String REVOKED = "REVOKED";

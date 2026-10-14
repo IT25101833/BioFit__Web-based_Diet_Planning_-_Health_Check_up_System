@@ -414,49 +414,91 @@ public class DomainService {
             empty.put("assigned", false);
             empty.put("empty", true);
             empty.put("days", List.of());
+            empty.put("weeks", List.of());
+            empty.put("scheduledSessions", 0);
+            empty.put("completedSessions", 0);
             return empty;
         }
         Map<String, Object> m = mapper.workoutPlanListItem(plan);
         m.put("assigned", true);
-        m.put("coach", "");
-        m.put("weekLabel", plan.getCurrentWeek());
-        m.put("completionPercent", plan.getProgress() == null ? 0 : plan.getProgress());
-        Object parsed = mapper.parseJson(plan.getPlanJson(), Map.of());
-        if (parsed instanceof Map<?, ?> map) {
-            Object days = map.get("days");
-            Object weeks = map.get("weeks");
-            if (days != null) {
-                m.put("days", days);
-            } else if (weeks instanceof List<?> weekList && !weekList.isEmpty()) {
-                Object first = weekList.get(0);
-                if (first instanceof Map<?, ?> weekMap && weekMap.get("days") != null) {
-                    m.put("days", weekMap.get("days"));
-                } else {
-                    m.put("days", List.of());
-                }
-            } else {
-                m.put("days", List.of());
-            }
-        } else {
-            m.put("days", List.of());
-        }
+        applyWorkoutScheduleView(m, plan);
         return m;
     }
 
+    @Transactional
+    public Map<String, Object> updateClientWorkoutSession(
+            Long userId, String sessionId, Map<String, Object> body) {
+        if (userId == null) {
+            throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
+        }
+        if (isBlank(sessionId)) {
+            throw new ApiException("VALIDATION_ERROR", "Session is required.", HttpStatus.BAD_REQUEST);
+        }
+        String requested = normalizeSessionStatus(body == null ? null : body.get("status"));
+        if (!"COMPLETED".equals(requested)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Only a completed status can be recorded for a workout session.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        WorkoutPlanEntity plan = activeWorkoutPlanForClient(userId);
+        if (plan == null || !userId.equals(plan.getClientUserId())) {
+            throw new ApiException("NOT_FOUND", "Workout plan not found", HttpStatus.NOT_FOUND);
+        }
+        Map<String, Object> document = asStringObjectMap(mapper.parseJson(plan.getPlanJson(), Map.of()));
+        List<Map<String, Object>> weeks = scheduleWeeks(document);
+        boolean found = false;
+        boolean cancelled = false;
+        for (Map<String, Object> week : weeks) {
+            Object rawDays = week.get("days");
+            if (!(rawDays instanceof List<?> dayList)) continue;
+            for (Object rawDay : dayList) {
+                if (!(rawDay instanceof Map<?, ?> dayMap)) continue;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> day = (Map<String, Object>) dayMap;
+                if (!sessionId.equals(String.valueOf(day.get("id")))) continue;
+                found = true;
+                if ("CANCELLED".equals(String.valueOf(day.get("status")))) {
+                    cancelled = true;
+                    continue;
+                }
+                day.put("status", "COMPLETED");
+                day.put("completed", true);
+                day.put("completedAt", Instant.now().toString());
+            }
+        }
+        if (!found) {
+            throw new ApiException("NOT_FOUND", "Workout session not found", HttpStatus.NOT_FOUND);
+        }
+        if (cancelled) {
+            throw new ApiException(
+                    "CONFLICT", "Cancelled sessions cannot be marked completed.", HttpStatus.CONFLICT);
+        }
+        List<Map<String, Object>> days = flattenWorkoutDays(weeks);
+        WorkoutCompletion completion = workoutCompletion(days);
+        document.put("weeks", weeks);
+        document.put("days", days);
+        plan.setPlanJson(mapper.toJson(document));
+        plan.setProgress(completion.percent);
+        plan.setUpdatedAt(Instant.now());
+        workoutPlanRepository.save(plan);
+        writeAudit(userId, "WORKOUT_SESSION_COMPLETED", "WorkoutPlan", plan.getId(), sessionId);
+        return clientWorkoutPlan(userId);
+    }
+
     public Map<String, Object> clientFitnessProgress(Long userId) {
-        WorkoutPlanEntity plan =
-                workoutPlanRepository
-                        .findFirstByClientUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(userId, "Active")
-                        .orElse(null);
-        int progress = plan != null && plan.getProgress() != null ? plan.getProgress() : 0;
+        Map<String, Object> planView = clientWorkoutPlan(userId);
+        boolean assigned = Boolean.TRUE.equals(planView.get("assigned"));
+        Object percent = planView.get("completionPercent");
+        int progress = percent instanceof Number number ? number.intValue() : 0;
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("participation", progress);
-        m.put("completedSessions", 0);
-        m.put("plannedSessions", plan != null && plan.getTotalWeeks() != null ? plan.getTotalWeeks() * 3 : 0);
-        m.put("programmeProgress", progress);
+        m.put("participation", assigned && percent != null ? progress : 0);
+        m.put("completedSessions", planView.getOrDefault("completedSessions", 0));
+        m.put("plannedSessions", planView.getOrDefault("scheduledSessions", 0));
+        m.put("programmeProgress", assigned && percent != null ? progress : 0);
         m.put("monthly", List.of());
         m.put("assessments", List.of());
-        m.put("assigned", plan != null);
+        m.put("assigned", assigned);
         return m;
     }
 
@@ -1128,8 +1170,26 @@ public class DomainService {
         p.setProgramme(isSeedProgrammeName(programme) ? "" : programme);
         p.setGoal(str(payload.get("goal")));
         p.setDifficulty(str(payload.get("difficulty")));
-        if (payload.get("startDate") != null) p.setStartDate(LocalDate.parse(str(payload.get("startDate"))));
-        if (payload.get("endDate") != null) p.setEndDate(LocalDate.parse(str(payload.get("endDate"))));
+        LocalDate previousStart = p.getStartDate();
+        LocalDate startDate = parsePlanDate(payload.get("startDate"), "Start date");
+        LocalDate endDate = parsePlanDate(payload.get("endDate"), "End date");
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Colombo"));
+        boolean creating = id == null;
+        boolean keepingExistingStart = previousStart != null && previousStart.equals(startDate);
+        if (startDate.isBefore(today) && (creating || !keepingExistingStart)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "Please select today or a future date. Past dates are not allowed.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (endDate.isBefore(startDate)) {
+            throw new ApiException(
+                    "VALIDATION_ERROR",
+                    "End date cannot be before the start date.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        p.setStartDate(startDate);
+        p.setEndDate(endDate);
         p.setSessionsPerWeek(asIntOrNull(payload.get("sessionsPerWeek")));
         p.setSessionDuration(blankToNull(str(payload.get("sessionDuration"))));
         p.setDescription(str(payload.get("description")));
@@ -1137,12 +1197,37 @@ public class DomainService {
         p.setTotalWeeks(asIntOrNull(payload.get("totalWeeks")));
         p.setProgress(asIntOrNull(payload.get("progress")));
         p.setStatus(str(payload.getOrDefault("status", "Draft")));
-        Object weeks = payload.getOrDefault("weeks", payload.get("days"));
-        p.setPlanJson(mapper.toJson(Map.of("weeks", weeks == null ? List.of() : weeks, "days", payload.getOrDefault("days", List.of()))));
+        Map<String, Object> existingDocument = asStringObjectMap(mapper.parseJson(p.getPlanJson(), Map.of()));
+        boolean resetCompletion = Boolean.TRUE.equals(payload.get("resetSessionCompletion"));
+        Object incomingSchedule =
+                payload.containsKey("weeks")
+                        ? payload.get("weeks")
+                        : payload.containsKey("days") ? payload.get("days") : existingDocument.get("weeks");
+        List<Map<String, Object>> weeks =
+                mergeWorkoutWeeks(incomingSchedule, existingDocument, resetCompletion);
+        List<Map<String, Object>> days = flattenWorkoutDays(weeks);
+        WorkoutCompletion completion = workoutCompletion(days);
+        Map<String, Object> document = new LinkedHashMap<>();
+        document.put("weeks", weeks);
+        document.put("days", days);
+        Object coachUserId =
+                payload.get("coachUserId") != null
+                        ? payload.get("coachUserId")
+                        : existingDocument.get("coachUserId");
+        String coachName = firstNonBlank(str(payload.get("coachName")), str(existingDocument.get("coachName")));
+        if (coachUserId != null) document.put("coachUserId", coachUserId);
+        if (!isBlank(coachName)) document.put("coachName", coachName);
+        p.setPlanJson(mapper.toJson(document));
+        p.setProgress(completion.percent);
+        if (isBlank(p.getCurrentWeek()) && !weeks.isEmpty()) {
+            p.setCurrentWeek(str(weeks.get(0).get("label")));
+        }
         p.setUpdatedAt(Instant.now());
         workoutPlanRepository.save(p);
         writeAudit(null, id == null ? "WORKOUT_PLAN_CREATED" : "WORKOUT_PLAN_UPDATED", "WorkoutPlan", p.getId(), p.getName());
-        return mapper.workoutPlanListItem(p);
+        Map<String, Object> saved = mapper.workoutPlanListItem(p);
+        applyWorkoutScheduleView(saved, p);
+        return saved;
     }
 
     @Transactional
@@ -1208,8 +1293,8 @@ public class DomainService {
         p.setGoal(str(payload.get("goal")));
         p.setDescription(str(payload.get("description")));
         LocalDate previousStart = p.getStartDate();
-        LocalDate startDate = parseMealPlanDate(payload.get("startDate"), "Start date");
-        LocalDate endDate = parseMealPlanDate(payload.get("endDate"), "End date");
+        LocalDate startDate = parsePlanDate(payload.get("startDate"), "Start date");
+        LocalDate endDate = parsePlanDate(payload.get("endDate"), "End date");
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Colombo"));
         boolean creating = id == null;
         boolean keepingExistingStart = previousStart != null && previousStart.equals(startDate);
@@ -1248,7 +1333,7 @@ public class DomainService {
         return mapper.mealPlanListItem(p);
     }
 
-    private LocalDate parseMealPlanDate(Object value, String label) {
+    private LocalDate parsePlanDate(Object value, String label) {
         String raw = str(value);
         if (raw == null || raw.isBlank()) {
             throw new ApiException("VALIDATION_ERROR", label + " is required.", HttpStatus.BAD_REQUEST);
@@ -1857,20 +1942,40 @@ public class DomainService {
                     "Attend this client's appointment before viewing their workout plan.",
                     HttpStatus.NOT_FOUND);
         }
-        return mapper.workoutPlanListItem(plan);
+        Map<String, Object> view = mapper.workoutPlanListItem(plan);
+        applyWorkoutScheduleView(view, plan);
+        return view;
     }
 
     @Transactional
     public Map<String, Object> saveWorkoutPlanForCoach(
             UserPrincipal principal, String id, Map<String, Object> payload) {
-        Long clientUserId = resolveLinkedClientUserId(payload == null ? Map.of() : payload);
+        if (principal == null) {
+            throw new ApiException("UNAUTHORIZED", "Authentication required", HttpStatus.UNAUTHORIZED);
+        }
+        if (id != null) {
+            WorkoutPlanEntity existing =
+                    workoutPlanRepository
+                            .findById(id)
+                            .orElseThrow(
+                                    () -> new ApiException("NOT_FOUND", "Plan not found", HttpStatus.NOT_FOUND));
+            if (!coachPlanVisible(existing, coachAttendedClientIds(principal))) {
+                throw new ApiException(
+                        "FORBIDDEN", "You cannot update this workout plan.", HttpStatus.FORBIDDEN);
+            }
+        }
+        Map<String, Object> body = payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload);
+        User coach = userRepository.findById(principal.getId()).orElse(null);
+        body.put("coachUserId", principal.getId());
+        body.put("coachName", staffDisplayName(coach));
+        Long clientUserId = resolveLinkedClientUserId(body);
         if (clientUserId != null && !coachAttendedClientIds(principal).contains(clientUserId)) {
             throw new ApiException(
                     "FORBIDDEN",
                     "Attend this client's appointment before adding them to a workout plan.",
                     HttpStatus.FORBIDDEN);
         }
-        return saveWorkoutPlan(id, payload);
+        return saveWorkoutPlan(id, body);
     }
 
     @Transactional
@@ -3402,6 +3507,282 @@ public class DomainService {
                     "VALIDATION_ERROR",
                     "Appointment date cannot be in the past.",
                     HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private WorkoutPlanEntity activeWorkoutPlanForClient(Long userId) {
+        if (userId == null) return null;
+        return workoutPlanRepository
+                .findFirstByClientUserIdAndStatusIgnoreCaseOrderByUpdatedAtDesc(userId, "Active")
+                .or(() -> workoutPlanRepository.findByClientUserId(userId).stream().findFirst())
+                .orElse(null);
+    }
+
+    private void applyWorkoutScheduleView(Map<String, Object> target, WorkoutPlanEntity plan) {
+        Map<String, Object> document = asStringObjectMap(mapper.parseJson(plan.getPlanJson(), Map.of()));
+        List<Map<String, Object>> weeks = scheduleWeeks(document);
+        List<Map<String, Object>> days = flattenWorkoutDays(weeks);
+        WorkoutCompletion completion = workoutCompletion(days);
+        target.put("weeks", weeks);
+        target.put("days", days);
+        target.put("completedSessions", completion.completed);
+        target.put("scheduledSessions", completion.applicable);
+        target.put("cancelledSessions", completion.cancelled);
+        target.put("completionPercent", completion.percent);
+        target.put("progress", completion.percent);
+        String storedCoach = str(document.get("coachName"));
+        String coachName = firstNonBlank(storedCoach, inferCoachName(plan.getClientUserId()));
+        target.put("coach", coachName == null ? "" : coachName);
+        target.put("coachName", coachName == null ? "" : coachName);
+        Long coachUserId = asLong(document.get("coachUserId"));
+        if (coachUserId != null) target.put("coachUserId", coachUserId);
+        String weekLabel =
+                firstNonBlank(
+                        plan.getCurrentWeek(),
+                        weeks.isEmpty() ? null : str(weeks.get(0).get("label")));
+        target.put("weekLabel", weekLabel);
+        target.put("currentWeek", weekLabel);
+    }
+
+    private String inferCoachName(Long clientUserId) {
+        if (clientUserId == null) return "";
+        Appointment match = null;
+        for (Appointment appointment :
+                appointmentRepository.findByClientUserIdOrderByAppointmentDateAsc(clientUserId)) {
+            if (!"ATTENDED".equalsIgnoreCase(appointment.getAttendance())) continue;
+            if (!isCoachAppointment(appointment)) continue;
+            match = appointment;
+        }
+        if (match == null) return "";
+        if (match.getProfessionalUserId() != null) {
+            String name =
+                    staffDisplayName(userRepository.findById(match.getProfessionalUserId()).orElse(null));
+            if (!isBlank(name)) return name;
+        }
+        return firstNonBlank(match.getProfessional(), "");
+    }
+
+    private List<Map<String, Object>> mergeWorkoutWeeks(
+            Object incoming, Map<String, Object> existingDocument, boolean resetCompletion) {
+        Map<String, Map<String, Object>> prior = new LinkedHashMap<>();
+        if (!resetCompletion) {
+            for (Map<String, Object> day : flattenWorkoutDays(scheduleWeeks(existingDocument))) {
+                Object id = day.get("id");
+                if (id != null && !String.valueOf(id).isBlank()) {
+                    prior.put(String.valueOf(id), day);
+                }
+            }
+        }
+        List<?> source = incoming instanceof List<?> list ? list : List.of();
+        boolean weekShaped = source.isEmpty() || isWeekList(source);
+        List<Object> weeks = new ArrayList<>();
+        if (weekShaped) {
+            weeks.addAll(source);
+        } else {
+            Map<String, Object> wrapped = new LinkedHashMap<>();
+            wrapped.put("id", "w-1");
+            wrapped.put("label", "Week 1");
+            wrapped.put("weekNumber", 1);
+            wrapped.put("days", source);
+            weeks.add(wrapped);
+        }
+        Map<String, Object> temp = new LinkedHashMap<>();
+        temp.put("weeks", weeks);
+        List<Map<String, Object>> normalized = scheduleWeeks(temp);
+        for (Map<String, Object> week : normalized) {
+            Object rawDays = week.get("days");
+            if (!(rawDays instanceof List<?> dayList)) continue;
+            for (Object rawDay : dayList) {
+                if (!(rawDay instanceof Map<?, ?> dayMap)) continue;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> day = (Map<String, Object>) dayMap;
+                if (resetCompletion) {
+                    day.put("id", "ses-" + UUID.randomUUID().toString().substring(0, 8));
+                    day.put("status", "SCHEDULED");
+                    day.put("completed", false);
+                    day.remove("completedAt");
+                    continue;
+                }
+                Map<String, Object> previous = prior.get(String.valueOf(day.get("id")));
+                if (previous == null) continue;
+                String status = normalizeSessionStatus(previous.get("status"));
+                day.put("status", status);
+                day.put("completed", "COMPLETED".equals(status));
+                if (previous.get("completedAt") != null) {
+                    day.put("completedAt", previous.get("completedAt"));
+                }
+            }
+        }
+        return normalized;
+    }
+
+    private List<Map<String, Object>> scheduleWeeks(Map<String, Object> document) {
+        Object weeksObj = document.get("weeks");
+        if (weeksObj instanceof List<?> weekList && !weekList.isEmpty()) {
+            return copyWeeks(weekList);
+        }
+        Object daysObj = document.get("days");
+        if (daysObj instanceof List<?> dayList && !dayList.isEmpty()) {
+            Map<String, Object> week = new LinkedHashMap<>();
+            week.put("id", "w-1");
+            week.put("label", "Week 1");
+            week.put("weekNumber", 1);
+            week.put("days", dayList);
+            return copyWeeks(List.of(week));
+        }
+        return List.of();
+    }
+
+    private boolean isWeekList(List<?> list) {
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map && map.containsKey("days")) return true;
+        }
+        return false;
+    }
+
+    private List<Map<String, Object>> copyWeeks(List<?> weekList) {
+        List<Map<String, Object>> weeks = new ArrayList<>();
+        int seen = 0;
+        for (Object weekObj : weekList) {
+            if (!(weekObj instanceof Map<?, ?>)) continue;
+            seen++;
+            Map<String, Object> source = asStringObjectMap(weekObj);
+            int weekNumber = asInt(source.get("weekNumber"), seen);
+            String label = firstNonBlank(str(source.get("label")), "Week " + weekNumber);
+            String weekId = firstNonBlank(str(source.get("id")), "w-" + weekNumber);
+            Map<String, Object> week = new LinkedHashMap<>();
+            week.put("id", weekId);
+            week.put("label", label);
+            week.put("weekNumber", weekNumber);
+            List<Map<String, Object>> days = new ArrayList<>();
+            Object rawDays = source.get("days");
+            int dayIndex = 0;
+            if (rawDays instanceof List<?> dayList) {
+                for (Object rawDay : dayList) {
+                    if (!(rawDay instanceof Map<?, ?>)) continue;
+                    dayIndex++;
+                    days.add(copySession(asStringObjectMap(rawDay), weekNumber, label, weekId, dayIndex));
+                }
+            }
+            week.put("days", days);
+            weeks.add(week);
+        }
+        return weeks;
+    }
+
+    private Map<String, Object> copySession(
+            Map<String, Object> source, int weekNumber, String weekLabel, String weekId, int dayIndex) {
+        Map<String, Object> day = new LinkedHashMap<>();
+        String title =
+                firstNonBlank(str(source.get("title")), str(source.get("sessionName")), str(source.get("focus")));
+        String status = normalizeSessionStatus(source.get("status"));
+        day.put("id", firstNonBlank(str(source.get("id")), weekId + "-d" + dayIndex));
+        day.put("day", nullTo(firstNonBlank(str(source.get("day")), str(source.get("scheduledDay"))), ""));
+        day.put("title", nullTo(title, ""));
+        day.put("sessionName", nullTo(title, ""));
+        day.put("focus", nullTo(firstNonBlank(str(source.get("focus")), title), ""));
+        day.put("weekNumber", weekNumber);
+        day.put("weekLabel", weekLabel);
+        day.put("weekId", weekId);
+        day.put("status", status);
+        day.put("completed", "COMPLETED".equals(status));
+        if (!isBlank(str(source.get("completedAt")))) day.put("completedAt", str(source.get("completedAt")));
+        if (!isBlank(str(source.get("scheduledDate")))) day.put("scheduledDate", str(source.get("scheduledDate")));
+        List<Map<String, Object>> exercises = new ArrayList<>();
+        Object rawExercises = source.get("exercises");
+        if (rawExercises instanceof List<?> list) {
+            int order = 0;
+            for (Object raw : list) {
+                if (!(raw instanceof Map<?, ?>)) continue;
+                order++;
+                exercises.add(copyExercise(asStringObjectMap(raw), order));
+            }
+        }
+        day.put("exercises", exercises);
+        return day;
+    }
+
+    private Map<String, Object> copyExercise(Map<String, Object> source, int order) {
+        Map<String, Object> exercise = new LinkedHashMap<>();
+        String notes = firstNonBlank(str(source.get("notes")), str(source.get("instructions")));
+        String reps = firstNonBlank(str(source.get("reps")), str(source.get("repetitions")));
+        exercise.put("exerciseId", nullTo(str(source.get("exerciseId")), ""));
+        exercise.put("name", nullTo(str(source.get("name")), ""));
+        exercise.put("order", source.get("order") == null ? order : source.get("order"));
+        exercise.put("sets", source.get("sets") == null ? "" : source.get("sets"));
+        exercise.put("reps", nullTo(reps, ""));
+        exercise.put("repetitions", nullTo(reps, ""));
+        exercise.put("duration", source.get("duration") == null ? "" : source.get("duration"));
+        exercise.put("rest", nullTo(str(source.get("rest")), ""));
+        if (source.get("restSeconds") != null) exercise.put("restSeconds", source.get("restSeconds"));
+        exercise.put("notes", nullTo(notes, ""));
+        exercise.put("instructions", nullTo(notes, ""));
+        return exercise;
+    }
+
+    private List<Map<String, Object>> flattenWorkoutDays(List<Map<String, Object>> weeks) {
+        List<Map<String, Object>> days = new ArrayList<>();
+        for (Map<String, Object> week : weeks) {
+            Object raw = week.get("days");
+            if (!(raw instanceof List<?> list)) continue;
+            for (Object day : list) {
+                if (day instanceof Map<?, ?> map) days.add(asStringObjectMap(map));
+            }
+        }
+        return days;
+    }
+
+    private WorkoutCompletion workoutCompletion(List<Map<String, Object>> days) {
+        int completed = 0;
+        int applicable = 0;
+        int cancelled = 0;
+        for (Map<String, Object> day : days) {
+            String status = normalizeSessionStatus(day.get("status"));
+            if ("CANCELLED".equals(status)) {
+                cancelled++;
+                continue;
+            }
+            applicable++;
+            if ("COMPLETED".equals(status)) completed++;
+        }
+        Integer percent = applicable == 0 ? null : (int) Math.round(completed * 100.0 / applicable);
+        return new WorkoutCompletion(completed, applicable, cancelled, percent);
+    }
+
+    private String normalizeSessionStatus(Object raw) {
+        String value = str(raw);
+        if (isBlank(value)) return "SCHEDULED";
+        String normalized = value.trim().toUpperCase(Locale.ROOT).replace(' ', '_').replace('-', '_');
+        return switch (normalized) {
+            case "COMPLETED", "COMPLETE", "DONE" -> "COMPLETED";
+            case "IN_PROGRESS", "INPROGRESS", "STARTED" -> "IN_PROGRESS";
+            case "CANCELLED", "CANCELED" -> "CANCELLED";
+            default -> "SCHEDULED";
+        };
+    }
+
+    private Map<String, Object> asStringObjectMap(Object value) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        if (value instanceof Map<?, ?> map) {
+            map.forEach(
+                    (key, item) -> {
+                        if (key != null) copy.put(String.valueOf(key), item);
+                    });
+        }
+        return copy;
+    }
+
+    private static final class WorkoutCompletion {
+        private final int completed;
+        private final int applicable;
+        private final int cancelled;
+        private final Integer percent;
+
+        private WorkoutCompletion(int completed, int applicable, int cancelled, Integer percent) {
+            this.completed = completed;
+            this.applicable = applicable;
+            this.cancelled = cancelled;
+            this.percent = percent;
         }
     }
 

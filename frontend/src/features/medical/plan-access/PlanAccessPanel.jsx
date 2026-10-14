@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Button from '../../../components/ui/Button'
+import Modal from '../../../components/ui/Modal'
 import SectionCard from '../../../components/ui/SectionCard'
-import StatusBadge from '../../../components/ui/StatusBadge'
 import TextArea from '../../../components/ui/TextArea'
 import ClientMealPlan from '../../client/nutrition/ClientMealPlan'
 import ClientWorkoutPlan from '../../client/workout/ClientWorkoutPlan'
@@ -12,24 +12,32 @@ import {
   requestPlanAccess,
 } from './data/planAccessData'
 
-const DEFAULT_REASONS = {
-  WORKOUT_PLAN: 'Requesting access to review the client’s workout plan for medical safety.',
-  NUTRITION_PLAN: 'Requesting access to review the client’s nutrition plan based on their medical history.',
+const REQUEST_COPY = {
+  WORKOUT_PLAN: {
+    title: 'Request Workout Plan',
+    body: "You are requesting permission to view this client's workout plan and exercise schedule.",
+    button: 'Request Workout Plan',
+    view: 'View Workout Plan',
+  },
+  NUTRITION_PLAN: {
+    title: 'Request Nutrition Plan',
+    body: "You are requesting permission to view this client's nutrition plan, meals, and dietary recommendations.",
+    button: 'Request Nutrition Plan',
+    view: 'View Nutrition Plan',
+  },
 }
 
-function statusLabel(status) {
-  if (status === 'PENDING') return 'Pending'
-  if (status === 'APPROVED') return 'Approved'
-  if (status === 'REJECTED') return 'Rejected'
-  if (status === 'REVOKED') return 'Revoked'
-  return 'Not Requested'
+function isGranted(status) {
+  return status === 'ACCEPTED' || status === 'APPROVED'
 }
 
 export default function PlanAccessPanel({ clientUserId, clientName }) {
   const [status, setStatus] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const [reasons, setReasons] = useState(DEFAULT_REASONS)
+  const [notice, setNotice] = useState('')
+  const [dialog, setDialog] = useState(null)
+  const [reason, setReason] = useState('')
   const [workoutPlan, setWorkoutPlan] = useState(null)
   const [nutritionPlan, setNutritionPlan] = useState(null)
 
@@ -37,8 +45,14 @@ export default function PlanAccessPanel({ clientUserId, clientName }) {
     if (!clientUserId) return
     setError('')
     try {
-      setStatus(await fetchPlanAccessStatus(clientUserId))
+      const next = await fetchPlanAccessStatus(clientUserId)
+      setStatus(next)
+      if (!isGranted(next?.workout?.status) && !isGranted(next?.fitness?.status)) setWorkoutPlan(null)
+      if (!isGranted(next?.nutrition?.status)) setNutritionPlan(null)
     } catch (err) {
+      setStatus(null)
+      setWorkoutPlan(null)
+      setNutritionPlan(null)
       setError(err?.message || 'Unable to load plan access.')
     }
   }
@@ -46,15 +60,38 @@ export default function PlanAccessPanel({ clientUserId, clientName }) {
   useEffect(() => {
     setWorkoutPlan(null)
     setNutritionPlan(null)
+    setNotice('')
+    setDialog(null)
     load()
   }, [clientUserId])
 
-  async function request(resourceType) {
-    setBusy(resourceType)
-    setWorkoutPlan(null)
-    setNutritionPlan(null)
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState === 'visible') load()
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [clientUserId])
+
+  function openRequest(resourceType) {
+    setDialog(resourceType)
+    setReason('')
+    setError('')
+  }
+
+  async function sendRequest() {
+    const trimmed = reason.trim()
+    setBusy(dialog)
+    setError('')
+    setNotice('')
     try {
-      await requestPlanAccess(Number(clientUserId), resourceType, reasons[resourceType])
+      await requestPlanAccess(Number(clientUserId), dialog, trimmed)
+      setDialog(null)
+      setNotice('Access request sent successfully. Waiting for client approval.')
       await load()
     } catch (err) {
       setError(err?.message || 'Unable to send the access request.')
@@ -70,7 +107,7 @@ export default function PlanAccessPanel({ clientUserId, clientName }) {
       setWorkoutPlan(await fetchApprovedWorkoutPlan(clientUserId))
     } catch (err) {
       setWorkoutPlan(null)
-      setError(err?.message || 'Access required')
+      setError(err?.message || 'Workout plan access has not been approved.')
     } finally {
       setBusy('')
     }
@@ -83,7 +120,7 @@ export default function PlanAccessPanel({ clientUserId, clientName }) {
       setNutritionPlan(await fetchApprovedNutritionPlan(clientUserId))
     } catch (err) {
       setNutritionPlan(null)
-      setError(err?.message || 'Access required')
+      setError(err?.message || 'Nutrition plan access has not been approved.')
     } finally {
       setBusy('')
     }
@@ -97,109 +134,124 @@ export default function PlanAccessPanel({ clientUserId, clientName }) {
     )
   }
 
-  const workout = status?.workout || status?.fitness || { status: 'NOT_REQUESTED', message: 'Access required' }
-  const nutrition = status?.nutrition || { status: 'NOT_REQUESTED', message: 'Access required' }
+  const workout = status?.workout || status?.fitness || { status: 'NOT_REQUESTED' }
+  const nutrition = status?.nutrition || { status: 'NOT_REQUESTED' }
+  const copy = dialog ? REQUEST_COPY[dialog] : null
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-[#4b5563]">
         {clientName ? `${clientName}: ` : ''}
-        The client decides whether a Medical Advisor can view their workout or nutrition plan.
+        Request access separately. A plan stays hidden until this client accepts that request.
       </p>
-      {error ? (
+      {error && !dialog ? (
         <p className="text-sm text-[#b91c1c]" role="alert">
           {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="rounded-2xl border border-[#d7efe4] bg-[#f3fbf7] px-4 py-3 text-sm font-medium text-[#005a40]">
+          {notice}
         </p>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <AccessCard
           title="Workout Plan"
           block={workout}
-          busy={busy === 'WORKOUT_PLAN' || busy === 'view-workout'}
-          reason={reasons.WORKOUT_PLAN}
-          onReason={(value) => setReasons((prev) => ({ ...prev, WORKOUT_PLAN: value }))}
-          requestLabel="Request Workout Plan"
-          againLabel="Request Again"
-          viewLabel="View Workout Plan"
-          onRequest={() => request('WORKOUT_PLAN')}
+          busy={busy === 'view-workout'}
+          requestLabel={REQUEST_COPY.WORKOUT_PLAN.button}
+          viewLabel={REQUEST_COPY.WORKOUT_PLAN.view}
+          onRequest={() => openRequest('WORKOUT_PLAN')}
           onView={viewWorkout}
         />
         <AccessCard
           title="Nutrition Plan"
           block={nutrition}
-          busy={busy === 'NUTRITION_PLAN' || busy === 'view-nutrition'}
-          reason={reasons.NUTRITION_PLAN}
-          onReason={(value) => setReasons((prev) => ({ ...prev, NUTRITION_PLAN: value }))}
-          requestLabel="Request Nutrition Plan"
-          againLabel="Request Again"
-          viewLabel="View Nutrition Plan"
-          onRequest={() => request('NUTRITION_PLAN')}
+          busy={busy === 'view-nutrition'}
+          requestLabel={REQUEST_COPY.NUTRITION_PLAN.button}
+          viewLabel={REQUEST_COPY.NUTRITION_PLAN.view}
+          onRequest={() => openRequest('NUTRITION_PLAN')}
           onView={viewNutrition}
         />
       </div>
-      {workoutPlan ? <ClientWorkoutPlan plan={workoutPlan} embedded /> : null}
-      {nutritionPlan ? <ClientMealPlan plan={nutritionPlan} embedded /> : null}
+      {isGranted(workout.status) && workoutPlan ? <ClientWorkoutPlan plan={workoutPlan} embedded /> : null}
+      {isGranted(nutrition.status) && nutritionPlan ? <ClientMealPlan plan={nutritionPlan} embedded /> : null}
+
+      <Modal
+        open={Boolean(dialog)}
+        onClose={() => {
+          if (busy) return
+          setDialog(null)
+          setError('')
+        }}
+        title={copy?.title || 'Request access'}
+        description={copy?.body}
+        footer={
+          <>
+            <Button type="button" variant="outline" onClick={() => setDialog(null)} disabled={Boolean(busy)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="!bg-[#005a40] !text-white"
+              onClick={sendRequest}
+              disabled={Boolean(busy)}
+            >
+              {busy ? 'Sending…' : 'Send Request'}
+            </Button>
+          </>
+        }
+      >
+        {error ? (
+          <p className="mb-3 text-sm text-[#b91c1c]" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <TextArea
+          label="Reason for request (optional)"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          rows={4}
+        />
+      </Modal>
     </div>
   )
 }
 
-function AccessCard({
-  title,
-  block,
-  busy,
-  reason,
-  onReason,
-  requestLabel,
-  againLabel,
-  viewLabel,
-  onRequest,
-  onView,
-}) {
-  const status = block.status || 'NOT_REQUESTED'
-  const waiting = status === 'PENDING'
-  const approved = status === 'APPROVED'
-  const closed = status === 'REJECTED' || status === 'REVOKED' || status === 'NOT_REQUESTED'
+function AccessCard({ title, block, busy, requestLabel, viewLabel, onRequest, onView }) {
+  const status = block?.status || 'NOT_REQUESTED'
+  const pending = status === 'PENDING'
+  const accepted = isGranted(status)
+  const rejected = status === 'REJECTED' || status === 'REVOKED'
+  const notRequested = status === 'NOT_REQUESTED' || (!pending && !accepted && !rejected)
+  const statusLabel = pending
+    ? 'Pending'
+    : accepted
+      ? 'Accepted'
+      : rejected
+        ? 'Rejected'
+        : 'Not Requested'
+
   return (
     <SectionCard title={title}>
       <p className="text-sm text-[#4b5563]">
-        Access: <StatusBadge status={statusLabel(status)} />
+        Status: <span className="font-semibold text-[#111827]">{statusLabel}</span>
       </p>
-      {waiting ? <p className="mt-2 text-sm text-[#6b7280]">Waiting for client approval.</p> : null}
-      {block.message && status !== 'APPROVED' ? (
-        <p className="mt-2 text-sm text-[#6b7280]">{block.message}</p>
-      ) : null}
-      {!approved ? (
-        <p className="mt-3 text-sm font-medium text-[#111827]">
-          {waiting ? 'Waiting for client approval.' : 'Access required'}
-        </p>
-      ) : null}
-      {closed ? (
-        <TextArea
-          className="mt-3"
-          label="Reason"
-          value={reason}
-          onChange={(event) => onReason(event.target.value)}
-        />
-      ) : null}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {status === 'NOT_REQUESTED' ? (
-          <Button type="button" onClick={onRequest} disabled={busy} className="!bg-[#005a40] !text-white">
+      {pending ? <p className="mt-2 text-sm text-[#6b7280]">Waiting for client approval.</p> : null}
+      <div className="mt-4">
+        {notRequested ? (
+          <Button type="button" onClick={onRequest} className="!bg-[#005a40] !text-white">
             {requestLabel}
           </Button>
         ) : null}
-        {waiting ? (
-          <Button type="button" disabled className="!bg-[#005a40] !text-white">
-            Request Sent
+        {rejected ? (
+          <Button type="button" onClick={onRequest} className="!bg-[#005a40] !text-white">
+            {requestLabel}
           </Button>
         ) : null}
-        {status === 'REJECTED' || status === 'REVOKED' ? (
-          <Button type="button" onClick={onRequest} disabled={busy} className="!bg-[#005a40] !text-white">
-            {againLabel}
-          </Button>
-        ) : null}
-        {approved ? (
+        {accepted ? (
           <Button type="button" onClick={onView} disabled={busy} className="!bg-[#005a40] !text-white">
-            {viewLabel}
+            {busy ? 'Loading…' : viewLabel}
           </Button>
         ) : null}
       </div>
