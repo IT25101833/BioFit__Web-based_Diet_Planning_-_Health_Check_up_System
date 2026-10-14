@@ -64,6 +64,8 @@ App: `http://localhost:5173`
 
 The app does not create demo users on startup. Register a client from the sign-up page, or enable local bootstrap only on your machine (`BIOFIT_BOOTSTRAP_ACCOUNTS=true` and `BIOFIT_BOOTSTRAP_PASSWORD` in `backend/.env`). Roles are created by Flyway `V2__seed_roles.sql`.
 
+User management, centre staff and admin dashboard behaviour is described in [`docs/user-management.md`](docs/user-management.md).
+
 ## Auth API (current)
 
 - `POST /api/auth/register`

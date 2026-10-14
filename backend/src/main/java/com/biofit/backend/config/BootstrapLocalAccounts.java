@@ -132,7 +132,7 @@ public class BootstrapLocalAccounts implements ApplicationRunner {
         user.setSpecialization(specialization);
         user.setStatus(UserStatus.ACTIVE);
         user.setEmailVerified(true);
-        user.setRoles(Set.of(role));
+        user.setRoles(new HashSet<>(Set.of(role)));
         userRepository.save(user);
         log.info("Created bootstrap user {} ({})", email, roleName);
         return true;

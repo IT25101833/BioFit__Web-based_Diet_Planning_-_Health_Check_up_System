@@ -283,6 +283,22 @@ public class AuthService {
                     HttpStatus.LOCKED);
         }
 
+        if (user.getStatus() != UserStatus.ACTIVE && user.getStatus() != UserStatus.LOCKED) {
+            auditService.log(
+                    user.getId(),
+                    "LOGIN_DISABLED",
+                    "User",
+                    String.valueOf(user.getId()),
+                    "FAILURE",
+                    ip,
+                    userAgent,
+                    "status=" + user.getStatus());
+            throw new ApiException(
+                    "ACCOUNT_DISABLED",
+                    "This account is not active. Contact BioFit support.",
+                    HttpStatus.FORBIDDEN);
+        }
+
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             user.setFailedLoginAttempts(user.getFailedLoginAttempts() + 1);
             if (user.getFailedLoginAttempts() >= MAX_FAILED_ATTEMPTS) {
@@ -323,6 +339,7 @@ public class AuthService {
         if (user.getStatus() == UserStatus.LOCKED) {
             user.setStatus(UserStatus.ACTIVE);
         }
+        user.setLastLoginAt(Instant.now());
         userRepository.save(user);
 
         auditService.log(
@@ -350,6 +367,12 @@ public class AuthService {
 
         stored.setRevoked(true);
         refreshTokenRepository.save(stored);
+        User refreshUser = stored.getUser();
+        if (refreshUser.getDeletedAt() != null
+                || refreshUser.getStatus() != UserStatus.ACTIVE
+                || refreshUser.isLocked()) {
+            throw new ApiException("ACCOUNT_DISABLED", "This account is not active.", HttpStatus.UNAUTHORIZED);
+        }
         return issueTokens(stored.getUser());
     }
 
@@ -409,9 +432,12 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setPasswordResetToken(null);
         user.setPasswordResetExpiresAt(null);
-        user.setFailedLoginAttempts(0);
-        user.setLockedUntil(null);
-        user.setStatus(UserStatus.ACTIVE);
+        // Administrative status is independent of password recovery.
+        // INACTIVE, PENDING and LOCKED accounts stay in that status.
+        if (user.getStatus() == UserStatus.ACTIVE) {
+            user.setFailedLoginAttempts(0);
+            user.setLockedUntil(null);
+        }
         userRepository.save(user);
 
         auditService.log(
